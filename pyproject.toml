@@ -1,0 +1,53 @@
+[project]
+name = "unpod"
+version = "0.1.0a1"
+description = "Developer SDK for Unpod voice infrastructure — management + connectivity + adapters."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Unpod", email = "parvinder@unpod.ai" }]
+dependencies = [
+  "pydantic>=2.5",
+  "httpx>=0.27",
+  "websockets>=13",
+  "typing-extensions>=4.10",
+  "python-dotenv>=1.2.2",
+]
+
+[project.optional-dependencies]
+dialog = ["superdialog>=0.1.0a1"]
+langchain = ["langchain-core>=0.3"]
+mcp = ["mcp>=0.9"]
+playground = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.32",
+  "loguru>=0.7",
+  "superdialog>=0.1.0a1",
+  "livekit-agents>=1.0,<2",
+]
+dev = [
+  "pytest>=8",
+  "pytest-asyncio>=0.23",
+  "anyio>=4",
+  "ruff>=0.4",
+  "pyrefly>=0.1",
+  "superdialog>=0.1.0a1",
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.32",
+  "loguru>=0.7",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/unpod"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

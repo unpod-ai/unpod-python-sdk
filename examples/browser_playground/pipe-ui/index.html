@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Unpod — browser playground</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <header>
+    <h1>Unpod — browser playground</h1>
+    <div id="status-bar">
+      <span class="status-item"><span class="dot" id="dot-ws"></span>Transport</span>
+      <span class="status-item"><span class="dot" id="dot-stt"></span>STT</span>
+      <span class="status-item"><span class="dot" id="dot-bridge"></span>Bridge</span>
+      <span class="status-item"><span class="dot" id="dot-agent"></span>Agent</span>
+    </div>
+  </header>
+
+  <main>
+    <div id="transcript"></div>
+    <div id="controls">
+      <button id="btn-connect">Connect</button>
+      <button id="btn-disconnect" disabled>Disconnect</button>
+    </div>
+  </main>
+
+  <div id="log"></div>
+
+  <script type="module" src="/src/app.ts"></script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+# Local secrets — never commit a real .env
+.env
+
+# Track the example env even though the root .gitignore ignores .env.*
+!.env.example

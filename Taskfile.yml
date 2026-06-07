@@ -1,0 +1,253 @@
+version: "3"
+
+vars:
+  UV:
+    sh: command -v uv 2>/dev/null || echo "${HOME}/.local/bin/uv"
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  # --- Setup ---
+
+  install:
+    desc: Alias for sync (install all deps)
+    deps: [sync]
+
+  sync:
+    desc: Sync all deps via uv
+    cmds:
+      - "{{.UV}} sync"
+
+  # --- Code Quality ---
+
+  lint:
+    desc: Run ruff linter
+    cmds:
+      - "{{.UV}} run ruff check ."
+
+  lint-fix:
+    desc: Run ruff linter with auto-fix
+    cmds:
+      - "{{.UV}} run ruff check . --fix"
+
+  format:
+    desc: Run ruff formatter
+    cmds:
+      - "{{.UV}} run ruff format ."
+
+  format-check:
+    desc: Check formatting without applying changes
+    cmds:
+      - "{{.UV}} run ruff format . --check"
+
+  typecheck:
+    desc: Run pyrefly type checker
+    cmds:
+      - "{{.UV}} run pyrefly check"
+
+  check:
+    desc: Run lint + format-check + typecheck
+    cmds:
+      - task: lint
+      - task: format-check
+      - task: typecheck
+
+  # --- Tests ---
+
+  test:
+    desc: Run all tests
+    cmds:
+      - "{{.UV}} run pytest tests/ -v"
+
+  test-management:
+    desc: Run management SDK tests
+    cmds:
+      - "{{.UV}} run pytest tests/management/ -v"
+
+  test-runner:
+    desc: Run AgentRunner tests
+    cmds:
+      - "{{.UV}} run pytest tests/runner/ -v"
+
+  test-playground:
+    desc: Run browser playground tests
+    cmds:
+      - "{{.UV}} run pytest tests/examples/test_browser_playground.py -v"
+
+  test-cov:
+    desc: Run tests with coverage report
+    cmds:
+      - "{{.UV}} run pytest tests/ -v --cov=src/unpod --cov-report=term-missing"
+
+  # --- Dev Server ---
+
+  supervoice:
+    desc: "Start supervoice platform server on :8000 (needs Mongo; then task create-api-key)"
+    dir: "../supervoice"
+    cmds:
+      - "{{.UV}} run uvicorn supervoice.main:app --port 8000 --reload"
+
+  supervoice-queue:
+    desc: "Serve the outbound call queue deployment (needs prefect-server + Redis; see ../supervoice queue-serve)"
+    dir: "../supervoice"
+    cmds:
+      - >-
+        {{.UV}} run python -c
+        "from supervoice.telephony.queue.call_activity import execute_supervoice_call;
+        execute_supervoice_call.serve(name='execute-supervoice-call')"
+
+  create-api-key:
+    desc: "Bootstrap an API key via the admin endpoint (HOST=localhost:8000 ORG=dev NAME=dev)"
+    vars:
+      HOST: '{{.HOST | default "localhost:8000"}}'
+      ORG: '{{.ORG | default "dev"}}'
+      NAME: '{{.NAME | default "dev"}}'
+    cmds:
+      - >-
+        curl -s -X POST http://{{.HOST}}/platform/v1/api-keys
+        -H "Content-Type: application/json"
+        -d "{\"name\":\"{{.NAME}}\",\"org_id\":\"{{.ORG}}\"}"
+        | (command -v jq >/dev/null && jq . || cat)
+
+  # --- Examples ---
+
+  example-setup:
+    desc: "Run full_agent_setup --setup (provision voice profile → agent → numbers)"
+    cmds:
+      - "{{.UV}} run python examples/full_agent_setup.py --setup"
+
+  example-run:
+    desc: "Run full_agent_setup --run (start AgentRunner, blocks until Ctrl-C)"
+    cmds:
+      - "{{.UV}} run python examples/full_agent_setup.py --run"
+
+  example-call:
+    desc: "Dispatch an outbound call (usage: task example-call NUMBER=+19995550001)"
+    requires:
+      vars: [NUMBER]
+    cmds:
+      - "{{.UV}} run python examples/full_agent_setup.py --call {{.NUMBER}}"
+
+  example-monitor:
+    desc: "Print active calls, transcripts, and recordings"
+    cmds:
+      - "{{.UV}} run python examples/full_agent_setup.py --monitor"
+
+  browser-agent:
+    desc: "Run browser_agent example (usage: task browser-agent)"
+    cmds:
+      - "{{.UV}} run python examples/browser_agent.py"
+
+  browser-agent-setup:
+    desc: "Run browser_agent --setup"
+    cmds:
+      - "{{.UV}} run python examples/browser_agent.py --setup"
+
+  browser-agent-call:
+    desc: "Dispatch browser_agent outbound call (usage: task browser-agent-call NUMBER=+19995550001)"
+    requires:
+      vars: [NUMBER]
+    cmds:
+      - "{{.UV}} run python examples/browser_agent.py --call {{.NUMBER}}"
+
+  # --- Browser Playground ---
+
+  playground-ui-build:
+    desc: Build the browser playground frontend
+    dir: examples/browser_playground/pipe-ui
+    cmds:
+      - npm install
+      - npm run build
+
+  playground:
+    desc: "Browser voice playground on :9100 (references remote supervoice via SUPERVOICE_URL)"
+    dir: examples/browser_playground
+    deps: [playground-ui-build]
+    vars:
+      PORT: '{{.PORT | default "9100"}}'
+    cmds:
+      - "lsof -ti tcp:{{.PORT}} | xargs kill -9 2>/dev/null || true"
+      - "{{.UV}} run --extra playground python run.py"
+
+  playground-dev:
+    desc: "Run playground with debug logging (use 'npm run dev' in pipe-ui for live UI reload)"
+    dir: examples/browser_playground
+    vars:
+      PORT: '{{.PORT | default "9100"}}'
+    env:
+      LOGURU_LEVEL: DEBUG
+    cmds:
+      - "lsof -ti tcp:{{.PORT}} | xargs kill -9 2>/dev/null || true"
+      - "{{.UV}} run --extra playground python run.py"
+
+  playground-stop:
+    desc: Stop the playground server
+    vars:
+      PORT: '{{.PORT | default "9100"}}'
+    cmds:
+      - "lsof -ti tcp:{{.PORT}} | xargs kill -9 2>/dev/null || true"
+      - echo "[playground] stopped"
+
+  # --- Voice Agent Playground (playground/) ---
+
+  supervoice-dev:
+    desc: "Start supervoice dev SPEECH app (POST /connect + WS /ws/audio) on :9000"
+    dir: "../supervoice"
+    vars:
+      PORT: '{{.PORT | default "9000"}}'
+    cmds:
+      - "lsof -ti tcp:{{.PORT}} | xargs kill -9 2>/dev/null || true"
+      - "{{.UV}} run uvicorn supervoice.dev.app:create_dev_app --factory --env-file .env --port {{.PORT}} --reload"
+
+  pg-ui-build:
+    desc: "Build the voice playground web UI (playground/web → dist)"
+    dir: playground/web
+    cmds:
+      - npm install
+      - npm run build
+
+  pg-ui-dev:
+    desc: "Vite dev server for the playground UI on :5173 (proxies /playground to :9100)"
+    dir: playground/web
+    cmds:
+      - npm install
+      - npm run dev
+
+  pg:
+    desc: "Run the voice playground harness + agent on :9100 (needs supervoice-dev on :9000)"
+    deps: [pg-ui-build]
+    vars:
+      PORT: '{{.PORT | default "9100"}}'
+    cmds:
+      - "lsof -ti tcp:{{.PORT}} | xargs kill -9 2>/dev/null || true"
+      - "{{.UV}} run python -m playground.run"
+
+  pg-stop:
+    desc: Stop the voice playground harness
+    vars:
+      PORT: '{{.PORT | default "9100"}}'
+    cmds:
+      - "lsof -ti tcp:{{.PORT}} | xargs kill -9 2>/dev/null || true"
+      - echo "[playground] stopped"
+
+  pg-stack:
+    desc: "Run BOTH services: supervoice-dev (:9000) + voice playground (:9100)"
+    deps: [pg-ui-build]
+    cmds:
+      - |
+        cleanup() {
+          kill "$SV_PID" 2>/dev/null || true
+          lsof -ti tcp:9000 | xargs kill -9 2>/dev/null || true
+          lsof -ti tcp:9100 | xargs kill -9 2>/dev/null || true
+        }
+        trap cleanup EXIT
+        lsof -ti tcp:9000 | xargs kill -9 2>/dev/null || true
+        lsof -ti tcp:9100 | xargs kill -9 2>/dev/null || true
+        (cd ../supervoice && {{.UV}} run uvicorn supervoice.dev.app:create_dev_app --factory --env-file .env --port 9000) &
+        SV_PID=$!
+        echo "[pg-stack] supervoice-dev pid=$SV_PID on :9000 — waiting for boot…"
+        sleep 2
+        {{.UV}} run python -m playground.run

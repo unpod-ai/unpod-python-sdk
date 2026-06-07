@@ -1,0 +1,27 @@
+# Environments
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyrefly/
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Node (browser examples / playground web UI)
+node_modules/
