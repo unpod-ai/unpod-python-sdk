@@ -123,6 +123,8 @@ def run_agent() -> None:
         agent_id=RUNNER_AGENT_ID,
         max_concurrent_calls=1,
         # base_url and api_key read from env: UNPOD_SERVICE_BASE_URL / UNPOD_API_KEY
+        # serving_url="ws://localhost:8765",  # local dev only: where media agents
+        # dial your runner's bridge. Omit in production (UNPOD_RUNNER_URL is used).
     ).start()
 
 
