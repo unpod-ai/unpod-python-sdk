@@ -6,22 +6,26 @@ Developer SDK for [Unpod](https://unpod.ai) voice infrastructure — management,
 
 ## Installation
 
-The package is not yet published on PyPI — install from GitHub for now:
+```bash
+pip install unpod
+
+# With superdialog integration (recommended)
+pip install "unpod[dialog]"
+
+# With LangChain adapter
+pip install "unpod[langchain]"
+
+# With MCP adapter
+pip install "unpod[mcp]"
+```
+
+Or with [uv](https://docs.astral.sh/uv/): `uv add unpod` (extras: `uv add "unpod[dialog]"`).
+
+To install the latest unreleased code from source:
 
 ```bash
 pip install "unpod @ git+https://github.com/unpod-ai/unpod-python-sdk"
-
-# With superdialog integration (recommended)
-pip install "unpod[dialog] @ git+https://github.com/unpod-ai/unpod-python-sdk"
-
-# With LangChain adapter
-pip install "unpod[langchain] @ git+https://github.com/unpod-ai/unpod-python-sdk"
-
-# With MCP adapter
-pip install "unpod[mcp] @ git+https://github.com/unpod-ai/unpod-python-sdk"
 ```
-
-PyPI publication (`pip install unpod`) is upcoming.
 
 ## What's Inside
 
