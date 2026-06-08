@@ -1,6 +1,6 @@
 [project]
 name = "unpod"
-version = "0.1.0a2"
+version = "0.1.0a3"
 description = "Developer SDK for Unpod voice infrastructure — management + connectivity + adapters."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -20,14 +20,14 @@ Homepage = "https://github.com/unpod-ai/unpod-python-sdk"
 Repository = "https://github.com/unpod-ai/unpod-python-sdk"
 
 [project.optional-dependencies]
-dialog = ["superdialog>=0.1.0a1"]
+dialog = ["superdialog>=0.2,<0.3"]
 langchain = ["langchain-core>=0.3"]
 mcp = ["mcp>=0.9"]
 playground = [
   "fastapi>=0.115",
   "uvicorn[standard]>=0.32",
   "loguru>=0.7",
-  "superdialog>=0.1.0a1",
+  "superdialog>=0.2,<0.3",
   "livekit-agents>=1.0,<2",
 ]
 dev = [
@@ -36,7 +36,7 @@ dev = [
   "anyio>=4",
   "ruff>=0.4",
   "pyrefly>=0.1",
-  "superdialog>=0.1.0a1",
+  "superdialog>=0.2,<0.3",
   "fastapi>=0.115",
   "uvicorn[standard]>=0.32",
   "loguru>=0.7",
