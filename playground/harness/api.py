@@ -2,6 +2,7 @@
 
 Routes:
   GET  /playground/agents               → catalog
+  GET  /playground/config               → config (voices, flows, active LLM)
   POST /playground/sessions             → proxy supervoice POST /connect
   POST /playground/sessions/{id}/control→ live control (set_llm / switch_flow)
   WS   /playground/events               → side-channel: agent events → browser
