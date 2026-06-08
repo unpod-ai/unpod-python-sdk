@@ -5,10 +5,11 @@
  * `POST /connect`), opens the returned `/ws/audio` WebSocket, streams 16 kHz mic
  * PCM as `Frame{audio}` messages, and plays back the 24 kHz audio frames the
  * server returns. Audio only — transcript/metrics arrive on the client's
- * side-channel.
+ * side-channel. Mic/bot levels and the session descriptor are surfaced via the
+ * transport callbacks for the meters and status panel.
  */
 
-import { AudioPlayer, MicCapture, MIC_SAMPLE_RATE } from "./audio";
+import { AudioPlayer, MicCapture, MIC_SAMPLE_RATE, pcmLevel } from "./audio";
 import { decodeFrame, encodeAudioFrame } from "./protobuf";
 import { Transport } from "./Transport";
 
@@ -16,6 +17,9 @@ interface SessionDescriptor {
   ws_url: string;
   transport?: string;
   agent?: string;
+  session_id?: string;
+  error?: string;
+  [key: string]: unknown;
 }
 
 export class SupervoiceWSTransport extends Transport {
@@ -37,11 +41,15 @@ export class SupervoiceWSTransport extends Transport {
     const query = params.size > 0 ? `?${params.toString()}` : "";
     const resp = await fetch(`/playground/sessions${query}`, { method: "POST" });
     if (!resp.ok) throw new Error(`session create failed: HTTP ${resp.status}`);
-    return (await resp.json()) as SessionDescriptor;
+    const data = (await resp.json()) as SessionDescriptor;
+    if (data.error) throw new Error(data.error);
+    if (!data.ws_url) throw new Error("session descriptor missing ws_url");
+    return data;
   }
 
   async connect(): Promise<void> {
     const session = await this.createSession();
+    this.callbacks.onSession?.(session);
 
     this.player = new AudioPlayer();
     this.player.start();
@@ -54,6 +62,7 @@ export class SupervoiceWSTransport extends Transport {
       this.mic = new MicCapture((pcm) => {
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(encodeAudioFrame(pcm, MIC_SAMPLE_RATE, 1));
+          this.callbacks.onMicLevel?.(pcmLevel(pcm));
         }
       });
       try {
@@ -70,6 +79,7 @@ export class SupervoiceWSTransport extends Transport {
       const frame = decodeFrame(new Uint8Array(event.data));
       if (frame.kind === "audio") {
         this.player?.enqueue(frame.pcm, frame.sampleRate || 24000);
+        this.callbacks.onBotLevel?.(pcmLevel(frame.pcm));
       }
     };
 

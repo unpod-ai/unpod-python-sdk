@@ -68,7 +68,9 @@ class Session:
 
     # --- Hook decorator ---
 
-    def on(self, event: str) -> Callable[
+    def on(
+        self, event: str
+    ) -> Callable[
         [Callable[..., Coroutine[Any, Any, None]]],
         Callable[..., Coroutine[Any, Any, None]],
     ]:
@@ -135,7 +137,9 @@ class Session:
                     break
 
                 from unpod._protocol import MetricEvent
+
                 if isinstance(event, MetricEvent):
+                    await self._hooks.fire("metric", event)
                     continue
 
                 if isinstance(event, UserTextEvent):

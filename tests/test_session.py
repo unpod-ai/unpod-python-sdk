@@ -241,3 +241,33 @@ async def test_session_call_end_reason_is_hangup_on_normal_exit():
 
     await session.run()
     assert end_reasons == ["hangup"]
+
+
+@pytest.mark.anyio
+async def test_session_fires_metric_hook():
+    """A MetricEvent from the bridge fires the 'metric' hook (regression).
+
+    Previously run() dropped MetricEvents with a bare ``continue``, so the
+    declared 'metric' hook never fired and metrics could not be surfaced.
+    """
+    from unpod._protocol import MetricEvent
+
+    received: list[MetricEvent] = []
+    mock_bridge = AsyncMock()
+    mock_bridge.recv_event = AsyncMock(
+        side_effect=[
+            MetricEvent(ttfa_ms=120, turns=2, cost_usd_so_far=0.01),
+            Exception("connection closed"),
+        ]
+    )
+
+    session = Session(bridge=mock_bridge)
+
+    @session.on("metric")
+    async def _(metric: MetricEvent) -> None:
+        received.append(metric)
+
+    await session.run()
+    assert len(received) == 1
+    assert received[0].ttfa_ms == 120
+    assert received[0].turns == 2

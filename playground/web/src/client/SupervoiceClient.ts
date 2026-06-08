@@ -1,11 +1,15 @@
 /**
  * SupervoiceClient — one event/control API over an injected Transport.
  *
- * Transport-agnostic (mirrors how a pluggable client wraps any transport). It
- * surfaces supervoice-named events from two sources:
- *   - the Transport: `connected` / `disconnected` / `error`
+ * Transport-agnostic. It surfaces supervoice-named events from two sources:
+ *   - the Transport: `connected` / `disconnected` / `error` / `session`
  *   - the harness side-channel WS (`/playground/events`): `ready`, `user_turn`,
- *     `agent_turn`, `flow_node_changed`, `error`, `disconnected`
+ *     `agent_turn`, `metric`, `interruption`, `flow_node_changed`, `error`,
+ *     `disconnected`
+ *
+ * `on(event, …)` targets one event; `onAny(…)` receives every event (for the
+ * realtime log). Mic/bot audio levels bypass the event system via dedicated
+ * callbacks so they never spam the log.
  */
 
 import { Transport } from "../transport/Transport";
@@ -17,10 +21,14 @@ export type SupervoiceEvent =
   | "error"
   | "user_turn"
   | "agent_turn"
+  | "metric"
+  | "interruption"
   | "flow_node_changed"
-  | "metric";
+  | "session";
 
 type Handler = (data: Record<string, unknown>) => void;
+type AnyHandler = (event: string, data: Record<string, unknown>) => void;
+type LevelHandler = (level: number) => void;
 
 export interface SupervoiceClientOptions {
   transport: Transport;
@@ -33,6 +41,9 @@ export class SupervoiceClient {
   private readonly eventsUrl: string;
   private events: WebSocket | null = null;
   private handlers = new Map<SupervoiceEvent, Set<Handler>>();
+  private anyHandlers = new Set<AnyHandler>();
+  private micLevelHandlers = new Set<LevelHandler>();
+  private botLevelHandlers = new Set<LevelHandler>();
 
   constructor(options: SupervoiceClientOptions) {
     this.transport = options.transport;
@@ -41,6 +52,9 @@ export class SupervoiceClient {
       onConnected: () => this.emit("connected", {}),
       onDisconnected: () => this.emit("disconnected", {}),
       onError: (message) => this.emit("error", { message }),
+      onSession: (info) => this.emit("session", info),
+      onMicLevel: (level) => this.micLevelHandlers.forEach((h) => h(level)),
+      onBotLevel: (level) => this.botLevelHandlers.forEach((h) => h(level)),
     });
   }
 
@@ -58,8 +72,22 @@ export class SupervoiceClient {
     set.add(handler);
   }
 
+  /** Receive every event (for the realtime log). */
+  onAny(handler: AnyHandler): void {
+    this.anyHandlers.add(handler);
+  }
+
+  onMicLevel(handler: LevelHandler): void {
+    this.micLevelHandlers.add(handler);
+  }
+
+  onBotLevel(handler: LevelHandler): void {
+    this.botLevelHandlers.add(handler);
+  }
+
   private emit(event: SupervoiceEvent, data: Record<string, unknown>): void {
     this.handlers.get(event)?.forEach((h) => h(data));
+    this.anyHandlers.forEach((h) => h(event, data));
   }
 
   private openSideChannel(): void {

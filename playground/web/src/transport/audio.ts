@@ -5,6 +5,17 @@
 
 export const MIC_SAMPLE_RATE = 16000;
 
+/** RMS loudness of a PCM16 buffer, scaled to a 0..1 meter range. */
+export function pcmLevel(pcm: Int16Array): number {
+  if (pcm.length === 0) return 0;
+  let sum = 0;
+  for (let i = 0; i < pcm.length; i++) {
+    const v = pcm[i] / 0x8000;
+    sum += v * v;
+  }
+  return Math.min(1, Math.sqrt(sum / pcm.length) * 3.5);
+}
+
 function floatToPcm16(input: Float32Array): Int16Array {
   const out = new Int16Array(input.length);
   for (let i = 0; i < input.length; i++) {

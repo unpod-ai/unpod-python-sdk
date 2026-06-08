@@ -10,6 +10,7 @@ under supervoice-named types only (``ready``, ``user_turn``, ``agent_turn``,
 from __future__ import annotations
 
 import os
+from typing import Any
 
 from playground.agents.catalog import AgentSpec
 from playground.harness.control import SessionRegistry
@@ -79,6 +80,14 @@ def build_runner(
                 severity=severity,
                 source=source,
             )
+
+        @ctx.session.on("metric")
+        async def _on_metric(metric: Any) -> None:
+            bus.publish("metric", **metric.model_dump(exclude={"event"}))
+
+        @ctx.session.on("interruption")
+        async def _on_interruption() -> None:
+            bus.publish("interruption")
 
         @ctx.session.on("call_end")
         async def _on_end(reason: str) -> None:

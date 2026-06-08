@@ -1,36 +1,40 @@
-// playground/web/src/components/ConfigPanel.tsx
+// playground/web/src/components/TopBar.tsx
 import { useRef } from "react";
-import type { VoiceProfile, FlowOption } from "../config";
 
-interface ConfigPanelProps {
+import type { VoiceProfile, FlowOption } from "../config";
+import type { AppState } from "../types";
+
+interface TopBarProps {
   voiceProfiles: VoiceProfile[];
   flows: FlowOption[];
-  activeLlm: string;
   selectedVoiceProfile: string;
   selectedFlow: string;
   onVoiceProfileChange: (id: string) => void;
   onFlowChange: (id: string) => void;
   onCustomFlow: (flow: Record<string, unknown>) => void;
-  disabled: boolean;
+  appState: AppState;
+  onConnect: () => void;
+  onDisconnect: () => void;
 }
 
-export function ConfigPanel({
+export function TopBar({
   voiceProfiles,
   flows,
-  activeLlm,
   selectedVoiceProfile,
   selectedFlow,
   onVoiceProfileChange,
   onFlowChange,
   onCustomFlow,
-  disabled,
-}: ConfigPanelProps) {
+  appState,
+  onConnect,
+  onDisconnect,
+}: TopBarProps) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const locked = appState === "connecting" || appState === "active";
 
   function handleFlowChange(e: React.ChangeEvent<HTMLSelectElement>) {
     if (e.target.value === "__custom__") {
       fileRef.current?.click();
-      // Reset select back to current flow — dialog may be cancelled
       e.target.value = selectedFlow;
     } else {
       onFlowChange(e.target.value);
@@ -49,39 +53,39 @@ export function ConfigPanel({
         alert("Invalid flow JSON — check the file and try again.");
       }
     };
-    reader.onerror = () => { alert("Could not read file."); };
+    reader.onerror = () => alert("Could not read file.");
     reader.readAsText(file);
     e.target.value = "";
   }
 
   return (
-    <div className={`config-panel${disabled ? " config-panel--disabled" : ""}`}>
-      <div className="config-row">
-        <label className="config-label">Voice Profile</label>
+    <header className="topbar">
+      <div className="topbar__selectors">
+        <label className="sr-only" htmlFor="vp-select">Voice profile</label>
         <select
-          className="config-select"
+          id="vp-select"
+          className="topbar__select"
           value={selectedVoiceProfile}
           onChange={(e) => onVoiceProfileChange(e.target.value)}
-          disabled={disabled}
+          disabled={locked}
         >
           {voiceProfiles.map((vp) => (
             <option key={vp.id} value={vp.id}>{vp.name}</option>
           ))}
         </select>
-      </div>
 
-      <div className="config-row">
-        <label className="config-label">Flow</label>
+        <label className="sr-only" htmlFor="flow-select">Flow</label>
         <select
-          className="config-select"
+          id="flow-select"
+          className="topbar__select"
           value={selectedFlow}
           onChange={handleFlowChange}
-          disabled={disabled}
+          disabled={locked}
         >
           {flows.map((f) => (
             <option key={f.id} value={f.id}>{f.name}</option>
           ))}
-          <option value="__custom__">Upload your own…</option>
+          <option value="__custom__">Upload flow…</option>
         </select>
         <input
           ref={fileRef}
@@ -92,13 +96,26 @@ export function ConfigPanel({
         />
       </div>
 
-      <div className="config-row">
-        <label className="config-label">LLM</label>
-        <div className="llm-badge" title="Set by the agent backend — not configurable here">
-          <span className="llm-lock">🔒</span>
-          <span>{activeLlm}</span>
-        </div>
+      <div className="topbar__brand">
+        <span className="topbar__mark">⏧</span>
+        <span className="topbar__title">unpod playground</span>
       </div>
-    </div>
+
+      <div className="topbar__actions">
+        {appState === "active" ? (
+          <button className="btn btn--disconnect" onClick={onDisconnect}>
+            Disconnect
+          </button>
+        ) : (
+          <button
+            className="btn btn--connect"
+            onClick={onConnect}
+            disabled={appState === "connecting"}
+          >
+            {appState === "connecting" ? "Connecting…" : "Connect"}
+          </button>
+        )}
+      </div>
+    </header>
   );
 }
