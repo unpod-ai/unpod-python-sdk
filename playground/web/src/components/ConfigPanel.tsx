@@ -10,7 +10,7 @@ interface ConfigPanelProps {
   selectedFlow: string;
   onVoiceProfileChange: (id: string) => void;
   onFlowChange: (id: string) => void;
-  onCustomFlow: (flow: object) => void;
+  onCustomFlow: (flow: Record<string, unknown>) => void;
   disabled: boolean;
 }
 
@@ -30,6 +30,8 @@ export function ConfigPanel({
   function handleFlowChange(e: React.ChangeEvent<HTMLSelectElement>) {
     if (e.target.value === "__custom__") {
       fileRef.current?.click();
+      // Reset select back to current flow — dialog may be cancelled
+      e.target.value = selectedFlow;
     } else {
       onFlowChange(e.target.value);
     }
@@ -41,12 +43,13 @@ export function ConfigPanel({
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        const flow = JSON.parse(reader.result as string) as object;
+        const flow = JSON.parse(reader.result as string) as Record<string, unknown>;
         onCustomFlow(flow);
       } catch {
         alert("Invalid flow JSON — check the file and try again.");
       }
     };
+    reader.onerror = () => { alert("Could not read file."); };
     reader.readAsText(file);
     e.target.value = "";
   }
