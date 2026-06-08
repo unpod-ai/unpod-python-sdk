@@ -3,13 +3,14 @@
 import os
 
 import pytest
+from unpod.management._auth import BearerAuth
 from unpod.management._http import AsyncHTTPClient
 
 
 @pytest.fixture
 def http_client() -> AsyncHTTPClient:
     return AsyncHTTPClient(
-        api_key="unpod_sk_test",
+        auth=BearerAuth("unpod_sk_test"),
         base_url="https://api.example.test",
     )
 
@@ -21,7 +22,7 @@ def test_headers(http_client: AsyncHTTPClient) -> None:
 
 
 def test_default_base_url() -> None:
-    c = AsyncHTTPClient(api_key="test")
+    c = AsyncHTTPClient(auth=BearerAuth("test"))
     assert c._base_url == "https://api.unpod.ai"
 
 

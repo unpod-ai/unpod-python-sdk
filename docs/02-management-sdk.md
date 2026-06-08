@@ -2,7 +2,9 @@
 
 The Management SDK is a REST client for the Unpod Platform API. It provides operations for trunks, numbers, voice profiles, Speech Pipes, calls, sessions, recordings, and transcripts.
 
-All resources are scoped to the `project_id` derived from your API key. The API is served at `/platform/v1/...`.
+All resources are scoped to a `project_id`. In **direct** mode that project is
+derived from your supervoice API key; in **proxy** mode it is derived from the
+organization (`Org-Handle`) resolved by the unpod backend-core proxy.
 
 ## Client Setup
 
@@ -15,6 +17,36 @@ client = Client()
 # Explicit values
 client = Client(api_key="sk_...", base_url="http://localhost:8000/platform")
 ```
+
+### Direct vs proxy mode
+
+The same resource calls reach the management API two ways — only the constructor
+differs (resource paths are identical):
+
+| Mode | Talks to | Auth | Base URL |
+|---|---|---|---|
+| **Direct** | supervoice (`/platform/v1`) | `BearerAuth(api_key)` (default) | `https://<host>` or `…/platform` |
+| **Proxy** | unpod backend-core (`api/v2/platform/speech/v1`) | `JWTAuth(token, org_handle)` | `https://<host>/api/v2/platform/speech` |
+
+```python
+from unpod import AsyncClient, BearerAuth, JWTAuth
+
+# Direct → supervoice (Bearer API key)
+client = AsyncClient(api_key="sk_...", base_url="https://api.unpod.ai")
+
+# Proxy → backend-core (platform JWT + org). The proxy injects the org's
+# supervoice key and applies Django auth/middleware; responses are verbatim.
+client = AsyncClient(
+    base_url="https://app.unpod.ai/api/v2/platform/speech",
+    auth=JWTAuth(token="<user-jwt>", org_handle="acme"),
+)
+
+await client.pipes.list()  # identical surface in both modes
+```
+
+> **Proxy-mode caveat:** the proxy fronts the **management plane only**. Session
+> lifecycle ops (`sessions.end` / `transfer` / `merge`) target the orchestrator
+> and are not available through the proxy — use direct mode for those.
 
 Environment variables:
 - `UNPOD_API_KEY` — API key (required)
