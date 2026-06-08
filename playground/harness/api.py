@@ -141,14 +141,20 @@ def build_app() -> FastAPI:
         }
 
     @app.post("/playground/sessions")
-    async def create_session(agent: str | None = None) -> dict[str, Any]:
+    async def create_session(
+        agent: str | None = None,
+        voice_profile_id: str | None = None,
+    ) -> dict[str, Any]:
         """Proxy supervoice /connect, return a transport descriptor."""
         spec = get_agent(agent) if agent else app.state.agent_spec
         if spec is None:
             return {"error": f"unknown agent {agent!r}"}
         target = _connect_http_url(app.state.supervoice_url)
+        params: dict[str, str] = {"agent_id": spec.agent_id}
+        if voice_profile_id:
+            params["voice_profile_id"] = voice_profile_id
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(target, params={"agent_id": spec.agent_id})
+            resp = await client.post(target, params=params)
             resp.raise_for_status()
         data = dict(resp.json())
         data["ws_url"] = _audio_ws_url(app.state.supervoice_url)
