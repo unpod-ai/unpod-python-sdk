@@ -23,12 +23,18 @@ export class SupervoiceWSTransport extends Transport {
   private mic: MicCapture | null = null;
   private player: AudioPlayer | null = null;
 
-  constructor(private readonly agent?: string) {
+  constructor(
+    private readonly agent?: string,
+    private readonly voiceProfileId?: string,
+  ) {
     super();
   }
 
   private async createSession(): Promise<SessionDescriptor> {
-    const query = this.agent ? `?agent=${encodeURIComponent(this.agent)}` : "";
+    const params = new URLSearchParams();
+    if (this.agent) params.set("agent", this.agent);
+    if (this.voiceProfileId) params.set("voice_profile_id", this.voiceProfileId);
+    const query = params.size > 0 ? `?${params.toString()}` : "";
     const resp = await fetch(`/playground/sessions${query}`, { method: "POST" });
     if (!resp.ok) throw new Error(`session create failed: HTTP ${resp.status}`);
     return (await resp.json()) as SessionDescriptor;
