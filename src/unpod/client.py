@@ -8,6 +8,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 from unpod._base_url import service_base
+from unpod.management._auth import Auth, BearerAuth
 from unpod.management._http import AsyncHTTPClient
 from unpod.management.api_keys import ApiKeysResource
 from unpod.management.calls import CallsResource
@@ -30,35 +31,49 @@ class AsyncClient:
         api_key: str | None = None,
         base_url: str | None = None,
         orchestrator_base_url: str | None = None,
+        auth: Auth | None = None,
     ) -> None:
         """Create an async management client.
+
+        **Auth / mode.** Pass an ``auth`` strategy to choose how requests are
+        authenticated:
+
+        - ``BearerAuth(api_key)`` — *direct* mode against supervoice (the
+          default when ``api_key`` / ``UNPOD_API_KEY`` is supplied).
+        - ``JWTAuth(token, org_handle)`` — *proxy* mode against the unpod
+          backend-core proxy. Point ``base_url`` at the proxy
+          (``https://<host>/api/v2/platform/speech``); the resource paths are
+          identical to direct mode.
 
         The REST base URL is resolved in order: ``base_url`` arg,
         ``UNPOD_SERVICE_BASE_URL`` env, ``https://<UNPOD_BASE_URL>/platform``
         when ``UNPOD_BASE_URL`` is set, else the hosted default.
 
         Session lifecycle ops (``end``/``transfer``/``merge``) target a
-        separate orchestrator service. Its base URL is resolved in order:
-        ``orchestrator_base_url`` arg, ``UNPOD_ORCHESTRATOR_BASE_URL`` env,
-        else derived by swapping a trailing ``/platform`` in ``base_url`` for
-        ``/orchestrator``. If ``base_url`` has no ``/platform`` suffix and no
-        override is given, the orchestrator falls back to ``base_url`` — set
-        ``orchestrator_base_url`` explicitly for non-standard deployments to
-        avoid lifecycle ops hitting the platform service.
+        separate orchestrator service and are **not available in proxy mode**
+        (the proxy fronts the management plane only). Its base URL is resolved
+        in order: ``orchestrator_base_url`` arg, ``UNPOD_ORCHESTRATOR_BASE_URL``
+        env, else derived by swapping a trailing ``/platform`` in ``base_url``
+        for ``/orchestrator``, else ``base_url``.
         """
+        if auth is None:
+            api_key = api_key or os.environ.get("UNPOD_API_KEY")
+            if not api_key:
+                raise ValueError(
+                    "provide auth=... (BearerAuth/JWTAuth) or api_key "
+                    "(directly or via UNPOD_API_KEY)"
+                )
+            auth = BearerAuth(api_key)
+        self._auth = auth
+        # Retained for backward compatibility; None in JWT/proxy mode.
         self._api_key = api_key or os.environ.get("UNPOD_API_KEY")
-        if not self._api_key:
-            raise ValueError("api_key required (pass directly or set UNPOD_API_KEY)")
         self._base_url = (
             base_url
             or os.environ.get("UNPOD_SERVICE_BASE_URL")
             or service_base()
             or "https://api.unpod.ai/platform"
         )
-        self._http = AsyncHTTPClient(
-            api_key=self._api_key,
-            base_url=self._base_url,
-        )
+        self._http = AsyncHTTPClient(auth=auth, base_url=self._base_url)
         orch_base = (
             orchestrator_base_url
             or os.environ.get("UNPOD_ORCHESTRATOR_BASE_URL")
@@ -68,10 +83,7 @@ class AsyncClient:
                 else self._base_url
             )
         )
-        self._orch_http = AsyncHTTPClient(
-            api_key=self._api_key,
-            base_url=orch_base,
-        )
+        self._orch_http = AsyncHTTPClient(auth=auth, base_url=orch_base)
         self.voice_profiles = VoiceProfilesResource(self._http)
         self.trunks = TrunksResource(self._http)
         self.numbers = NumbersResource(self._http)
@@ -101,11 +113,13 @@ class Client:
         api_key: str | None = None,
         base_url: str | None = None,
         orchestrator_base_url: str | None = None,
+        auth: Auth | None = None,
     ) -> None:
         self._async_client = AsyncClient(
             api_key=api_key,
             base_url=base_url,
             orchestrator_base_url=orchestrator_base_url,
+            auth=auth,
         )
         self._api_key = self._async_client._api_key
         self._base_url = self._async_client._base_url

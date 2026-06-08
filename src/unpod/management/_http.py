@@ -6,6 +6,8 @@ import uuid
 
 import httpx
 
+from unpod.management._auth import Auth
+
 
 def unwrap_data(resp: dict | list) -> dict | list:
     """Return the common API payload body."""
@@ -26,19 +28,23 @@ class AsyncHTTPClient:
 
     def __init__(
         self,
-        api_key: str,
+        auth: Auth,
         base_url: str = DEFAULT_BASE_URL,
         timeout: float = DEFAULT_TIMEOUT,
     ) -> None:
-        self._api_key = api_key
+        self._auth = auth
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
         self._client: httpx.AsyncClient | None = None
 
     def _headers(self) -> dict[str, str]:
-        """Auth + request ID headers."""
+        """Auth + request ID headers.
+
+        The auth headers come from the configured ``Auth`` strategy (Bearer for
+        direct supervoice, JWT + Org-Handle for the backend-core proxy).
+        """
         return {
-            "Authorization": f"Bearer {self._api_key}",
+            **self._auth.headers(),
             "Content-Type": "application/json",
             "X-Request-Id": str(uuid.uuid4()),
         }

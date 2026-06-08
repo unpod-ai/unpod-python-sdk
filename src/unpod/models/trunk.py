@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class ByoConfigCreate(BaseModel):
@@ -19,6 +19,8 @@ class ByoConfigCreate(BaseModel):
 
 class Trunk(BaseModel):
     """A SIP trunk (matches sv_trunks response shape)."""
+
+    model_config = ConfigDict(extra="allow")
 
     trunk_id: str
     project_id: str

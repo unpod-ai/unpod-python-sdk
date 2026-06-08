@@ -46,7 +46,12 @@ unpod
 ```python
 from unpod import AsyncClient, AgentRunner, CallContext
 
-client = AsyncClient()  # reads UNPOD_API_KEY from env
+client = AsyncClient()  # direct → supervoice; reads UNPOD_API_KEY from env
+
+# Or go through the unpod backend-core proxy (platform JWT + org), same calls:
+#   from unpod import JWTAuth
+#   client = AsyncClient(base_url="https://app.unpod.ai/api/v2/platform/speech",
+#                        auth=JWTAuth(token="<jwt>", org_handle="acme"))
 
 # Management: pick a voice, bind a Speech Pipe to your agent
 profiles = await client.voice_profiles.list(language="en")

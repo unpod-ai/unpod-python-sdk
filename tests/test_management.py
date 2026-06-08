@@ -79,6 +79,15 @@ async def test_voice_profiles_list(client: AsyncClient):
 
 
 @pytest.mark.anyio
+async def test_voice_profiles_delete(client: AsyncClient):
+    with patch.object(
+        client.voice_profiles._http, "delete", new_callable=AsyncMock
+    ) as mock_del:
+        await client.voice_profiles.delete("vp_1")
+        mock_del.assert_called_once_with("/v1/voice-profiles/vp_1")
+
+
+@pytest.mark.anyio
 async def test_pipes_create(client: AsyncClient):
     with patch.object(client.pipes._http, "post", new_callable=AsyncMock) as mock_post:
         mock_post.return_value = {
@@ -175,48 +184,61 @@ async def test_calls_hangup(client: AsyncClient):
 
 @pytest.mark.anyio
 async def test_recordings_list(client: AsyncClient):
+    # GET /v1/recordings returns sessions (with recording_url), not Recordings.
     with patch.object(
         client.recordings._http, "get", new_callable=AsyncMock
     ) as mock_get:
         mock_get.return_value = {
             "data": [
                 {
-                    "id": "rec_1",
+                    "session_id": "sess_1",
                     "call_id": "call_1",
-                    "duration_s": 42.5,
-                    "format": "wav",
-                    "size_bytes": 1024000,
+                    "duration_s": 42,
+                    "status": "completed",
+                    "recording_url": "https://rec.example/1.wav",
                 }
             ]
         }
         recordings = await client.recordings.list(call_id="call_1")
-        assert recordings[0].duration_s == 42.5
+        assert recordings[0].session_id == "sess_1"
+        assert recordings[0].recording_url == "https://rec.example/1.wav"
+        mock_get.assert_called_once_with("/v1/recordings", params={"call_id": "call_1"})
 
 
 @pytest.mark.anyio
-async def test_transcripts_get(client: AsyncClient):
+async def test_transcripts_list(client: AsyncClient):
+    # GET /v1/transcripts returns sessions (with a transcript), not Transcripts.
     with patch.object(
         client.transcripts._http, "get", new_callable=AsyncMock
     ) as mock_get:
         mock_get.return_value = {
-            "call_id": "call_1",
-            "turns": [
+            "data": [
                 {
-                    "speaker": "agent",
-                    "text": "Hello",
-                    "timestamp_ms": 0,
-                    "timing": {
-                        "audio_ingress_ms": 10,
-                        "stt_ms": 180,
-                        "bridge_to_dev_ms": 40,
-                        "dev_brain_ms": 300,
-                        "tts_ms": 200,
-                    },
+                    "session_id": "sess_1",
+                    "transcript": [{"role": "user", "content": "hi"}],
                 }
-            ],
+            ]
         }
-        transcript = await client.transcripts.get("call_1")
-        assert len(transcript.turns) == 1
+        sessions = await client.transcripts.list()
+        assert sessions[0].session_id == "sess_1"
+        assert sessions[0].transcript[0].content == "hi"
+        mock_get.assert_called_once_with("/v1/transcripts")
+
+
+@pytest.mark.anyio
+async def test_transcripts_get(client: AsyncClient):
+    # There is no per-transcript endpoint; get() reads the session.
+    with patch.object(
+        client.transcripts._http, "get", new_callable=AsyncMock
+    ) as mock_get:
+        mock_get.return_value = {
+            "session_id": "sess_1",
+            "transcript": [{"role": "agent", "content": "Hello"}],
+        }
+        session = await client.transcripts.get("sess_1")
+        assert session.session_id == "sess_1"
+        assert session.transcript[0].content == "Hello"
+        mock_get.assert_called_once_with("/v1/sessions/sess_1")
 
 
 @pytest.mark.anyio
