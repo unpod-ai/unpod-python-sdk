@@ -30,6 +30,7 @@ from playground.agents.catalog import CATALOG, get_agent
 from playground.harness.control import ControlError, SessionRegistry
 from playground.harness.events import EventBus
 from playground.harness.runner import build_runner
+from playground.harness.voice_profiles import VOICE_PROFILES
 
 _HERE = Path(__file__).parent
 _UI_DIST = _HERE.parent / "web" / "dist"
@@ -117,6 +118,25 @@ def build_app() -> FastAPI:
                 }
                 for spec in CATALOG.values()
             ]
+        }
+
+    @app.get("/playground/config")
+    async def get_config() -> dict[str, Any]:
+        llm = "claude-3-haiku" if os.getenv("ANTHROPIC_API_KEY") else "gpt-4o-mini"
+        return {
+            "voice_profiles": [
+                {"id": vp.id, "name": f"{vp.name} ({vp.stt} + {vp.tts})"}
+                for vp in VOICE_PROFILES
+            ],
+            "flows": [
+                {
+                    "id": spec.agent_id,
+                    "name": spec.name,
+                    "description": spec.description,
+                }
+                for spec in CATALOG.values()
+            ],
+            "active_llm": os.getenv("ACTIVE_LLM", llm),
         }
 
     @app.post("/playground/sessions")
