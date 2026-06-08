@@ -27,7 +27,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
-from playground.agents.catalog import CATALOG, get_agent
+from playground.agents.catalog import CATALOG, get_agent, resolve_agent
 from playground.harness.control import ControlError, SessionRegistry
 from playground.harness.events import EventBus
 from playground.harness.runner import build_runner
@@ -146,7 +146,7 @@ def build_app() -> FastAPI:
         voice_profile_id: str | None = None,
     ) -> dict[str, Any]:
         """Proxy supervoice /connect, return a transport descriptor."""
-        spec = get_agent(agent) if agent else app.state.agent_spec
+        spec = resolve_agent(agent) if agent else app.state.agent_spec
         if spec is None:
             return {"error": f"unknown agent {agent!r}"}
         target = _connect_http_url(app.state.supervoice_url)
@@ -184,6 +184,20 @@ def build_app() -> FastAPI:
                     await ws.send_json(message)
             except WebSocketDisconnect:
                 pass
+
+    @app.websocket("/{_path:path}")
+    async def reject_unknown_ws(ws: WebSocket) -> None:
+        """Cleanly close any websocket that matches no real WS route.
+
+        The SPA is served by a ``StaticFiles`` mount at ``/`` (below), which
+        asserts an HTTP scope. A websocket on any unrouted path would otherwise
+        fall through to that mount and crash the ASGI app with ``AssertionError``.
+        Real WS routes (``/playground/events``) are declared above and still win;
+        this only catches strays (e.g. a misdirected audio socket — audio is
+        meant to hit supervoice's ``/ws/audio`` directly, not the harness).
+        """
+        logger.debug(f"[playground] closing unmatched websocket: {ws.url.path}")
+        await ws.close(code=1000)
 
     if _UI_DIST.exists():
         app.mount("/", StaticFiles(directory=_UI_DIST, html=True), name="ui")

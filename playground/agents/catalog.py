@@ -37,3 +37,15 @@ CATALOG: dict[str, AgentSpec] = {
 def get_agent(name: str) -> AgentSpec | None:
     """Return the catalog entry for ``name`` or ``None`` if unknown."""
     return CATALOG.get(name)
+
+
+def resolve_agent(identifier: str) -> AgentSpec | None:
+    """Return the catalog entry matching ``identifier`` by name or ``agent_id``.
+
+    The web UI sends a flow ``id`` (an ``agent_id``) while the catalog is keyed
+    by name, so accept either form to map a request back to its spec.
+    """
+    spec = CATALOG.get(identifier)
+    if spec is not None:
+        return spec
+    return next((s for s in CATALOG.values() if s.agent_id == identifier), None)

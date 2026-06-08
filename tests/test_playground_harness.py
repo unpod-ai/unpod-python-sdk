@@ -5,9 +5,12 @@ from __future__ import annotations
 from typing import Any, AsyncIterator
 
 import pytest
-from playground.agents.catalog import CATALOG, get_agent
+from playground.agents.catalog import CATALOG, get_agent, resolve_agent
+from playground.harness.api import build_app
 from playground.harness.control import ControlError, SessionRegistry
 from playground.harness.events import EventBus
+from starlette.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 from unpod import Session
 
 # --- EventBus -----------------------------------------------------------------
@@ -46,6 +49,23 @@ def test_catalog_has_faq_bot() -> None:
 
 def test_get_unknown_agent_returns_none() -> None:
     assert get_agent("nope") is None
+
+
+def test_resolve_agent_by_name() -> None:
+    spec = resolve_agent("faq_bot")
+    assert spec is not None
+    assert spec.agent_id == "playground-faq-bot"
+
+
+def test_resolve_agent_by_agent_id() -> None:
+    """The web UI sends the flow ``agent_id``, not the catalog name."""
+    spec = resolve_agent("playground-faq-bot")
+    assert spec is not None
+    assert spec.name == "faq_bot"
+
+
+def test_resolve_agent_unknown_returns_none() -> None:
+    assert resolve_agent("nope") is None
 
 
 # --- SessionRegistry / control ------------------------------------------------
@@ -140,3 +160,79 @@ def test_unregister_removes_session() -> None:
     registry.unregister("c1")
     with pytest.raises(ControlError):
         registry.resolve("c1")
+
+
+# --- App routing --------------------------------------------------------------
+
+
+@pytest.fixture
+def harness_app(monkeypatch: pytest.MonkeyPatch):
+    """Build the harness app with a dummy LLM key.
+
+    The lifespan builds an ``AgentRunner`` (which resolves an LLM at build time)
+    and starts a background task that sleeps before dialing supervoice — it is
+    cancelled on context exit, so no network is touched during the test.
+    """
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    return build_app()
+
+
+def test_events_websocket_streams_published_events(harness_app) -> None:
+    with TestClient(harness_app) as client:
+        with client.websocket_connect("/playground/events") as ws:
+            harness_app.state.bus.publish("ready", agent="faq_bot")
+            message = ws.receive_json()
+    assert message == {"type": "ready", "data": {"agent": "faq_bot"}}
+
+
+def test_unmatched_websocket_closes_cleanly(harness_app) -> None:
+    """Regression: a websocket on an unrouted path must close cleanly rather
+    than fall through to the SPA static mount and crash with ``AssertionError``
+    (StaticFiles asserts an HTTP scope)."""
+    with TestClient(harness_app) as client:
+        with pytest.raises(WebSocketDisconnect):
+            with client.websocket_connect("/ws/audio"):
+                pass
+
+
+def test_health_endpoint_ok(harness_app) -> None:
+    with TestClient(harness_app) as client:
+        resp = client.get("/health")
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "ok"}
+
+
+def test_create_session_resolves_agent_id_and_injects_ws_url(
+    harness_app, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: the UI sends the flow ``agent_id``; the session must resolve
+    it (not 'unknown agent') and return a ``ws_url`` so the browser never dials
+    ``/undefined``. The upstream supervoice ``/connect`` is stubbed."""
+
+    class _FakeResp:
+        def raise_for_status(self) -> None: ...
+
+        def json(self) -> dict[str, str]:
+            return {"session_id": "s1"}
+
+    class _FakeClient:
+        def __init__(self, *args: Any, **kwargs: Any) -> None: ...
+
+        async def __aenter__(self) -> "_FakeClient":
+            return self
+
+        async def __aexit__(self, *args: Any) -> bool:
+            return False
+
+        async def post(self, url: str, params: Any = None) -> _FakeResp:
+            return _FakeResp()
+
+    monkeypatch.setattr("playground.harness.api.httpx.AsyncClient", _FakeClient)
+    with TestClient(harness_app) as client:
+        resp = client.post("/playground/sessions?agent=playground-faq-bot")
+    body = resp.json()
+    assert "error" not in body
+    assert body["ws_url"].endswith("/ws/audio")
+    assert body["transport"] == "ws"
+    assert body["agent"] == "faq_bot"

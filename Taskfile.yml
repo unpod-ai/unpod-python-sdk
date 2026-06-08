@@ -223,7 +223,7 @@ tasks:
       PORT: '{{.PORT | default "9100"}}'
     cmds:
       - "lsof -ti tcp:{{.PORT}} | xargs kill -9 2>/dev/null || true"
-      - "{{.UV}} run python -m playground.run"
+      - "{{.UV}} run --extra playground python -m playground.run"
 
   pg-stop:
     desc: Stop the voice playground harness
@@ -250,4 +250,4 @@ tasks:
         SV_PID=$!
         echo "[pg-stack] supervoice-dev pid=$SV_PID on :9000 — waiting for boot…"
         sleep 2
-        {{.UV}} run python -m playground.run
+        {{.UV}} run --extra playground python -m playground.run
