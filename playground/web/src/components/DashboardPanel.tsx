@@ -133,7 +133,7 @@ export function DashboardPanel({ llmCalls, turnTimings, metrics, turns }: Props)
                 <th>User</th>
                 <th>Node</th>
                 <th>Agent</th>
-                <th>STT</th>
+                <th title="Speech-to-text latency (STT)">ASR</th>
                 <th>LLM</th>
                 <th>TTS</th>
                 <th>TTFA</th>
@@ -149,7 +149,7 @@ export function DashboardPanel({ llmCalls, turnTimings, metrics, turns }: Props)
                   turnCalls.length > 0
                     ? turnCalls.reduce((sum, call) => sum + call.latency_ms, 0)
                     : t.llm_total_ms ?? null;
-                const sttMs = t.stt_ms ?? t.asr_ms;
+                const asrMs = t.asr_ms ?? t.stt_ms;
                 const ttsMs = t.tts_ms ?? t.tts_ttfb_ms;
                 return (
                   <tr
@@ -176,7 +176,9 @@ export function DashboardPanel({ llmCalls, turnTimings, metrics, turns }: Props)
                           : t.agent_text
                         : "—"}
                     </td>
-                    <td>{sttMs != null ? `${sttMs.toFixed(0)}ms` : "—"}</td>
+                    <td title="Speech-to-text latency (STT)">
+                      {asrMs != null ? `${asrMs.toFixed(0)}ms` : "—"}
+                    </td>
                     <td>
                       {llmTotalMs != null
                         ? `${llmTotalMs.toFixed(0)}ms`
