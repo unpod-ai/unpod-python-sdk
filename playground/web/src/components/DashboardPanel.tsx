@@ -165,8 +165,8 @@ export function DashboardPanel({ llmCalls, turnTimings, metrics, turns }: Props)
                         : userText}
                     </td>
                     <td>
-                      {t.from_node != null || t.to_node != null
-                        ? `${t.from_node ?? "—"} → ${t.to_node ?? "—"}`
+                      {t.from_node || t.to_node
+                        ? `${t.from_node || "—"} → ${t.to_node || "—"}`
                         : "—"}
                     </td>
                     <td title={t.agent_text ?? "—"}>

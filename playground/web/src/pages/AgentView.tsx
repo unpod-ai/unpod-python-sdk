@@ -263,7 +263,21 @@ export function AgentView() {
         const next =
           idx === -1
             ? [...prev, incoming]
-            : prev.map((item) => (item.turn_id === incoming.turn_id ? incoming : item));
+            : prev.map((item) =>
+                item.turn_id === incoming.turn_id
+                  ? {
+                      ...item,
+                      ...incoming,
+                      // Preserve non-null node data — TurnMetricsEvent has null nodes
+                      from_node: incoming.from_node ?? item.from_node,
+                      to_node: incoming.to_node ?? item.to_node,
+                      // Keep higher llm count and total from either event
+                      llm_call_count:
+                        incoming.llm_call_count || item.llm_call_count,
+                      llm_total_ms: incoming.llm_total_ms ?? item.llm_total_ms,
+                    }
+                  : item,
+              );
         return next.length > 200 ? next.slice(-200) : next;
       });
     });
