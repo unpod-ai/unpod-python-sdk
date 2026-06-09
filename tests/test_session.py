@@ -271,3 +271,33 @@ async def test_session_fires_metric_hook():
     assert len(received) == 1
     assert received[0].ttfa_ms == 120
     assert received[0].turns == 2
+
+
+@pytest.mark.anyio
+async def test_session_wires_llm_callback_to_superdialog_adapter():
+    """Session registers _on_llm_complete on SuperDialogAdapter if present."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from unpod.adapters.superdialog import SuperDialogAdapter
+    from unpod.connectivity.session import Session
+
+    mock_dm = MagicMock()
+    mock_adapter = MagicMock()
+    mock_dm._adapter = mock_adapter
+    mock_dm.is_complete = False
+
+    sd_adapter = SuperDialogAdapter(mock_dm)
+
+    mock_bridge = AsyncMock()
+    mock_bridge.session_id = "sess-wire-test"
+
+    ctx = MagicMock()
+    ctx.call_id = "c1"
+    ctx.session_id = "sess-wire-test"
+
+    session = Session(ctx, mock_bridge)
+    session.dialog_machine = sd_adapter
+
+    # After setting dialog_machine, the LLM callback should be registered.
+    assert mock_adapter._on_llm_complete is not None
+

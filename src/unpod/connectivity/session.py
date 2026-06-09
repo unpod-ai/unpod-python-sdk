@@ -9,10 +9,12 @@ from unpod._protocol import (
     AgentSayVerb,
     AgentTextEndEvent,
     AgentTransferVerb,
+    TurnMetricsEvent,
 )
 from unpod.adapters.base import DialogAdapter
 from unpod.connectivity.hooks import HookRegistry
 from unpod.connectivity.metrics import MetricsTracker
+from unpod.observability import ObservabilityManager
 
 if TYPE_CHECKING:
     from unpod.connectivity.bridge import BridgeClient
@@ -36,13 +38,24 @@ class RecordingControl:
 class Session:
     """Per-call session object providing controls, hooks, and metrics."""
 
-    def __init__(self, bridge: BridgeClient) -> None:
-        self._bridge = bridge
+    def __init__(self, ctx: Any = None, bridge: BridgeClient | None = None) -> None:
+        if bridge is None:
+            self._bridge = ctx
+        else:
+            self._bridge = bridge
         self._hooks = HookRegistry()
         self._metrics = MetricsTracker()
         self._dialog_adapter: DialogAdapter | None = None
         self.data: dict[str, Any] = {}
-        self.recording = RecordingControl(bridge)
+        self.recording = RecordingControl(self._bridge)
+
+        async def _fire_hook(event_name: str, **kwargs: Any) -> None:
+            await self._hooks.fire(event_name, **kwargs)
+
+        self._obs = ObservabilityManager(
+            session_id=getattr(self._bridge, "session_id", "") or "",
+            fire_hook=_fire_hook,
+        )
 
     # --- Dialog machine property ---
 
@@ -65,6 +78,12 @@ class Session:
                 f"Expected DialogAdapter or superdialog.DialogMachine, "
                 f"got {type(value).__name__}"
             )
+
+        if hasattr(self._dialog_adapter, "register_llm_callback"):
+            async def _llm_cb(data: Any) -> None:
+                await self._obs.record_llm_call(data)
+
+            self._dialog_adapter.register_llm_callback(_llm_cb)
 
     # --- Hook decorator ---
 
@@ -142,20 +161,47 @@ class Session:
                     await self._hooks.fire("metric", event)
                     continue
 
+                if isinstance(event, TurnMetricsEvent):
+                    await self._obs.record_pipeline_scores(
+                        turn_id=event.turn_id,
+                        ttfa_ms=event.ttfa_ms,
+                        asr_ms=event.asr_ms,
+                        tts_ttfb_ms=event.tts_ttfb_ms,
+                        from_node=event.from_node,
+                        to_node=event.to_node,
+                        llm_call_count=self._obs._turn_llm_calls,
+                        llm_total_ms=(
+                            self._obs._turn_llm_total_ms
+                            if self._obs._turn_llm_total_ms > 0
+                            else None
+                        ),
+                    )
+                    continue
+
                 if isinstance(event, UserTextEvent):
                     text = event.text
                     await self._hooks.fire("user_turn", text)
                     if self._dialog_adapter is not None:
+                        turn_id = getattr(event, "turn_id", 0)
+                        self._obs.start_turn(turn_id, text)
                         full_text = ""
-                        async for chunk in self._dialog_adapter.stream(text):
-                            if chunk:
-                                full_text += chunk
-                                await self._bridge.send_verb(
-                                    AgentTextDeltaEvent(text=chunk)
-                                )
-                        await self._bridge.send_verb(AgentTextEndEvent())
-                        if full_text:
-                            await self._hooks.fire("agent_turn", full_text)
+                        try:
+                            async for chunk in self._dialog_adapter.stream(text):
+                                if chunk:
+                                    full_text += chunk
+                                    await self._bridge.send_verb(
+                                        AgentTextDeltaEvent(text=chunk)
+                                    )
+                            await self._bridge.send_verb(AgentTextEndEvent())
+                            if full_text:
+                                await self._hooks.fire("agent_turn", full_text)
+                        finally:
+                            state = getattr(self._dialog_adapter, "state", {}) or {}
+                            self._obs.end_turn(
+                                full_text,
+                                state.get("from_node", ""),
+                                state.get("node_id", ""),
+                            )
                         if (
                             hasattr(self._dialog_adapter, "is_complete")
                             and self._dialog_adapter.is_complete
