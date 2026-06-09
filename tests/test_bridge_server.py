@@ -59,6 +59,27 @@ async def test_handler_runs_entrypoint_with_call_started_context() -> None:
 
 
 @pytest.mark.anyio
+async def test_handler_advertises_turn_metrics() -> None:
+    """The bridge hello must advertise turn.metrics so workers emit per-turn traces."""
+    async def entrypoint(ctx) -> None:  # type: ignore[no-untyped-def]
+        pass
+
+    ws = _FakeWS(
+        inbound=[
+            '{"event":"hello.ack","negotiated_events":[],"negotiated_verbs":[],'
+            '"call_id":"s1","session_id":"s1","job_id":"j1","room_id":"s1"}',
+            '{"event":"call.started","session_id":"s1","job_id":"j1",'
+            '"room_id":"s1","metadata":{}}',
+        ]
+    )
+
+    await handle_bridge_connection(ws, entrypoint=entrypoint, agent_id="ag-x")
+
+    hello = next(raw for raw in ws.sent if '"event":"hello"' in raw)
+    assert '"turn.metrics"' in hello
+
+
+@pytest.mark.anyio
 async def test_handler_skips_when_verify_returns_false() -> None:
     called = {"entrypoint": False}
 

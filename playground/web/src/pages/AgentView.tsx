@@ -49,6 +49,14 @@ function describe(type: string, d: Record<string, unknown>): string {
       return `"${d.text ?? ""}"`;
     case "agent_turn":
       return `"${d.text ?? ""}"`;
+    case "llm_call":
+      return `T${d.turn_id ?? "?"} ${d.node_id ?? "?"} ${d.call_type ?? "call"} · ${
+        d.latency_ms ?? "—"
+      }ms`;
+    case "turn_complete":
+      return `T${d.turn_id ?? "?"} ${d.from_node ?? "?"} → ${
+        d.to_node ?? "?"
+      } · ttfa=${d.ttfa_ms ?? "—"}ms`;
     case "metric":
       return `ttfa=${d.ttfa_ms ?? "—"}ms turns=${d.turns ?? 0} cost=$${d.cost_usd_so_far ?? 0}`;
     case "interruption":
@@ -364,6 +372,7 @@ export function AgentView() {
               llmCalls={llmCalls}
               turnTimings={turnTimings}
               metrics={metrics}
+              turns={turns}
             />
           ) : tab === "conversation" ? (
             <ConversationPanel turns={turns} appState={appState} />

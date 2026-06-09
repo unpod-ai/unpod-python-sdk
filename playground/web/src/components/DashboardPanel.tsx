@@ -1,11 +1,17 @@
 import { useState } from "react";
 
-import type { LLMCallEvent, MetricSnapshot, TurnCompleteEvent } from "../types";
+import type {
+  LLMCallEvent,
+  MetricSnapshot,
+  Turn,
+  TurnCompleteEvent,
+} from "../types";
 
 interface Props {
   llmCalls: LLMCallEvent[];
   turnTimings: TurnCompleteEvent[];
   metrics: MetricSnapshot;
+  turns: Turn[];
 }
 
 function PipelineBar({ turn }: { turn: TurnCompleteEvent }) {
@@ -76,12 +82,17 @@ function LLMCallCard({ call }: { call: LLMCallEvent }) {
   );
 }
 
-export function DashboardPanel({ llmCalls, turnTimings, metrics }: Props) {
+export function DashboardPanel({ llmCalls, turnTimings, metrics, turns }: Props) {
   const [selectedTurn, setSelectedTurn] = useState<number | null>(null);
   const selected =
     turnTimings.find((t) => t.turn_id === selectedTurn) ??
     turnTimings[turnTimings.length - 1] ??
     null;
+  const userTurns = turns.filter((turn) => turn.role === "user");
+  const userTextForTurn = (turnId: number): string => {
+    const userTurn = userTurns[turnId - 1];
+    return userTurn?.text ?? "—";
+  };
 
   return (
     <div className="dashboard-panel">
@@ -117,10 +128,12 @@ export function DashboardPanel({ llmCalls, turnTimings, metrics }: Props) {
             <thead>
               <tr>
                 <th>#</th>
+                <th>User</th>
                 <th>Node</th>
                 <th>ASR</th>
                 <th>LLM</th>
                 <th>TTFA</th>
+                <th>Calls</th>
               </tr>
             </thead>
             <tbody>
@@ -132,12 +145,22 @@ export function DashboardPanel({ llmCalls, turnTimings, metrics }: Props) {
                   style={{ cursor: "pointer" }}
                 >
                   <td>{t.turn_id}</td>
-                  <td>{t.to_node ?? "—"}</td>
+                  <td title={userTextForTurn(t.turn_id)}>
+                    {userTextForTurn(t.turn_id).length > 28
+                      ? `${userTextForTurn(t.turn_id).slice(0, 28)}…`
+                      : userTextForTurn(t.turn_id)}
+                  </td>
+                  <td>
+                    {t.from_node != null || t.to_node != null
+                      ? `${t.from_node ?? "—"} → ${t.to_node ?? "—"}`
+                      : "—"}
+                  </td>
                   <td>{t.asr_ms != null ? `${t.asr_ms.toFixed(0)}ms` : "—"}</td>
                   <td>
                     {t.llm_total_ms != null ? `${t.llm_total_ms.toFixed(0)}ms` : "—"}
                   </td>
                   <td>{t.ttfa_ms != null ? `${t.ttfa_ms.toFixed(0)}ms` : "—"}</td>
+                  <td>{t.llm_call_count}</td>
                 </tr>
               ))}
             </tbody>
@@ -167,8 +190,17 @@ export function DashboardPanel({ llmCalls, turnTimings, metrics }: Props) {
         </div>
       )}
 
-      {llmCalls.length === 0 && turnTimings.length === 0 && (
-        <div className="dashboard-empty">No data yet — start a call.</div>
+      {turnTimings.length === 0 && llmCalls.length === 0 && (
+        <div className="dashboard-empty">
+          No trace events yet. Start a call to see turn_complete and llm_call data.
+        </div>
+      )}
+
+      {metrics.turns > 0 && turnTimings.length === 0 && (
+        <div className="dashboard-empty">
+          Metrics are coming through, but no per-turn trace events have arrived
+          yet. Check the backend turn_complete / llm_call wiring.
+        </div>
       )}
     </div>
   );

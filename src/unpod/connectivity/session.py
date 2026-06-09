@@ -46,6 +46,7 @@ class Session:
         self._hooks = HookRegistry()
         self._metrics = MetricsTracker()
         self._dialog_adapter: DialogAdapter | None = None
+        self._turn_counter = 0
         self.data: dict[str, Any] = {}
         self.recording = RecordingControl(self._bridge)
 
@@ -181,8 +182,9 @@ class Session:
                 if isinstance(event, UserTextEvent):
                     text = event.text
                     await self._hooks.fire("user_turn", text)
+                    self._turn_counter += 1
                     if self._dialog_adapter is not None:
-                        turn_id = getattr(event, "turn_id", 0)
+                        turn_id = self._turn_counter
                         self._obs.start_turn(turn_id, text)
                         full_text = ""
                         try:
