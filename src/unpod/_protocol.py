@@ -153,6 +153,21 @@ class MetricEvent(BaseModel):
     cost_usd_so_far: float | None = None
 
 
+class TurnMetricsEvent(BaseModel):
+    """Pipeline timing snapshot for one completed turn."""
+
+    event: Literal["turn.metrics"] = "turn.metrics"
+    call_id: str = ""
+    turn_id: int = 0
+    ttfa_ms: float | None = None
+    asr_ms: float | None = None
+    tts_ttfb_ms: float | None = None
+    llm_call_count: int = 0
+    llm_total_ms: float | None = None
+    from_node: str | None = None
+    to_node: str | None = None
+
+
 # -- Downstream (session -> bridge) --
 
 
@@ -266,6 +281,7 @@ BridgeEvent = Union[
     UserInterruptEvent,
     ErrorEvent,
     MetricEvent,
+    TurnMetricsEvent,
     AgentTextDeltaEvent,
     AgentTextEndEvent,
     AgentSayVerb,
@@ -285,6 +301,7 @@ _BRIDGE_EVENT_MAP: dict[str, type[BaseModel]] = {
     "user.interrupted": UserInterruptEvent,
     "error": ErrorEvent,
     "metric": MetricEvent,
+    "turn.metrics": TurnMetricsEvent,
     "agent.text.delta": AgentTextDeltaEvent,
     "agent.text.end": AgentTextEndEvent,
     "agent.say": AgentSayVerb,

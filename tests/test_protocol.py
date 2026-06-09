@@ -171,3 +171,12 @@ def test_bridge_frames_use_event_discriminator() -> None:
     dumped = hello.model_dump()
     assert dumped["event"] == "hello" and "type" not in dumped
     assert isinstance(parse_bridge_event(hello.model_dump_json()), HelloEvent)
+
+
+def test_turn_metrics_event_parse():
+    from unpod._protocol import TurnMetricsEvent, parse_bridge_event
+    evt = TurnMetricsEvent(turn_id=2, ttfa_ms=1500.0, from_node="greet")
+    # parse_bridge_event takes a JSON string
+    parsed = parse_bridge_event(evt.model_dump_json())
+    assert isinstance(parsed, TurnMetricsEvent)
+    assert parsed.ttfa_ms == 1500.0

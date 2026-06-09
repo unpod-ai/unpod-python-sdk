@@ -239,8 +239,8 @@
           "target_node_id": "ask_yob"
         }
       ],
-      "interruptible": false,
-      "auto_proceed": true,
+      "interruptible": true,
+      "auto_proceed": false,
       "node_type": "instruction"
     },
     {

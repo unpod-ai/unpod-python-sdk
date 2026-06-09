@@ -18,6 +18,8 @@ VALID_EVENTS: frozenset[str] = frozenset(
         "metric",
         "call_end",
         "error",
+        "llm_call",
+        "turn_complete",
     }
 )
 

@@ -21,6 +21,7 @@ Documentation = "https://github.com/unpod-ai/unpod-python-sdk/tree/main/docs"
 Repository = "https://github.com/unpod-ai/unpod-python-sdk"
 
 [project.optional-dependencies]
+observability = ["langfuse>=2.0"]
 dialog = ["superdialog>=0.2,<0.3"]
 langchain = ["langchain-core>=0.3"]
 mcp = ["mcp>=0.9"]

@@ -44,6 +44,12 @@ class SuperDialogAdapter:
         """Whether the dialog has reached a terminal state."""
         return self._dm.is_complete  # type: ignore[no-any-return]
 
+    def register_llm_callback(self, fn: Any) -> None:
+        """Register _on_llm_complete on the underlying ToolCallAdapter. No-op if not available."""
+        _adapter = getattr(self._dm, "_adapter", None)
+        if _adapter is not None and hasattr(_adapter, "_on_llm_complete"):
+            _adapter._on_llm_complete = fn
+
     @property
     def state(self) -> dict:
         """Current dialog state snapshot."""

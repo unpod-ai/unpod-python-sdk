@@ -402,6 +402,141 @@ body {
 }
 .metric-card__hint { font-size: 11px; color: var(--muted); margin-top: 2px; }
 
+/* ── Trace dashboard ───────────────────────────────────────────────────── */
+
+.dashboard-panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.dashboard-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+.dashboard-summary span {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.dashboard-summary b {
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.dashboard-section {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.dashboard-section-title {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+.turn-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.turn-table th,
+.turn-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+.turn-table th {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.turn-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+.turn-table tbody tr.selected {
+  background: var(--accent-soft);
+}
+.pipeline-bar-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border-top: 1px solid var(--border);
+}
+.pipeline-bar-label {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  font-family: var(--mono);
+}
+.llm-call-card {
+  margin: 12px;
+  padding: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.llm-call-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text);
+}
+.llm-call-model {
+  color: var(--muted);
+  font-family: var(--mono);
+}
+.llm-call-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.llm-call-actions button {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.llm-call-actions button:hover { border-color: var(--accent); }
+.llm-call-json {
+  margin-top: 10px;
+  padding: 12px;
+  background: #050509;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-x: auto;
+}
+.dashboard-empty {
+  padding: 32px 18px;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+
 /* ── Status panel ──────────────────────────────────────────────────────── */
 
 .status {

@@ -16,6 +16,30 @@ export interface MetricSnapshot {
   cost_usd_so_far: number | null;
 }
 
+export interface LLMCallEvent {
+  turn_id: number;
+  node_id: string;
+  model: string;
+  call_type: "routing" | "generate_reply";
+  latency_ms: number;
+  tokens_in: number;
+  tokens_out: number;
+  prompt_messages: unknown[];
+  response_json: unknown;
+  edge_id: string | null;
+}
+
+export interface TurnCompleteEvent {
+  turn_id: number;
+  from_node: string | null;
+  to_node: string | null;
+  ttfa_ms: number | null;
+  asr_ms: number | null;
+  tts_ttfb_ms: number | null;
+  llm_call_count: number;
+  llm_total_ms: number | null;
+}
+
 export interface LogEntry {
   id: number;
   time: string;

@@ -76,6 +76,17 @@ def test_invalid_event_raises() -> None:
             pass
 
 
+def test_llm_call_and_turn_complete_are_valid_events():
+    from unpod.connectivity.hooks import HookRegistry
+    registry = HookRegistry()
+
+    async def _noop(**kwargs): pass
+
+    # Should not raise ValueError
+    registry.on("llm_call")(_noop)
+    registry.on("turn_complete")(_noop)
+
+
 def test_metrics_tracker() -> None:
     from unpod.connectivity.metrics import MetricsTracker
 

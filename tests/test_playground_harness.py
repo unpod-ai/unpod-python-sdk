@@ -174,6 +174,7 @@ def harness_app(monkeypatch: pytest.MonkeyPatch):
     cancelled on context exit, so no network is touched during the test.
     """
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("AGENT_NAME", "flows")
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     return build_app()
 
@@ -309,3 +310,14 @@ def test_switch_flow_on_non_flow_agent_raises_control_error(
 
     with pytest.raises(ControlError):
         registry.apply("c1", "switch_flow", {"flow": "anything"})
+
+
+def test_runner_registers_llm_call_and_turn_complete_hooks():
+    """runner.py entrypoint registers llm_call + turn_complete event forwarding."""
+    import inspect
+    import playground.harness.runner as runner_mod
+
+    # Check the source registers these events:
+    src = inspect.getsource(runner_mod)
+    assert '"llm_call"' in src or "'llm_call'" in src
+    assert '"turn_complete"' in src or "'turn_complete'" in src

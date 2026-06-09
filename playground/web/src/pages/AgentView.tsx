@@ -11,6 +11,7 @@ import {
 import { SupervoiceClient } from "../client/SupervoiceClient";
 import { SupervoiceWSTransport } from "../transport/SupervoiceWSTransport";
 import { BotAudioPanel } from "../components/BotAudioPanel";
+import { DashboardPanel } from "../components/DashboardPanel";
 import { ConversationPanel } from "../components/ConversationPanel";
 import { MetricsPanel } from "../components/MetricsPanel";
 import { Sidebar } from "../components/Sidebar";
@@ -21,13 +22,15 @@ import {
   clockTime,
   EMPTY_METRICS,
   type AppState,
+  type LLMCallEvent,
   type LogEntry,
   type MetricSnapshot,
   type SessionInfo,
+  type TurnCompleteEvent,
   type Turn,
 } from "../types";
 
-type Tab = "conversation" | "metrics";
+type Tab = "conversation" | "metrics" | "trace";
 
 const num = (v: unknown): number | null => (typeof v === "number" ? v : null);
 
@@ -73,6 +76,8 @@ export function AgentView() {
 
   const [turns, setTurns] = useState<Turn[]>([]);
   const [metrics, setMetrics] = useState<MetricSnapshot>(EMPTY_METRICS);
+  const [llmCalls, setLlmCalls] = useState<LLMCallEvent[]>([]);
+  const [turnTimings, setTurnTimings] = useState<TurnCompleteEvent[]>([]);
   const [events, setEvents] = useState<LogEntry[]>([]);
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [agentReady, setAgentReady] = useState(false);
@@ -161,6 +166,8 @@ export function AgentView() {
     setAppState("connecting");
     setTurns([]);
     setMetrics(EMPTY_METRICS);
+    setLlmCalls([]);
+    setTurnTimings([]);
     setEvents([]);
     setSession(null);
     setAgentReady(false);
@@ -235,6 +242,18 @@ export function AgentView() {
         cost_usd_so_far: num(d.cost_usd_so_far),
       }),
     );
+    client.on("llm_call", (d) => {
+      setLlmCalls((prev) => {
+        const next = [...prev, d as unknown as LLMCallEvent];
+        return next.length > 500 ? next.slice(-500) : next;
+      });
+    });
+    client.on("turn_complete", (d) => {
+      setTurnTimings((prev) => {
+        const next = [...prev, d as unknown as TurnCompleteEvent];
+        return next.length > 200 ? next.slice(-200) : next;
+      });
+    });
     client.on("error", (d) => {
       addTurn("system", `Error: ${String(d.message ?? "unknown")}`);
       setAppState("idle");
@@ -333,8 +352,20 @@ export function AgentView() {
             >
               Metrics
             </button>
+            <button
+              className={`tab${tab === "trace" ? " tab--active" : ""}`}
+              onClick={() => setTab("trace")}
+            >
+              Trace
+            </button>
           </div>
-          {tab === "conversation" ? (
+          {tab === "trace" ? (
+            <DashboardPanel
+              llmCalls={llmCalls}
+              turnTimings={turnTimings}
+              metrics={metrics}
+            />
+          ) : tab === "conversation" ? (
             <ConversationPanel turns={turns} appState={appState} />
           ) : (
             <MetricsPanel metrics={metrics} />

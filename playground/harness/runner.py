@@ -83,6 +83,14 @@ def build_runner(
             bus.publish("agent_turn", text=text)
             _publish_flow_node(bus, ctx)
 
+        @ctx.session.on("llm_call")
+        async def _on_llm_call(**data: Any) -> None:
+            bus.publish("llm_call", **data)
+
+        @ctx.session.on("turn_complete")
+        async def _on_turn_complete(**data: Any) -> None:
+            bus.publish("turn_complete", **data)
+
         @ctx.session.on("error")
         async def _on_error(
             code: str, message: str, severity: str, source: str

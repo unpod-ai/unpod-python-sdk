@@ -86,3 +86,20 @@ def test_superdialog_adapter_state():
     mock_dm.state = {"node_id": "greeting", "slots": {}}
     adapter = SuperDialogAdapter(mock_dm)
     assert adapter.state == {"node_id": "greeting", "slots": {}}
+
+
+def test_register_llm_callback_propagates():
+    from unpod.adapters.superdialog import SuperDialogAdapter
+
+    mock_dm = MagicMock()
+    mock_adapter = MagicMock()
+    # MagicMock auto-creates _on_llm_complete, so set it explicitly
+    mock_adapter._on_llm_complete = None
+    mock_dm._adapter = mock_adapter
+    adapter = SuperDialogAdapter(mock_dm)
+
+    async def _cb(data):
+        pass
+
+    adapter.register_llm_callback(_cb)
+    assert mock_adapter._on_llm_complete is _cb

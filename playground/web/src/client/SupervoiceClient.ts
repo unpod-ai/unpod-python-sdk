@@ -21,6 +21,8 @@ export type SupervoiceEvent =
   | "error"
   | "user_turn"
   | "agent_turn"
+  | "llm_call"
+  | "turn_complete"
   | "metric"
   | "interruption"
   | "flow_node_changed"
