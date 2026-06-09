@@ -301,3 +301,43 @@ async def test_session_wires_llm_callback_to_superdialog_adapter():
     # After setting dialog_machine, the LLM callback should be registered.
     assert mock_adapter._on_llm_complete is not None
 
+
+@pytest.mark.anyio
+async def test_session_emits_turn_complete_without_turn_metrics_event() -> None:
+    """A completed turn still emits turn_complete if turn.metrics never arrives."""
+    from unpod._protocol import UserTextEvent
+
+    received: list[dict[str, object]] = []
+
+    class FakeAdapter:
+        is_complete = False
+
+        async def turn(self, text: str, context: dict | None = None) -> str:
+            return "ok"
+
+        async def stream(self, text: str, context: dict | None = None):  # type: ignore[override]
+            yield "hello"
+
+        def assist(self, text: str) -> None:
+            pass
+
+    mock_bridge = AsyncMock()
+    mock_bridge.recv_event = AsyncMock(
+        side_effect=[
+            UserTextEvent(text="hi", is_final=True),
+            Exception("done"),
+        ]
+    )
+    mock_bridge.send_verb = AsyncMock()
+
+    session = Session(bridge=mock_bridge)
+    session.dialog_machine = FakeAdapter()
+
+    @session.on("turn_complete")
+    async def _(**data: object) -> None:
+        received.append(data)
+
+    await session.run()
+
+    assert len(received) == 1
+    assert received[0]["turn_id"] == 1

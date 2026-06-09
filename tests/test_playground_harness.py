@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any, AsyncIterator
+from unittest.mock import MagicMock
 
 import pytest
 from playground.agents.catalog import CATALOG, get_agent, resolve_agent
@@ -160,6 +161,81 @@ def test_unregister_removes_session() -> None:
     registry.unregister("c1")
     with pytest.raises(ControlError):
         registry.resolve("c1")
+
+
+@pytest.mark.anyio
+async def test_runner_registers_dialog_machine_before_machine_start(monkeypatch):
+    """The runner must attach the session callback before machine.start()."""
+    from playground.harness import runner as runner_mod
+
+    class FakeMachine:
+        def __init__(self) -> None:
+            self.start_seen_registration = False
+            self._adapter = MagicMock()
+            self._adapter._on_llm_complete = None
+            self.state = {"node_id": "greeting"}
+
+        async def start(self):
+            assert self.start_seen_registration is True
+            return MagicMock(text="")
+
+    class FakeSession:
+        def __init__(self) -> None:
+            self._dialog_machine = None
+            self.registered = False
+            self._hooks = {}
+
+        @property
+        def dialog_machine(self):
+            return self._dialog_machine
+
+        @dialog_machine.setter
+        def dialog_machine(self, value):
+            self._dialog_machine = value
+            self.registered = True
+            value.start_seen_registration = True
+
+        def on(self, event):
+            def decorator(fn):
+                self._hooks[event] = fn
+                return fn
+
+            return decorator
+
+        async def run(self):
+            return None
+
+        async def say(self, text):
+            return None
+
+    class FakeCtx:
+        def __init__(self):
+            self.call_id = "c1"
+            self.session = FakeSession()
+
+    class FakeRunner:
+        def __init__(self, *, entrypoint, **kwargs):
+            self.entrypoint = entrypoint
+
+    spec = MagicMock()
+    spec.agent_id = "a1"
+    spec.name = "agent"
+    spec.description = "desc"
+    spec.build = MagicMock(return_value=FakeMachine())
+    bus = MagicMock()
+    registry = MagicMock()
+    monkeypatch.setattr(runner_mod, "AgentRunner", FakeRunner)
+
+    runner = runner_mod.build_runner(
+        spec,
+        bus,
+        registry,
+        base_url="ws://x",
+        api_key="k",
+    )
+
+    await runner.entrypoint(FakeCtx())
+    assert spec.build.called
 
 
 # --- App routing --------------------------------------------------------------

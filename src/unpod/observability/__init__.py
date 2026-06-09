@@ -27,6 +27,8 @@ class ObservabilityManager:
         self._current_turn_id: int | None = None
         self._current_span: Any = None
         self._turn_start_t: float | None = None
+        self._current_user_text: str = ""
+        self._current_agent_text: str = ""
         self._turn_llm_calls: int = 0
         self._turn_llm_total_ms: float = 0.0
 
@@ -44,6 +46,8 @@ class ObservabilityManager:
         """Open a Langfuse span for this turn."""
         self._current_turn_id = turn_id
         self._turn_start_t = time.monotonic()
+        self._current_user_text = user_text
+        self._current_agent_text = ""
         self._turn_llm_calls = 0
         self._turn_llm_total_ms = 0.0
 
@@ -102,6 +106,7 @@ class ObservabilityManager:
 
     def end_turn(self, agent_text: str, from_node: str, to_node: str) -> None:
         """Close the Langfuse span with output fields."""
+        self._current_agent_text = agent_text
         if self._current_span is not None:
             try:
                 self._current_span.__exit__(None, None, None)
@@ -131,8 +136,12 @@ class ObservabilityManager:
                 ttfa_ms=ttfa_ms,
                 asr_ms=asr_ms,
                 tts_ttfb_ms=tts_ttfb_ms,
+                stt_ms=asr_ms,
+                tts_ms=tts_ttfb_ms,
                 from_node=from_node,
                 to_node=to_node,
                 llm_call_count=llm_call_count,
                 llm_total_ms=llm_total_ms,
+                user_text=self._current_user_text,
+                agent_text=self._current_agent_text,
             )

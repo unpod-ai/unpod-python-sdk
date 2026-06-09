@@ -25,3 +25,7 @@ dist/
 
 # Node (browser examples / playground web UI)
 node_modules/
+
+# Generated superpowers docs
+.superpowers/
+docs/superpowers/

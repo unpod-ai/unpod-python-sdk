@@ -56,7 +56,7 @@ function describe(type: string, d: Record<string, unknown>): string {
     case "turn_complete":
       return `T${d.turn_id ?? "?"} ${d.from_node ?? "?"} → ${
         d.to_node ?? "?"
-      } · ttfa=${d.ttfa_ms ?? "—"}ms`;
+      } · ttfa=${d.ttfa_ms ?? "—"}ms · ${String(d.agent_text ?? "").slice(0, 32)}`;
     case "metric":
       return `ttfa=${d.ttfa_ms ?? "—"}ms turns=${d.turns ?? 0} cost=$${d.cost_usd_so_far ?? 0}`;
     case "interruption":
@@ -258,7 +258,12 @@ export function AgentView() {
     });
     client.on("turn_complete", (d) => {
       setTurnTimings((prev) => {
-        const next = [...prev, d as unknown as TurnCompleteEvent];
+        const incoming = d as unknown as TurnCompleteEvent;
+        const idx = prev.findIndex((item) => item.turn_id === incoming.turn_id);
+        const next =
+          idx === -1
+            ? [...prev, incoming]
+            : prev.map((item) => (item.turn_id === incoming.turn_id ? incoming : item));
         return next.length > 200 ? next.slice(-200) : next;
       });
     });

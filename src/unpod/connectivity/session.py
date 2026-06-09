@@ -47,6 +47,7 @@ class Session:
         self._metrics = MetricsTracker()
         self._dialog_adapter: DialogAdapter | None = None
         self._turn_counter = 0
+        self._last_metric_event: Any | None = None
         self.data: dict[str, Any] = {}
         self.recording = RecordingControl(self._bridge)
 
@@ -159,6 +160,7 @@ class Session:
                 from unpod._protocol import MetricEvent
 
                 if isinstance(event, MetricEvent):
+                    self._last_metric_event = event
                     await self._hooks.fire("metric", event)
                     continue
 
@@ -203,6 +205,25 @@ class Session:
                                 full_text,
                                 state.get("from_node", ""),
                                 state.get("node_id", ""),
+                            )
+                            last_metric = self._last_metric_event
+                            await self._obs.record_pipeline_scores(
+                                turn_id=turn_id,
+                                ttfa_ms=(
+                                    last_metric.ttfa_ms
+                                    if last_metric is not None
+                                    else None
+                                ),
+                                asr_ms=None,
+                                tts_ttfb_ms=None,
+                                from_node=state.get("from_node", ""),
+                                to_node=state.get("node_id", ""),
+                                llm_call_count=self._obs._turn_llm_calls,
+                                llm_total_ms=(
+                                    self._obs._turn_llm_total_ms
+                                    if self._obs._turn_llm_total_ms > 0
+                                    else None
+                                ),
                             )
                         if (
                             hasattr(self._dialog_adapter, "is_complete")

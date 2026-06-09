@@ -54,6 +54,8 @@ def build_runner(
 
     async def entrypoint(ctx: CallContext) -> None:
         machine = spec.build(model)
+        ctx.session.dialog_machine = machine
+        registry.register(ctx.call_id, ctx.session)
 
         # DialogMachine: generate + speak the opening turn before the session loop.
         # LLMAgent has no start(), so this branch is skipped for plain LLM agents.
@@ -65,9 +67,6 @@ def build_runner(
                     bus.publish("agent_turn", text=turn.text)
             except Exception:
                 pass
-
-        ctx.session.dialog_machine = machine
-        registry.register(ctx.call_id, ctx.session)
 
         @ctx.session.on("call_start")
         async def _on_start() -> None:

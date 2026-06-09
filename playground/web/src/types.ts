@@ -33,6 +33,10 @@ export interface TurnCompleteEvent {
   turn_id: number;
   from_node: string | null;
   to_node: string | null;
+  user_text?: string;
+  agent_text?: string;
+  stt_ms?: number | null;
+  tts_ms?: number | null;
   ttfa_ms: number | null;
   asr_ms: number | null;
   tts_ttfb_ms: number | null;

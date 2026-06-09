@@ -93,6 +93,8 @@ export function DashboardPanel({ llmCalls, turnTimings, metrics, turns }: Props)
     const userTurn = userTurns[turnId - 1];
     return userTurn?.text ?? "—";
   };
+  const callsForTurn = (turnId: number) =>
+    llmCalls.filter((call) => call.turn_id === turnId);
 
   return (
     <div className="dashboard-panel">
@@ -130,39 +132,62 @@ export function DashboardPanel({ llmCalls, turnTimings, metrics, turns }: Props)
                 <th>#</th>
                 <th>User</th>
                 <th>Node</th>
-                <th>ASR</th>
+                <th>Agent</th>
+                <th>STT</th>
                 <th>LLM</th>
+                <th>TTS</th>
                 <th>TTFA</th>
                 <th>Calls</th>
               </tr>
             </thead>
             <tbody>
-              {turnTimings.map((t) => (
-                <tr
-                  key={t.turn_id}
-                  className={t.turn_id === selectedTurn ? "selected" : ""}
-                  onClick={() => setSelectedTurn(t.turn_id)}
-                  style={{ cursor: "pointer" }}
-                >
-                  <td>{t.turn_id}</td>
-                  <td title={userTextForTurn(t.turn_id)}>
-                    {userTextForTurn(t.turn_id).length > 28
-                      ? `${userTextForTurn(t.turn_id).slice(0, 28)}…`
-                      : userTextForTurn(t.turn_id)}
-                  </td>
-                  <td>
-                    {t.from_node != null || t.to_node != null
-                      ? `${t.from_node ?? "—"} → ${t.to_node ?? "—"}`
-                      : "—"}
-                  </td>
-                  <td>{t.asr_ms != null ? `${t.asr_ms.toFixed(0)}ms` : "—"}</td>
-                  <td>
-                    {t.llm_total_ms != null ? `${t.llm_total_ms.toFixed(0)}ms` : "—"}
-                  </td>
-                  <td>{t.ttfa_ms != null ? `${t.ttfa_ms.toFixed(0)}ms` : "—"}</td>
-                  <td>{t.llm_call_count}</td>
-                </tr>
-              ))}
+              {turnTimings.map((t) => {
+                const userText = t.user_text ?? userTextForTurn(t.turn_id);
+                const turnCalls = callsForTurn(t.turn_id);
+                const llmCount = turnCalls.length || t.llm_call_count || 0;
+                const llmTotalMs =
+                  turnCalls.length > 0
+                    ? turnCalls.reduce((sum, call) => sum + call.latency_ms, 0)
+                    : t.llm_total_ms ?? null;
+                const sttMs = t.stt_ms ?? t.asr_ms;
+                const ttsMs = t.tts_ms ?? t.tts_ttfb_ms;
+                return (
+                  <tr
+                    key={t.turn_id}
+                    className={t.turn_id === selectedTurn ? "selected" : ""}
+                    onClick={() => setSelectedTurn(t.turn_id)}
+                    style={{ cursor: "pointer" }}
+                  >
+                    <td>{t.turn_id}</td>
+                    <td title={userText}>
+                      {userText.length > 28
+                        ? `${userText.slice(0, 28)}…`
+                        : userText}
+                    </td>
+                    <td>
+                      {t.from_node != null || t.to_node != null
+                        ? `${t.from_node ?? "—"} → ${t.to_node ?? "—"}`
+                        : "—"}
+                    </td>
+                    <td title={t.agent_text ?? "—"}>
+                      {t.agent_text
+                        ? t.agent_text.length > 32
+                          ? `${t.agent_text.slice(0, 32)}…`
+                          : t.agent_text
+                        : "—"}
+                    </td>
+                    <td>{sttMs != null ? `${sttMs.toFixed(0)}ms` : "—"}</td>
+                    <td>
+                      {llmTotalMs != null
+                        ? `${llmTotalMs.toFixed(0)}ms`
+                        : "—"}
+                    </td>
+                    <td>{ttsMs != null ? `${ttsMs.toFixed(0)}ms` : "—"}</td>
+                    <td>{t.ttfa_ms != null ? `${t.ttfa_ms.toFixed(0)}ms` : "—"}</td>
+                    <td>{llmCount}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
           {selected && (
