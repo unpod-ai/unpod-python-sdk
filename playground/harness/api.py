@@ -128,7 +128,7 @@ def build_app() -> FastAPI:
 
     @app.get("/playground/config")
     async def get_config() -> dict[str, Any]:
-        llm = "claude-3-haiku" if os.getenv("ANTHROPIC_API_KEY") else "gpt-4o-mini"
+        llm = "claude-3-haiku" if os.getenv("ANTHROPIC_API_KEY") else "gpt-4.1-mini"
         voice_profiles: list[dict[str, Any]] = []
         try:
             base = _http_base_url(app.state.supervoice_url)

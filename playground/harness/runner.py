@@ -21,7 +21,7 @@ from unpod import AgentRunner, CallContext
 def pick_llm() -> str:
     """Resolve an LLM URI from the environment (OpenAI preferred, then Claude)."""
     if os.getenv("OPENAI_API_KEY"):
-        return "openai/gpt-4o-mini"
+        return "openai/gpt-4.1-mini"
     if os.getenv("ANTHROPIC_API_KEY"):
         return "anthropic/claude-haiku-4-5-20251001"
     raise RuntimeError("No LLM API key found. Set OPENAI_API_KEY or ANTHROPIC_API_KEY.")
@@ -53,7 +53,20 @@ def build_runner(
     model = llm or pick_llm()
 
     async def entrypoint(ctx: CallContext) -> None:
-        ctx.session.dialog_machine = spec.build(model)
+        machine = spec.build(model)
+
+        # DialogMachine: generate + speak the opening turn before the session loop.
+        # LLMAgent has no start(), so this branch is skipped for plain LLM agents.
+        if hasattr(machine, "start"):
+            try:
+                turn = await machine.start()
+                if turn and turn.text:
+                    await ctx.session.say(turn.text)
+                    bus.publish("agent_turn", text=turn.text)
+            except Exception:
+                pass
+
+        ctx.session.dialog_machine = machine
         registry.register(ctx.call_id, ctx.session)
 
         @ctx.session.on("call_start")

@@ -88,6 +88,8 @@ export function AgentView() {
   const flowsDefaultRef = useRef("");
   const activeFlowRef = useRef(""); // current selection, read at switch/ready time
   const connectingRef = useRef(false); // synchronous re-entrancy guard
+  const pendingAgentQueue = useRef<Array<{ text: string; shown: boolean }>>([]);
+  const botWasSpeaking = useRef(false);
 
   useEffect(() => {
     Promise.all([fetchConfig(), fetchFlows()])
@@ -166,6 +168,8 @@ export function AgentView() {
     setSwitchNote(null);
     setMicLevel(0);
     setBotLevel(0);
+    pendingAgentQueue.current = [];
+    botWasSpeaking.current = false;
 
     const transport = new SupervoiceWSTransport(undefined, selectedVoiceProfile);
     const client = new SupervoiceClient({ transport });
@@ -173,7 +177,20 @@ export function AgentView() {
 
     client.onAny(pushEvent);
     client.onMicLevel((l) => setMicLevel((cur) => Math.max(cur, l)));
-    client.onBotLevel((l) => setBotLevel((cur) => Math.max(cur, l)));
+    client.onBotLevel((l) => {
+      const speaking = l > 0.04;
+      if (speaking && !botWasSpeaking.current && pendingAgentQueue.current.length > 0) {
+        const items = pendingAgentQueue.current.splice(0);
+        for (const item of items) {
+          if (!item.shown) {
+            item.shown = true;
+            addTurn("agent", item.text);
+          }
+        }
+      }
+      botWasSpeaking.current = speaking;
+      setBotLevel((cur) => Math.max(cur, l));
+    });
 
     client.on("connected", () => setAppState("active"));
     client.on("disconnected", () => {
@@ -195,7 +212,20 @@ export function AgentView() {
       setCurrentNode(d.node_id != null ? String(d.node_id) : null),
     );
     client.on("user_turn", (d) => addTurn("user", String(d.text ?? "")));
-    client.on("agent_turn", (d) => addTurn("agent", String(d.text ?? "")));
+    client.on("agent_turn", (d) => {
+      const text = String(d.text ?? "");
+      const entry: { text: string; shown: boolean } = { text, shown: false };
+      pendingAgentQueue.current.push(entry);
+      // Safety fallback: show after 900ms even if bot audio never starts
+      window.setTimeout(() => {
+        if (!entry.shown) {
+          entry.shown = true;
+          const idx = pendingAgentQueue.current.indexOf(entry);
+          if (idx !== -1) pendingAgentQueue.current.splice(idx, 1);
+          addTurn("agent", text);
+        }
+      }, 900);
+    });
     client.on("metric", (d) =>
       setMetrics({
         ttfa_ms: num(d.ttfa_ms),
