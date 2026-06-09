@@ -32,7 +32,6 @@ from playground.agents.flows import flow_registry
 from playground.harness.control import ControlError, SessionRegistry
 from playground.harness.events import EventBus
 from playground.harness.runner import build_runner
-from playground.harness.voice_profiles import VOICE_PROFILES
 
 _HERE = Path(__file__).parent
 _UI_DIST = _HERE.parent / "web" / "dist"
@@ -43,14 +42,19 @@ def _audio_ws_url(supervoice_url: str) -> str:
     return supervoice_url.rstrip("/") + "/ws/audio"
 
 
-def _connect_http_url(supervoice_url: str) -> str:
-    """Return the HTTP(S) /connect URL for a supervoice ws(s) base."""
+def _http_base_url(supervoice_url: str) -> str:
+    """Convert ws(s):// → http(s):// base URL."""
     base = supervoice_url.rstrip("/")
     if base.startswith("wss://"):
-        base = "https://" + base[len("wss://") :]
-    elif base.startswith("ws://"):
-        base = "http://" + base[len("ws://") :]
-    return base + "/connect"
+        return "https://" + base[len("wss://"):]
+    if base.startswith("ws://"):
+        return "http://" + base[len("ws://"):]
+    return base
+
+
+def _connect_http_url(supervoice_url: str) -> str:
+    """Return the HTTP(S) /connect URL for a supervoice ws(s) base."""
+    return _http_base_url(supervoice_url) + "/connect"
 
 
 @asynccontextmanager
@@ -125,10 +129,30 @@ def build_app() -> FastAPI:
     @app.get("/playground/config")
     async def get_config() -> dict[str, Any]:
         llm = "claude-3-haiku" if os.getenv("ANTHROPIC_API_KEY") else "gpt-4o-mini"
+        voice_profiles: list[dict[str, Any]] = []
+        try:
+            base = _http_base_url(app.state.supervoice_url)
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                resp = await client.get(f"{base}/voice-profiles")
+                if resp.status_code == 200:
+                    voice_profiles = [
+                        {
+                            "id": p["profile_id"],
+                            "name": f"{p['name']} ({p.get('stt_provider', '')} + {p.get('tts_provider', '')})",
+                        }
+                        for p in resp.json()
+                    ]
+        except Exception as exc:
+            logger.warning(f"[playground] voice-profiles fetch failed: {exc}")
         return {
-            "voice_profiles": [
-                {"id": vp.id, "name": f"{vp.name} ({vp.stt} + {vp.tts})"}
-                for vp in VOICE_PROFILES
+            "voice_profiles": voice_profiles,
+            "flows": [
+                {
+                    "id": spec.agent_id,
+                    "name": spec.name,
+                    "description": spec.description,
+                }
+                for spec in CATALOG.values()
             ],
             "active_llm": os.getenv("ACTIVE_LLM", llm),
         }
@@ -168,7 +192,10 @@ def build_app() -> FastAPI:
             resp = await client.post(target, params=params)
             resp.raise_for_status()
         data = dict(resp.json())
-        data["ws_url"] = _audio_ws_url(app.state.supervoice_url)
+        ws_url = _audio_ws_url(app.state.supervoice_url)
+        if voice_profile_id:
+            ws_url += f"?voice_profile_id={voice_profile_id}"
+        data["ws_url"] = ws_url
         data["transport"] = "ws"
         data["agent"] = spec.name
         return data
