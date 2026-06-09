@@ -59,13 +59,23 @@ class SessionRegistry:
             uri = params.get("uri")
             if not isinstance(uri, str) or not uri:
                 raise ControlError("set_llm requires a non-empty 'uri'")
-            adapter.set_llm(uri)
+            try:
+                adapter.set_llm(uri)
+            except AttributeError as exc:  # non-flow agent (e.g. plain LLMAgent)
+                raise ControlError("this agent does not support set_llm") from exc
         elif action == "switch_flow":
             flow = params.get("flow")
             if flow is None:
                 raise ControlError("switch_flow requires a 'flow'")
-            adapter.switch_flow(
-                flow, preserve_memory=bool(params.get("preserve_memory", False))
-            )
+            try:
+                adapter.switch_flow(
+                    flow, preserve_memory=bool(params.get("preserve_memory", False))
+                )
+            except KeyError as exc:
+                raise ControlError(f"unknown flow {flow!r}") from exc
+            except AttributeError as exc:  # agent has no FlowSet to switch within
+                raise ControlError(
+                    "this agent does not support flow switching"
+                ) from exc
         else:
             raise ControlError(f"unknown control action {action!r}")

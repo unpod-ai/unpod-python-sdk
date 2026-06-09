@@ -1,12 +1,19 @@
 // playground/web/src/pages/AgentView.tsx
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { fetchConfig, type UnpodConfig } from "../config";
+import {
+  fetchConfig,
+  fetchFlows,
+  switchFlow,
+  type Flow,
+  type UnpodConfig,
+} from "../config";
 import { SupervoiceClient } from "../client/SupervoiceClient";
 import { SupervoiceWSTransport } from "../transport/SupervoiceWSTransport";
 import { BotAudioPanel } from "../components/BotAudioPanel";
 import { ConversationPanel } from "../components/ConversationPanel";
 import { MetricsPanel } from "../components/MetricsPanel";
+import { Sidebar } from "../components/Sidebar";
 import { StatusPanel } from "../components/StatusPanel";
 import { EventsLog } from "../components/EventsLog";
 import { TopBar } from "../components/TopBar";
@@ -22,8 +29,7 @@ import {
 
 type Tab = "conversation" | "metrics";
 
-const num = (v: unknown): number | null =>
-  typeof v === "number" ? v : null;
+const num = (v: unknown): number | null => (typeof v === "number" ? v : null);
 
 /** One-line, human-readable summary of a side-channel event for the log. */
 function describe(type: string, d: Record<string, unknown>): string {
@@ -45,7 +51,7 @@ function describe(type: string, d: Record<string, unknown>): string {
     case "interruption":
       return "user interrupted the agent";
     case "flow_node_changed":
-      return JSON.stringify(d);
+      return `node → ${d.node_id ?? "?"}`;
     case "error":
       return `[${d.severity ?? "error"}] ${d.code ?? ""}: ${d.message ?? ""}`;
     default:
@@ -58,8 +64,12 @@ export function AgentView() {
   const [config, setConfig] = useState<UnpodConfig | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
   const [selectedVoiceProfile, setSelectedVoiceProfile] = useState("");
-  const [selectedFlow, setSelectedFlow] = useState("");
   const [tab, setTab] = useState<Tab>("conversation");
+
+  const [flows, setFlows] = useState<Flow[]>([]);
+  const [activeFlow, setActiveFlow] = useState("");
+  const [currentNode, setCurrentNode] = useState<string | null>(null);
+  const [switchingFlow, setSwitchingFlow] = useState<string | null>(null);
 
   const [turns, setTurns] = useState<Turn[]>([]);
   const [metrics, setMetrics] = useState<MetricSnapshot>(EMPTY_METRICS);
@@ -68,19 +78,43 @@ export function AgentView() {
   const [agentReady, setAgentReady] = useState(false);
   const [micLevel, setMicLevel] = useState(0);
   const [botLevel, setBotLevel] = useState(0);
+  const [switchNote, setSwitchNote] = useState<{
+    kind: "ok" | "err";
+    text: string;
+  } | null>(null);
 
   const clientRef = useRef<SupervoiceClient | null>(null);
   const logId = useRef(0);
+  const flowsDefaultRef = useRef("");
+  const activeFlowRef = useRef(""); // current selection, read at switch/ready time
+  const connectingRef = useRef(false); // synchronous re-entrancy guard
 
   useEffect(() => {
-    fetchConfig()
-      .then((cfg) => {
+    Promise.all([fetchConfig(), fetchFlows()])
+      .then(([cfg, fl]) => {
         setConfig(cfg);
         setSelectedVoiceProfile(cfg.voice_profiles[0]?.id ?? "");
-        setSelectedFlow(cfg.flows[0]?.id ?? "");
+        setFlows(fl.flows);
+        const initial = fl.active ?? fl.flows[0]?.id ?? "";
+        setActiveFlow(initial);
+        flowsDefaultRef.current = initial;
       })
       .catch((err) => setConfigError((err as Error).message));
   }, []);
+
+  // Keep a ref in sync so the connect()/ready closures read the live selection.
+  useEffect(() => {
+    activeFlowRef.current = activeFlow;
+  }, [activeFlow]);
+
+  // Tear down the live client (mic + WebSockets) if the view unmounts.
+  useEffect(
+    () => () => {
+      void clientRef.current?.disconnect();
+      clientRef.current = null;
+    },
+    [],
+  );
 
   // Level meters decay toward 0 between audio frames.
   useEffect(() => {
@@ -109,7 +143,15 @@ export function AgentView() {
     setTurns((prev) => [...prev, { role, text, time: clockTime() }]);
   }, []);
 
+  const flowLabel = useCallback(
+    (id: string) => flows.find((f) => f.id === id)?.label ?? id,
+    [flows],
+  );
+
   const connect = useCallback(async () => {
+    if (connectingRef.current || appState === "active") return; // re-entrancy guard
+    connectingRef.current = true;
+
     const stale = clientRef.current;
     clientRef.current = null;
     if (stale) await stale.disconnect();
@@ -120,11 +162,12 @@ export function AgentView() {
     setEvents([]);
     setSession(null);
     setAgentReady(false);
+    setCurrentNode(null);
+    setSwitchNote(null);
     setMicLevel(0);
     setBotLevel(0);
 
-    const agentId = selectedFlow !== "__custom__" ? selectedFlow : undefined;
-    const transport = new SupervoiceWSTransport(agentId, selectedVoiceProfile);
+    const transport = new SupervoiceWSTransport(undefined, selectedVoiceProfile);
     const client = new SupervoiceClient({ transport });
     clientRef.current = client;
 
@@ -137,8 +180,20 @@ export function AgentView() {
       setAppState("disconnected");
       setAgentReady(false);
     });
-    client.on("ready", () => setAgentReady(true));
+    client.on("ready", () => {
+      setAgentReady(true);
+      // Start the conversation on the currently-selected flow (worker defaults
+      // to the first flow in the set). Read the live selection (the user may
+      // have changed it during "connecting"); fresh memory on initial select.
+      const startFlow = activeFlowRef.current;
+      if (startFlow && startFlow !== flowsDefaultRef.current) {
+        switchFlow(startFlow, false).catch(() => {});
+      }
+    });
     client.on("session", (d) => setSession(d as SessionInfo));
+    client.on("flow_node_changed", (d) =>
+      setCurrentNode(d.node_id != null ? String(d.node_id) : null),
+    );
     client.on("user_turn", (d) => addTurn("user", String(d.text ?? "")));
     client.on("agent_turn", (d) => addTurn("agent", String(d.text ?? "")));
     client.on("metric", (d) =>
@@ -162,13 +217,38 @@ export function AgentView() {
       pushEvent("error", { message: (err as Error).message });
       setAppState("idle");
       clientRef.current = null;
+    } finally {
+      connectingRef.current = false;
     }
-  }, [selectedFlow, selectedVoiceProfile, addTurn, pushEvent]);
+  }, [appState, selectedVoiceProfile, addTurn, pushEvent]);
 
   const disconnect = useCallback(async () => {
     await clientRef.current?.disconnect();
     clientRef.current = null;
   }, []);
+
+  const selectFlow = useCallback(
+    async (flowId: string) => {
+      if (appState !== "active") {
+        setActiveFlow(flowId); // pre-call: applied on connect
+        return;
+      }
+      setSwitchingFlow(flowId);
+      setCurrentNode(null); // don't show the previous flow's node on the new card
+      const res = await switchFlow(flowId, true);
+      setSwitchingFlow(null);
+      if (res.ok) {
+        setActiveFlow(flowId);
+        setSwitchNote({ kind: "ok", text: `Switched to ${flowLabel(flowId)}` });
+        addTurn("system", `Switched to ${flowLabel(flowId)}`);
+      } else {
+        const text = `Switch failed: ${res.error ?? "unknown"}`;
+        setSwitchNote({ kind: "err", text });
+        addTurn("system", text);
+      }
+    },
+    [appState, addTurn, flowLabel],
+  );
 
   if (configError) {
     return (
@@ -188,19 +268,26 @@ export function AgentView() {
     <div className={`shell shell--${appState}`}>
       <TopBar
         voiceProfiles={config.voice_profiles}
-        flows={config.flows}
         selectedVoiceProfile={selectedVoiceProfile}
-        selectedFlow={selectedFlow}
         onVoiceProfileChange={setSelectedVoiceProfile}
-        onFlowChange={setSelectedFlow}
-        onCustomFlow={() => setSelectedFlow("__custom__")}
         appState={appState}
         onConnect={connect}
         onDisconnect={disconnect}
       />
 
       <div className="grid">
-        <BotAudioPanel appState={appState} level={botLevel} />
+        <div className="leftcol">
+          <Sidebar
+            flows={flows}
+            activeFlow={activeFlow}
+            currentNode={currentNode}
+            switching={switchingFlow}
+            appState={appState}
+            note={switchNote}
+            onSelect={selectFlow}
+          />
+          <BotAudioPanel appState={appState} level={botLevel} />
+        </div>
 
         <section className="panel center">
           <div className="tabs">

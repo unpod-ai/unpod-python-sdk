@@ -117,9 +117,117 @@ body {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 240px 1fr 300px;
+  grid-template-columns: 250px 1fr 300px;
   gap: 12px;
 }
+
+/* ── Left column: flows sidebar + bot audio ────────────────────────────── */
+
+.leftcol {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+.leftcol .bot-audio { flex: 0 0 auto; }
+.leftcol .bot-audio__viz { padding: 12px; }
+
+.sidebar {
+  flex: 1;
+  min-height: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.sidebar__title {
+  padding: 14px 16px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+.sidebar__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.flow-card {
+  text-align: left;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: border-color 0.15s, background 0.15s;
+}
+.flow-card:hover:not(:disabled) { border-color: var(--accent); }
+.flow-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.flow-card:disabled { opacity: 0.55; cursor: default; }
+.flow-card--active {
+  border-color: var(--accent);
+  border-left-color: var(--accent);
+  background: var(--accent-soft);
+}
+.flow-card__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.flow-card__name { font-size: 13px; font-weight: 600; }
+.flow-card__dot { color: var(--accent); font-size: 10px; margin-right: 6px; }
+.flow-card__nodes {
+  font-size: 10px;
+  color: var(--muted);
+  font-family: var(--mono);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1px 7px;
+  flex-shrink: 0;
+}
+.flow-card__desc {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.flow-card__node {
+  font-size: 11px;
+  color: var(--accent);
+  font-family: var(--mono);
+  margin-top: 2px;
+}
+.sidebar__note {
+  padding: 10px 16px;
+  font-size: 11px;
+  color: var(--muted-2);
+  border-top: 1px solid var(--border);
+  line-height: 1.4;
+}
+.sidebar__note--ok { color: var(--ok); }
+.sidebar__note--err { color: var(--danger); }
 
 .panel {
   background: var(--surface);
@@ -411,4 +519,8 @@ body {
 
 @media (max-width: 900px) {
   .grid { grid-template-columns: 1fr; grid-auto-rows: minmax(160px, auto); }
+  /* Keep the flows list usable; cap the bot-audio viz so it can't eat the row. */
+  .sidebar { min-height: 220px; }
+  .leftcol .bot-audio { flex: 0 0 130px; }
+  .leftcol .bot-audio__viz { max-height: 70px; }
 }

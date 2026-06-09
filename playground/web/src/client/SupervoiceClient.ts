@@ -50,7 +50,12 @@ export class SupervoiceClient {
     this.eventsUrl = options.eventsUrl ?? this.defaultEventsUrl();
     this.transport.setCallbacks({
       onConnected: () => this.emit("connected", {}),
-      onDisconnected: () => this.emit("disconnected", {}),
+      onDisconnected: () => {
+        this.emit("disconnected", {});
+        // The transport (audio WS) is gone — close the side-channel too so the
+        // events WS doesn't leak on server-initiated/ error disconnects.
+        this.closeSideChannel();
+      },
       onError: (message) => this.emit("error", { message }),
       onSession: (info) => this.emit("session", info),
       onMicLevel: (level) => this.micLevelHandlers.forEach((h) => h(level)),
@@ -111,9 +116,16 @@ export class SupervoiceClient {
     await this.transport.connect();
   }
 
+  private closeSideChannel(): void {
+    if (this.events) {
+      this.events.onmessage = null;
+      this.events.close();
+      this.events = null;
+    }
+  }
+
   async disconnect(): Promise<void> {
     await this.transport.disconnect();
-    this.events?.close();
-    this.events = null;
+    this.closeSideChannel();
   }
 }

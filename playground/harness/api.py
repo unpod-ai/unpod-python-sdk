@@ -28,6 +28,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 from playground.agents.catalog import CATALOG, get_agent, resolve_agent
+from playground.agents.flows import flow_registry
 from playground.harness.control import ControlError, SessionRegistry
 from playground.harness.events import EventBus
 from playground.harness.runner import build_runner
@@ -55,7 +56,7 @@ def _connect_http_url(supervoice_url: str) -> str:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Start the in-process AgentRunner for the configured agent."""
-    agent_name = os.getenv("AGENT_NAME", "faq_bot")
+    agent_name = os.getenv("AGENT_NAME", "flows")
     spec = get_agent(agent_name)
     if spec is None:
         raise RuntimeError(f"unknown AGENT_NAME {agent_name!r}; see catalog")
@@ -129,15 +130,25 @@ def build_app() -> FastAPI:
                 {"id": vp.id, "name": f"{vp.name} ({vp.stt} + {vp.tts})"}
                 for vp in VOICE_PROFILES
             ],
+            "active_llm": os.getenv("ACTIVE_LLM", llm),
+        }
+
+    @app.get("/playground/flows")
+    async def list_flows() -> dict[str, Any]:
+        """Return the conversation flows the worker can switch between."""
+        infos = flow_registry()
+        return {
             "flows": [
                 {
-                    "id": spec.agent_id,
-                    "name": spec.name,
-                    "description": spec.description,
+                    "id": f.id,
+                    "label": f.label,
+                    "nodes": f.nodes,
+                    "initial_node": f.initial_node,
+                    "description": f.description,
                 }
-                for spec in CATALOG.values()
+                for f in infos
             ],
-            "active_llm": os.getenv("ACTIVE_LLM", llm),
+            "active": infos[0].id if infos else None,
         }
 
     @app.post("/playground/sessions")
@@ -170,6 +181,16 @@ def build_app() -> FastAPI:
             app.state.registry.apply(session_id, action, params)
         except ControlError as exc:
             return {"ok": False, "error": str(exc)}
+        # Reflect the post-switch node to the UI immediately (switch_flow resets
+        # the machine to the new flow's initial node — no turn fires on its own).
+        if action == "switch_flow":
+            try:
+                adapter = app.state.registry.resolve(session_id).dialog_machine
+                state = getattr(adapter, "state", None)
+                if isinstance(state, dict):
+                    app.state.bus.publish("flow_node_changed", **state)
+            except Exception:  # best-effort echo; never fail the control call
+                pass
         return {"ok": True}
 
     @app.websocket("/playground/events")

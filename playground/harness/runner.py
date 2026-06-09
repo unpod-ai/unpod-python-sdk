@@ -59,6 +59,7 @@ def build_runner(
         @ctx.session.on("call_start")
         async def _on_start() -> None:
             bus.publish("ready", agent=spec.name, call_id=ctx.call_id)
+            _publish_flow_node(bus, ctx)  # initial node, for the flow sidebar
 
         @ctx.session.on("user_turn")
         async def _on_user(text: str) -> None:

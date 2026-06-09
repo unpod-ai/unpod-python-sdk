@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from playground.agents import faq_bot
+from playground.agents import faq_bot, flows
 
 
 @dataclass(frozen=True)
@@ -25,6 +25,12 @@ class AgentSpec:
 
 
 CATALOG: dict[str, AgentSpec] = {
+    "flows": AgentSpec(
+        name="flows",
+        agent_id="playground-flows",
+        description="Multi-flow agent (superdialog FlowSet) with live switching.",
+        build=flows.build,
+    ),
     "faq_bot": AgentSpec(
         name="faq_bot",
         agent_id="playground-faq-bot",

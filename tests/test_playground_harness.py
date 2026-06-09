@@ -236,3 +236,76 @@ def test_create_session_resolves_agent_id_and_injects_ws_url(
     assert body["ws_url"].endswith("/ws/audio")
     assert body["transport"] == "ws"
     assert body["agent"] == "faq_bot"
+
+
+# --- Flows ---------------------------------------------------------------------
+
+
+def test_flow_registry_discovers_flows() -> None:
+    from playground.agents.flows import flow_registry
+
+    infos = flow_registry()
+    assert len(infos) >= 3
+    assert "health_wellness_3node" in {f.id for f in infos}
+    for f in infos:
+        assert f.label and f.nodes > 0 and f.initial_node
+
+
+def test_flows_endpoint_lists_all(harness_app) -> None:
+    with TestClient(harness_app) as client:
+        body = client.get("/playground/flows").json()
+    ids = {f["id"] for f in body["flows"]}
+    assert len(body["flows"]) >= 3
+    assert body["active"] in ids
+    assert {"id", "label", "nodes", "initial_node", "description"} <= set(
+        body["flows"][0]
+    )
+
+
+def test_switch_flow_control_changes_active_flow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A FlowSet DialogMachine can be switched live via the control plane."""
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    from playground.agents.flows import build, flow_registry
+
+    session = Session(bridge=object())  # type: ignore[arg-type]
+    session.dialog_machine = build("openai/gpt-4o-mini")
+    registry = SessionRegistry()
+    registry.register("c1", session)
+
+    target = flow_registry()[1].id
+    registry.apply("c1", "switch_flow", {"flow": target, "preserve_memory": True})
+    assert isinstance(session.dialog_machine.state, dict)
+
+
+def test_switch_flow_unknown_id_raises_control_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    from playground.agents.flows import build
+
+    session = Session(bridge=object())  # type: ignore[arg-type]
+    session.dialog_machine = build("openai/gpt-4o-mini")
+    registry = SessionRegistry()
+    registry.register("c1", session)
+
+    with pytest.raises(ControlError):
+        registry.apply("c1", "switch_flow", {"flow": "does-not-exist"})
+
+
+def test_switch_flow_on_non_flow_agent_raises_control_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """switch_flow on a plain LLMAgent (no FlowSet) is a clean ControlError,
+    not an AttributeError that would escape as an HTTP 500."""
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    from playground.agents import faq_bot
+
+    session = Session(bridge=object())  # type: ignore[arg-type]
+    session.dialog_machine = faq_bot.build("openai/gpt-4o-mini")
+    registry = SessionRegistry()
+    registry.register("c1", session)
+
+    with pytest.raises(ControlError):
+        registry.apply("c1", "switch_flow", {"flow": "anything"})
