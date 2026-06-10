@@ -195,7 +195,7 @@ tasks:
 
   supervoice-dev:
     desc: "Start supervoice dev SPEECH app (POST /connect + WS /ws/audio) on :9000"
-    dir: "../super/supervoice"
+    dir: "../supervoice"
     vars:
       PORT: '{{.PORT | default "9000"}}'
     cmds:
@@ -247,7 +247,7 @@ tasks:
         trap cleanup EXIT
         lsof -ti tcp:9000 | xargs kill -9 2>/dev/null || true
         lsof -ti tcp:9100 | xargs kill -9 2>/dev/null || true
-        (cd ../super/supervoice && {{.UV}} run uvicorn supervoice.dev.app:create_dev_app --factory --env-file .env --port 9000) &
+        (cd ../supervoice && {{.UV}} run uvicorn supervoice.dev.app:create_dev_app --factory --env-file .env --port 9000) &
         SV_PID=$!
         echo "[pg-stack] supervoice-dev pid=$SV_PID on :9000 — waiting for boot…"
         sleep 2

@@ -29,3 +29,4 @@ node_modules/
 # Generated superpowers docs
 .superpowers/
 docs/superpowers/
+unpod-playground-standalone.html

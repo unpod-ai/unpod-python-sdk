@@ -310,7 +310,9 @@ def test_create_session_resolves_agent_id_and_injects_ws_url(
         resp = client.post("/playground/sessions?agent=playground-faq-bot")
     body = resp.json()
     assert "error" not in body
-    assert body["ws_url"].endswith("/ws/audio")
+    # ws_url carries agent_id so the dev speech service routes to this worker.
+    assert "/ws/audio?" in body["ws_url"]
+    assert "agent_id=playground-faq-bot" in body["ws_url"]
     assert body["transport"] == "ws"
     assert body["agent"] == "faq_bot"
 

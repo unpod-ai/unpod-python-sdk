@@ -21,6 +21,7 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncIterator
+from urllib.parse import urlencode
 
 import httpx
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -46,9 +47,9 @@ def _http_base_url(supervoice_url: str) -> str:
     """Convert ws(s):// → http(s):// base URL."""
     base = supervoice_url.rstrip("/")
     if base.startswith("wss://"):
-        return "https://" + base[len("wss://"):]
+        return "https://" + base[len("wss://") :]
     if base.startswith("ws://"):
-        return "http://" + base[len("ws://"):]
+        return "http://" + base[len("ws://") :]
     return base
 
 
@@ -192,10 +193,12 @@ def build_app() -> FastAPI:
             resp = await client.post(target, params=params)
             resp.raise_for_status()
         data = dict(resp.json())
-        ws_url = _audio_ws_url(app.state.supervoice_url)
+        # Carry agent_id (and voice profile) on the audio socket so the dev
+        # speech service routes the call to this agent's worker.
+        query: dict[str, str] = {"agent_id": spec.agent_id}
         if voice_profile_id:
-            ws_url += f"?voice_profile_id={voice_profile_id}"
-        data["ws_url"] = ws_url
+            query["voice_profile_id"] = voice_profile_id
+        data["ws_url"] = f"{_audio_ws_url(app.state.supervoice_url)}?{urlencode(query)}"
         data["transport"] = "ws"
         data["agent"] = spec.name
         return data
