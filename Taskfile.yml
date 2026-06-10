@@ -241,7 +241,11 @@ tasks:
         set -u
         SV_PID=""
         cleanup() { [ -n "$SV_PID" ] && kill "$SV_PID" 2>/dev/null || true; }
-        trap cleanup EXIT INT TERM
+        # go-task's embedded shell (mvdan.cc/sh) only supports trap on EXIT,
+        # not INT/TERM by name/number — and EXIT covers the normal teardown.
+        # On Ctrl-C the SIGINT reaches the whole process group, so the
+        # backgrounded supervoice gets it directly anyway.
+        trap cleanup EXIT
         if [ -n "${SUPERVOICE_URL:-}" ] || [ -n "${UNPOD_BASE_URL:-}" ]; then
           echo "[pg-stack] hosted/explicit speech configured — not booting a local supervoice"
         elif [ -d ../supervoice ]; then
