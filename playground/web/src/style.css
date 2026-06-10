@@ -117,8 +117,62 @@ body {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 250px 1fr 300px;
-  gap: 12px;
+  /* columns set via inline style: leftW 10px 1fr 10px rightW */
+  grid-template-columns: 250px 10px 1fr 10px 300px;
+  column-gap: 0;
+  row-gap: 12px;
+}
+
+/* ── Column resize handle ──────────────────────────────────────────────── */
+
+.col-resize-handle {
+  cursor: ew-resize;
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  user-select: none;
+  z-index: 10;
+}
+.col-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 16px; bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.07);
+  transition: background 0.2s, width 0.15s;
+}
+.col-resize-handle:hover::after,
+.col-resize-handle:active::after {
+  background: var(--accent);
+  width: 3px;
+}
+
+/* ── Row resize handle (above events log) ──────────────────────────────── */
+
+.row-resize-handle {
+  cursor: ns-resize;
+  height: 10px;
+  position: relative;
+  flex-shrink: 0;
+  user-select: none;
+}
+.row-resize-handle::after {
+  content: '';
+  position: absolute;
+  left: 24px; right: 24px;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 2px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.07);
+  transition: background 0.2s;
+}
+.row-resize-handle:hover::after,
+.row-resize-handle:active::after {
+  background: var(--accent);
 }
 
 /* ── Left column: flows sidebar + bot audio ────────────────────────────── */
@@ -436,6 +490,41 @@ body {
   border: 1px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.dashboard-section-body {
+  overflow-y: auto;
+  overflow-x: auto;
+  min-height: 80px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+/* ── Section resize handle ─────────────────────────────────────────────── */
+
+.section-resize-handle {
+  cursor: ns-resize;
+  height: 10px;
+  flex-shrink: 0;
+  position: relative;
+  user-select: none;
+  border-top: 1px solid var(--border);
+}
+.section-resize-handle::after {
+  content: '';
+  position: absolute;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  width: 32px; height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  transition: background 0.2s, width 0.15s;
+}
+.section-resize-handle:hover::after,
+.section-resize-handle:active::after {
+  background: var(--accent);
+  width: 48px;
 }
 .dashboard-section-title {
   padding: 12px 14px;
@@ -596,7 +685,7 @@ body {
 /* ── Events log ────────────────────────────────────────────────────────── */
 
 .events {
-  height: 168px;
+  height: 168px; /* overridden by inline style from AgentView */
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 14px;
@@ -653,7 +742,8 @@ body {
 .event-line--agent_turn .event-line__detail { color: var(--text); }
 
 @media (max-width: 900px) {
-  .grid { grid-template-columns: 1fr; grid-auto-rows: minmax(160px, auto); }
+  .grid { grid-template-columns: 1fr !important; grid-auto-rows: minmax(160px, auto); }
+  .col-resize-handle { display: none; }
   /* Keep the flows list usable; cap the bot-audio viz so it can't eat the row. */
   .sidebar { min-height: 220px; }
   .leftcol .bot-audio { flex: 0 0 130px; }

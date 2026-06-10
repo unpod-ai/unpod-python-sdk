@@ -2439,8 +2439,8 @@ wheels = [
 
 [[package]]
 name = "superdialog"
-version = "0.2.3"
-source = { registry = "https://pypi.org/simple" }
+version = "0.2.5"
+source = { editable = "../superdialog" }
 dependencies = [
     { name = "httpx" },
     { name = "litellm" },
@@ -2449,10 +2449,30 @@ dependencies = [
     { name = "transitions" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f2/ff/deaa68e8aca1543de462dd22bc73f2afc2fcffac6b41f101dbf8447794df/superdialog-0.2.3.tar.gz", hash = "sha256:1e1d237f4e04169c85f1fa7044507f8828740822809172cf5bcbd7e6e991d3d0", size = 457125, upload-time = "2026-06-04T13:23:14.701Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/3d/94/6f8ed164780a6717484d5a5d4f4c2fc3a5579c4b3947a13359899b00c189/superdialog-0.2.3-py3-none-any.whl", hash = "sha256:6f2579ac445bd381c6ba9b2f0b1b9c117d986c43888bf2134f662fbaf1cb3962", size = 149280, upload-time = "2026-06-04T13:23:12.243Z" },
+
+[package.metadata]
+requires-dist = [
+    { name = "anyio", marker = "extra == 'dev'", specifier = ">=4" },
+    { name = "fastapi", marker = "extra == 'fastapi'", specifier = ">=0.110" },
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "langchain-core", marker = "extra == 'langchain'", specifier = ">=0.3" },
+    { name = "litellm", specifier = ">=1.50" },
+    { name = "livekit-agents", marker = "extra == 'livekit'", specifier = ">=0.12" },
+    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=0.9" },
+    { name = "openai", marker = "extra == 'evals'", specifier = ">=1.0" },
+    { name = "pipecat-ai", marker = "extra == 'pipecat'", specifier = ">=0.0.50" },
+    { name = "pydantic", specifier = ">=2.5" },
+    { name = "pyrefly", marker = "extra == 'dev'", specifier = ">=0.1" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23" },
+    { name = "python-dotenv", specifier = ">=1.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4" },
+    { name = "transitions", specifier = ">=0.9" },
+    { name = "typing-extensions", specifier = ">=4.10" },
+    { name = "uvicorn", marker = "extra == 'fastapi'", specifier = ">=0.27" },
+    { name = "websockets", marker = "extra == 'ws'", specifier = ">=12" },
 ]
+provides-extras = ["livekit", "pipecat", "fastapi", "ws", "mcp", "langchain", "dev", "evals"]
 
 [[package]]
 name = "tenacity"
@@ -2619,7 +2639,7 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-dev = [
+add = [
     { name = "anyio" },
     { name = "fastapi" },
     { name = "loguru" },
@@ -2652,31 +2672,31 @@ playground = [
 
 [package.metadata]
 requires-dist = [
-    { name = "anyio", marker = "extra == 'dev'", specifier = ">=4" },
-    { name = "fastapi", marker = "extra == 'dev'", specifier = ">=0.115" },
+    { name = "anyio", marker = "extra == 'add'", specifier = ">=4" },
+    { name = "fastapi", marker = "extra == 'add'", specifier = ">=0.115" },
     { name = "fastapi", marker = "extra == 'playground'", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "langchain-core", marker = "extra == 'langchain'", specifier = ">=0.3" },
     { name = "langfuse", marker = "extra == 'observability'", specifier = ">=2.0" },
     { name = "livekit-agents", marker = "extra == 'playground'", specifier = ">=1.0,<2" },
-    { name = "loguru", marker = "extra == 'dev'", specifier = ">=0.7" },
+    { name = "loguru", marker = "extra == 'add'", specifier = ">=0.7" },
     { name = "loguru", marker = "extra == 'playground'", specifier = ">=0.7" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=0.9" },
     { name = "pydantic", specifier = ">=2.5" },
-    { name = "pyrefly", marker = "extra == 'dev'", specifier = ">=0.1" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23" },
+    { name = "pyrefly", marker = "extra == 'add'", specifier = ">=0.1" },
+    { name = "pytest", marker = "extra == 'add'", specifier = ">=8" },
+    { name = "pytest-asyncio", marker = "extra == 'add'", specifier = ">=0.23" },
     { name = "python-dotenv", specifier = ">=1.2.2" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4" },
-    { name = "superdialog", marker = "extra == 'dev'", specifier = ">=0.2,<0.3" },
-    { name = "superdialog", marker = "extra == 'dialog'", specifier = ">=0.2,<0.3" },
-    { name = "superdialog", marker = "extra == 'playground'", specifier = ">=0.2,<0.3" },
+    { name = "ruff", marker = "extra == 'add'", specifier = ">=0.4" },
+    { name = "superdialog", marker = "extra == 'add'", editable = "../superdialog" },
+    { name = "superdialog", marker = "extra == 'dialog'", editable = "../superdialog" },
+    { name = "superdialog", marker = "extra == 'playground'", editable = "../superdialog" },
     { name = "typing-extensions", specifier = ">=4.10" },
-    { name = "uvicorn", extras = ["standard"], marker = "extra == 'dev'", specifier = ">=0.32" },
+    { name = "uvicorn", extras = ["standard"], marker = "extra == 'add'", specifier = ">=0.32" },
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'playground'", specifier = ">=0.32" },
     { name = "websockets", specifier = ">=13" },
 ]
-provides-extras = ["observability", "dialog", "langchain", "mcp", "playground", "dev"]
+provides-extras = ["observability", "dialog", "langchain", "mcp", "playground", "add"]
 
 [[package]]
 name = "urllib3"

@@ -5,9 +5,10 @@ import type { LogEntry } from "../types";
 
 interface EventsLogProps {
   entries: LogEntry[];
+  height?: number;
 }
 
-export const EventsLog = memo(function EventsLog({ entries }: EventsLogProps) {
+export const EventsLog = memo(function EventsLog({ entries, height }: EventsLogProps) {
   const [filter, setFilter] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -25,7 +26,7 @@ export const EventsLog = memo(function EventsLog({ entries }: EventsLogProps) {
   }, [shown]);
 
   return (
-    <section className="events">
+    <section className="events" style={height !== undefined ? { height } : undefined}>
       <div className="events__bar">
         <span className="events__title">EVENTS</span>
         <input

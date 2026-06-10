@@ -237,7 +237,6 @@ tasks:
     desc: "Run BOTH services: supervoice-dev (:9000) + voice playground (:9100)"
     deps: [pg-ui-build]
     cmds:
-      - "{{.UV}} pip install -e ../superdialog"
       - |
         cleanup() {
           kill "$SV_PID" 2>/dev/null || true
