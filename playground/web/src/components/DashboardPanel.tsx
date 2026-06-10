@@ -169,9 +169,9 @@ export function DashboardPanel({ llmCalls, turnTimings, metrics, turns }: Props)
                   <th>User</th>
                   <th>Node</th>
                   <th>Agent</th>
-                  <th title="ASR latency: time from user stopped speaking to final transcript">ASR</th>
-                  <th title="STT latency: time from user started speaking to final transcript">STT</th>
-                  <th>LLM</th>
+                  <th title="ASR latency: time from user stopped speaking to final transcript (pipecat STT TTFB)">ASR</th>
+                  <th title="LLM time-to-first-token: turn sent to agent → first text token back">TTFT</th>
+                  <th title="Total LLM processing time across all calls this turn">LLM</th>
                   <th>TTS</th>
                   <th>TTFA</th>
                   <th>Calls</th>
@@ -187,7 +187,7 @@ export function DashboardPanel({ llmCalls, turnTimings, metrics, turns }: Props)
                       ? turnCalls.reduce((sum, call) => sum + call.latency_ms, 0)
                       : t.llm_total_ms ?? null;
                   const asrMs = t.asr_ms ?? t.stt_ms;
-                  const sttLatencyMs = t.stt_latency_ms;
+                  const llmTtftMs = t.llm_ttft_ms;
                   const ttsMs = t.tts_ms ?? t.tts_ttfb_ms;
                   return (
                     <tr
@@ -214,11 +214,11 @@ export function DashboardPanel({ llmCalls, turnTimings, metrics, turns }: Props)
                             : t.agent_text
                           : "—"}
                       </td>
-                      <td title="ASR latency: time from user stopped speaking to final transcript">
+                      <td title="ASR latency: time from user stopped speaking to final transcript (pipecat STT TTFB)">
                         {asrMs != null ? `${asrMs.toFixed(0)}ms` : "—"}
                       </td>
-                      <td title="STT latency: time from user started speaking to final transcript">
-                        {sttLatencyMs != null ? `${sttLatencyMs.toFixed(0)}ms` : "—"}
+                      <td title="LLM time-to-first-token: turn sent → first text token">
+                        {llmTtftMs != null ? `${llmTtftMs.toFixed(0)}ms` : "—"}
                       </td>
                       <td>
                         {llmTotalMs != null

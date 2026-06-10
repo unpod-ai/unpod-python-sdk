@@ -161,7 +161,7 @@ class TurnMetricsEvent(BaseModel):
     turn_id: int = 0
     ttfa_ms: float | None = None
     asr_ms: float | None = None
-    stt_latency_ms: float | None = None
+    llm_ttft_ms: float | None = None
     tts_ttfb_ms: float | None = None
     llm_call_count: int = 0
     llm_total_ms: float | None = None

@@ -119,7 +119,7 @@ class ObservabilityManager:
         turn_id: int,
         ttfa_ms: float | None,
         asr_ms: float | None,
-        stt_latency_ms: float | None,
+        llm_ttft_ms: float | None,
         tts_ttfb_ms: float | None,
         from_node: str | None,
         to_node: str | None,
@@ -127,16 +127,13 @@ class ObservabilityManager:
         llm_total_ms: float | None,
     ) -> None:
         """Attach pipeline timing scores and fire 'turn_complete' hook."""
-        # Note: Langfuse score attachment requires trace_id from start_turn.
-        # Deferred to future enhancement — hook firing is always active.
-
         if self._fire_hook is not None:
             await self._fire_hook(
                 "turn_complete",
                 turn_id=turn_id,
                 ttfa_ms=ttfa_ms,
                 asr_ms=asr_ms,
-                stt_latency_ms=stt_latency_ms,
+                llm_ttft_ms=llm_ttft_ms,
                 tts_ttfb_ms=tts_ttfb_ms,
                 stt_ms=asr_ms,
                 tts_ms=tts_ttfb_ms,

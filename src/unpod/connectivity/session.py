@@ -169,7 +169,7 @@ class Session:
                         turn_id=event.turn_id,
                         ttfa_ms=event.ttfa_ms,
                         asr_ms=event.asr_ms,
-                        stt_latency_ms=event.stt_latency_ms,
+                        llm_ttft_ms=event.llm_ttft_ms,
                         tts_ttfb_ms=event.tts_ttfb_ms,
                         from_node=event.from_node,
                         to_node=event.to_node,
@@ -216,7 +216,7 @@ class Session:
                                     else None
                                 ),
                                 asr_ms=None,
-                                stt_latency_ms=None,
+                                llm_ttft_ms=None,
                                 tts_ttfb_ms=None,
                                 from_node=state.get("from_node", ""),
                                 to_node=state.get("node_id", ""),
