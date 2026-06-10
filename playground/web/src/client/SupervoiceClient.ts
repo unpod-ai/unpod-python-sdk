@@ -13,6 +13,7 @@
  */
 
 import { Transport } from "../transport/Transport";
+import type { ConvState } from "../state/convState";
 
 export type SupervoiceEvent =
   | "connected"
@@ -31,6 +32,7 @@ export type SupervoiceEvent =
 type Handler = (data: Record<string, unknown>) => void;
 type AnyHandler = (event: string, data: Record<string, unknown>) => void;
 type LevelHandler = (level: number) => void;
+type StateHandler = (state: ConvState) => void;
 
 export interface SupervoiceClientOptions {
   transport: Transport;
@@ -46,6 +48,7 @@ export class SupervoiceClient {
   private anyHandlers = new Set<AnyHandler>();
   private micLevelHandlers = new Set<LevelHandler>();
   private botLevelHandlers = new Set<LevelHandler>();
+  private stateHandlers = new Set<StateHandler>();
 
   constructor(options: SupervoiceClientOptions) {
     this.transport = options.transport;
@@ -62,6 +65,10 @@ export class SupervoiceClient {
       onSession: (info) => this.emit("session", info),
       onMicLevel: (level) => this.micLevelHandlers.forEach((h) => h(level)),
       onBotLevel: (level) => this.botLevelHandlers.forEach((h) => h(level)),
+      // Conversation state has a dedicated channel (like the level meters), off
+      // the event bus, so it is the single writer of the UI's convState and is
+      // never confused with the side-channel "state" log entry (Sink B).
+      onState: (state) => this.stateHandlers.forEach((h) => h(state)),
     });
   }
 
@@ -90,6 +97,11 @@ export class SupervoiceClient {
 
   onBotLevel(handler: LevelHandler): void {
     this.botLevelHandlers.add(handler);
+  }
+
+  /** Subscribe to worker-authored conversation state (the UI source of truth). */
+  onState(handler: StateHandler): void {
+    this.stateHandlers.add(handler);
   }
 
   private emit(event: SupervoiceEvent, data: Record<string, unknown>): void {

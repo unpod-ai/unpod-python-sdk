@@ -921,14 +921,6 @@ body {
 .dm-name { font-size: 15px; font-weight: 600; color: var(--fg-0); letter-spacing: -0.01em; display: inline-flex; align-items: center; gap: 1px; white-space: nowrap; }
 .dm-fn { color: var(--indigo-bright); }
 .dm-pulse { width: 7px; height: 7px; border-radius: 99px; margin-left: 6px; background: var(--indigo-bright); box-shadow: 0 0 10px var(--indigo-glow); animation: pulse-dot 0.8s infinite; }
-.dm-chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
-.dm-chip {
-  font-size: 10.5px; color: var(--fg-1); font-weight: 500;
-  padding: 4px 10px; border-radius: 99px;
-  background: rgba(255,255,255,0.06); border: 1px solid var(--line-2);
-  transition: all 0.22s var(--ease);
-}
-.dm-chip.lit { color: #fff; background: var(--indigo); border-color: var(--indigo); box-shadow: 0 0 14px -3px var(--indigo-glow); }
 .dm-node { font-size: 10.5px; color: var(--indigo-bright); letter-spacing: 0.04em; }
 
 /* ---- segments / connectors ---- */
@@ -953,10 +945,8 @@ body {
   position: absolute; top: 50%; left: 0; width: 7px; height: 7px; border-radius: 99px; margin-top: -3.5px;
   background: var(--sc); box-shadow: 0 0 12px 2px var(--sc); opacity: 0;
 }
-.seg-label { font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--fg-3); white-space: nowrap; transition: color 0.25s; }
 .seg.active .seg-line { background: linear-gradient(90deg, transparent, var(--sc), var(--sc), transparent); box-shadow: 0 0 10px -2px var(--sc); }
 .seg.active .seg-arrow { color: var(--sc); }
-.seg.active .seg-label { color: color-mix(in srgb, var(--sc) 85%, var(--fg-1)); }
 .seg.active .seg-token { opacity: 1; animation: token-run 0.8s linear infinite; }
 @keyframes token-run {
   0% { left: 2px; opacity: 0; transform: scale(0.6); }
@@ -999,10 +989,8 @@ body {
   .ep .tw { width: 64px; }
   .frame { margin: 2px 0; width: 100%; max-width: 340px; padding: 20px 14px 14px; }
   .node { width: 100%; }
-  .seg { width: 100%; max-width: 340px; flex-direction: row; align-items: center; gap: 12px; padding: 6px 0 6px 20px; }
-  .seg-hook { order: 3; }
+  .seg { width: 100%; max-width: 340px; flex-direction: row; align-items: center; gap: 14px; padding: 6px 0 6px 20px; }
   .seg-rail { width: 30px; height: 30px; flex-shrink: 0; transform: rotate(90deg); }
-  .seg-label { order: 2; flex: 1; }
 }
 
 /* ══════════════════════════════════════════════════════════════════════════

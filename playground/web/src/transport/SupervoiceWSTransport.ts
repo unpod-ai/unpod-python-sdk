@@ -12,6 +12,28 @@
 import { AudioPlayer, MicCapture, MIC_SAMPLE_RATE, pcmLevel } from "./audio";
 import { decodeFrame, encodeAudioFrame } from "./protobuf";
 import { Transport } from "./Transport";
+import type { ConvState } from "../state/convState";
+
+const CONV_STATES: ReadonlySet<string> = new Set([
+  "idle",
+  "listening",
+  "thinking",
+  "speaking",
+  "interrupted",
+]);
+
+/** Parse a decoded control `message` frame; emit conv-state if it is one. */
+function parseStateMessage(data: string): ConvState | null {
+  try {
+    const msg = JSON.parse(data) as { type?: unknown; state?: unknown };
+    if (msg.type === "state" && typeof msg.state === "string" && CONV_STATES.has(msg.state)) {
+      return msg.state as ConvState;
+    }
+  } catch {
+    /* ignore malformed control frame */
+  }
+  return null;
+}
 
 interface SessionDescriptor {
   ws_url: string;
@@ -80,6 +102,9 @@ export class SupervoiceWSTransport extends Transport {
       if (frame.kind === "audio") {
         this.player?.enqueue(frame.pcm, frame.sampleRate || 24000);
         this.callbacks.onBotLevel?.(pcmLevel(frame.pcm));
+      } else if (frame.kind === "message") {
+        const state = parseStateMessage(frame.data);
+        if (state) this.callbacks.onState?.(state);
       }
     };
 

@@ -24,16 +24,15 @@ import { TopBar } from "../components/TopBar";
 import {
   clockTime,
   EMPTY_METRICS,
-  IDLE_PIPELINE,
   type AppState,
   type LLMCallEvent,
   type LogEntry,
   type MetricSnapshot,
-  type PipelineState,
   type SessionInfo,
   type TurnCompleteEvent,
   type Turn,
 } from "../types";
+import { isTurnActive, type ConvState } from "../state/convState";
 
 type Tab = "pipeline" | "conversation" | "metrics" | "trace";
 
@@ -89,6 +88,8 @@ function describe(type: string, d: Record<string, unknown>): string {
       return `ttfa=${d.ttfa_ms ?? "—"}ms turns=${d.turns ?? 0} cost=$${d.cost_usd_so_far ?? 0}`;
     case "interruption":
       return "user interrupted the agent";
+    case "state":
+      return `${d.state ?? "?"}${d.turn_id != null ? ` · T${d.turn_id}` : ""}`;
     case "flow_node_changed":
       return `node → ${d.node_id ?? "?"}`;
     case "error":
@@ -104,7 +105,12 @@ export function AgentView() {
   const [configError, setConfigError] = useState<string | null>(null);
   const [selectedVoiceProfile, setSelectedVoiceProfile] = useState("");
   const [tab, setTab] = useState<Tab>("pipeline");
-  const [pipe, setPipe] = useState<PipelineState>(IDLE_PIPELINE);
+  // The single source of truth for conversation state — written ONLY by the WS
+  // transport's onState (plus the disconnect/connect reset). No timers.
+  const [convState, setConvState] = useState<ConvState>("idle");
+  // Latest turn text, surfaced in the pipeline readout (gated on convState).
+  const [lastUserText, setLastUserText] = useState("");
+  const [lastAgentText, setLastAgentText] = useState("");
 
   const [flows, setFlows] = useState<Flow[]>([]);
   const [activeFlow, setActiveFlow] = useState("");
@@ -134,24 +140,7 @@ export function AgentView() {
   const flowsDefaultRef = useRef("");
   const activeFlowRef = useRef(""); // current selection, read at switch/ready time
   const connectingRef = useRef(false); // synchronous re-entrancy guard
-  const pendingAgentQueue = useRef<Array<{ text: string; shown: boolean }>>([]);
-  const botWasSpeaking = useRef(false);
-  const pipeTimers = useRef<number[]>([]); // scheduled pipeline phase transitions
-  const phaseRef = useRef(pipe.phase); // latest phase, for sync reads in callbacks
   const mounted = useRef(true);
-
-  // Keep phaseRef in sync so audio-level callbacks can read the live phase.
-  useEffect(() => {
-    phaseRef.current = pipe.phase;
-  }, [pipe.phase]);
-
-  const clearPipeTimers = useCallback(() => {
-    pipeTimers.current.forEach((t) => window.clearTimeout(t));
-    pipeTimers.current = [];
-  }, []);
-  const pipeAt = useCallback((ms: number, fn: () => void) => {
-    pipeTimers.current.push(window.setTimeout(fn, ms));
-  }, []);
 
   useEffect(() => {
     Promise.all([fetchConfig(), fetchFlows()])
@@ -177,9 +166,8 @@ export function AgentView() {
       mounted.current = false;
       void clientRef.current?.disconnect();
       clientRef.current = null;
-      clearPipeTimers();
     },
-    [clearPipeTimers],
+    [],
   );
 
   // Level meters decay toward 0 between audio frames.
@@ -235,10 +223,9 @@ export function AgentView() {
     setSwitchNote(null);
     setMicLevel(0);
     setBotLevel(0);
-    pendingAgentQueue.current = [];
-    botWasSpeaking.current = false;
-    clearPipeTimers();
-    setPipe(IDLE_PIPELINE);
+    setConvState("idle");
+    setLastUserText("");
+    setLastAgentText("");
 
     const transport = new SupervoiceWSTransport(undefined, selectedVoiceProfile);
     const client = new SupervoiceClient({ transport });
@@ -250,42 +237,35 @@ export function AgentView() {
       setMicLevel((cur) => Math.max(cur, l));
     });
     client.onBotLevel((l) => {
+      // botLevel is waveform amplitude ONLY — never conversation state.
       if (!mounted.current) return;
-      const speaking = l > 0.04;
-      const rising = speaking && !botWasSpeaking.current;
-      const falling = !speaking && botWasSpeaking.current;
-      if (rising && pendingAgentQueue.current.length > 0) {
-        const items = pendingAgentQueue.current.splice(0);
-        for (const item of items) {
-          if (!item.shown) {
-            item.shown = true;
-            addTurn("agent", item.text);
-          }
-        }
-      }
-      // Pipeline fidelity: light "Caller hears" (tts) on the real audio onset,
-      // and fall back to "listen" when the reply audio actually stops — rather
-      // than guessing with fixed timers.
-      if (rising && phaseRef.current === "reply") {
-        setPipe((p) => ({ ...p, phase: "tts" }));
-      }
-      if (falling && phaseRef.current === "tts") {
-        clearPipeTimers();
-        setPipe({ phase: "listen", userText: "", replyText: "" });
-      }
-      botWasSpeaking.current = speaking;
       setBotLevel((cur) => Math.max(cur, l));
+    });
+    // The single writer of convState: worker-authored state arrives down the WS
+    // transport (Sink A). No timers, no botLevel threshold — see the design's
+    // single-source invariants. The disconnect/connect resets below are the
+    // only other writers.
+    client.onState((s) => {
+      if (!mounted.current) return;
+      setConvState(s);
+      // New-turn boundary: drop the prior turn's readout text so the pipeline
+      // shows a generic label until the matching user_turn/agent_turn text
+      // lands. convState (media) precedes the turn text (agent layer), so
+      // without this the readout would show the PREVIOUS turn's text as if it
+      // were current (design's "state vs. turn-text ordering" edge case).
+      if (s === "listening" || s === "interrupted") setLastUserText("");
+      if (s === "listening" || s === "interrupted" || s === "thinking") {
+        setLastAgentText("");
+      }
     });
 
     client.on("connected", () => {
       setAppState("active");
-      setPipe({ phase: "listen", userText: "", replyText: "" });
     });
     client.on("disconnected", () => {
       setAppState("disconnected");
       setAgentReady(false);
-      clearPipeTimers();
-      setPipe(IDLE_PIPELINE);
+      setConvState("idle");
     });
     client.on("ready", () => {
       setAgentReady(true);
@@ -297,11 +277,9 @@ export function AgentView() {
         switchFlow(startFlow, false).catch(() => {});
       }
     });
-    client.on("interruption", () => {
-      // Barge-in: the worker abandons the current reply — snap back to listening.
-      clearPipeTimers();
-      setPipe({ phase: "listen", userText: "", replyText: "" });
-    });
+    // Barge-in is reflected by convState (interrupted → listening) from the
+    // worker; the side-channel "interruption" still surfaces in the EVENTS log
+    // via onAny. No timer-driven UI reset here.
     client.on("session", (d) => setSession(d as SessionInfo));
     client.on("flow_node_changed", (d) =>
       setCurrentNode(d.node_id != null ? String(d.node_id) : null),
@@ -309,50 +287,13 @@ export function AgentView() {
     client.on("user_turn", (d) => {
       const text = String(d.text ?? "");
       addTurn("user", text);
-      // Drive the pipeline: user text enters STT → DialogMachine.turn().
-      clearPipeTimers();
-      setPipe({ phase: "stt", userText: text, replyText: "" });
-      pipeAt(550, () => setPipe((p) => ({ ...p, phase: "turn" })));
-      // Watchdog: if no agent_turn ever lands (dead turn / agent error), don't
-      // stay lit forever. agent_turn clears timers first, so this is a no-op on
-      // the happy path. 12s is comfortably above worst-case LLM latency.
-      pipeAt(12000, () =>
-        setPipe((p) =>
-          p.phase === "turn" || p.phase === "stt"
-            ? { phase: "listen", userText: "", replyText: "" }
-            : p,
-        ),
-      );
+      // Turn text only — the pipeline lights from convState, not from this.
+      setLastUserText(text);
     });
     client.on("agent_turn", (d) => {
       const text = String(d.text ?? "");
-      // Drive the pipeline: reply generated → (real audio onset advances to
-      // tts via onBotLevel) → listen. Timers are only fallbacks for when no
-      // bot audio frames arrive.
-      clearPipeTimers();
-      setPipe((p) => ({ ...p, phase: "reply", userText: "", replyText: text }));
-      pipeAt(1500, () =>
-        setPipe((p) => (p.phase === "reply" ? { ...p, phase: "tts" } : p)),
-      );
-      pipeAt(4000, () =>
-        setPipe((p) =>
-          p.phase === "reply" || p.phase === "tts"
-            ? { phase: "listen", userText: "", replyText: "" }
-            : p,
-        ),
-      );
-      // Transcript: show the agent turn synced to real bot audio onset, with a
-      // tracked 900ms fallback (cancelled by clearPipeTimers on teardown).
-      const entry: { text: string; shown: boolean } = { text, shown: false };
-      pendingAgentQueue.current.push(entry);
-      pipeAt(900, () => {
-        if (!entry.shown) {
-          entry.shown = true;
-          const idx = pendingAgentQueue.current.indexOf(entry);
-          if (idx !== -1) pendingAgentQueue.current.splice(idx, 1);
-          addTurn("agent", text);
-        }
-      });
+      addTurn("agent", text);
+      setLastAgentText(text);
     });
     client.on("metric", (d) =>
       setMetrics({
@@ -397,8 +338,7 @@ export function AgentView() {
     client.on("error", (d) => {
       addTurn("system", `Error: ${String(d.message ?? "unknown")}`);
       setAppState("idle");
-      clearPipeTimers();
-      setPipe(IDLE_PIPELINE);
+      setConvState("idle");
     });
 
     try {
@@ -411,7 +351,7 @@ export function AgentView() {
     } finally {
       connectingRef.current = false;
     }
-  }, [appState, selectedVoiceProfile, addTurn, pushEvent, clearPipeTimers, pipeAt]);
+  }, [appState, selectedVoiceProfile, addTurn, pushEvent]);
 
   const disconnect = useCallback(async () => {
     await clientRef.current?.disconnect();
@@ -456,7 +396,9 @@ export function AgentView() {
 
   const voiceProfileName =
     config.voice_profiles.find((vp) => vp.id === selectedVoiceProfile)?.name ?? "";
-  const speaking = botLevel > 0.04;
+  // Speaking is conversation state, not an audio threshold (botLevel is only a
+  // waveform amplitude, never state).
+  const speaking = convState === "speaking";
   const flowName = flowLabel(activeFlow);
   const voiceLocked = appState === "connecting" || appState === "active";
 
@@ -495,7 +437,7 @@ export function AgentView() {
           <StatusPanel
             appState={appState}
             agentReady={agentReady}
-            speaking={speaking}
+            convState={convState}
             session={session}
             voiceProfileName={voiceProfileName}
             activeLlm={config.active_llm}
@@ -524,9 +466,9 @@ export function AgentView() {
                 onClick={() => setTab(t.id)}
               >
                 {t.label}
-                {t.id === "pipeline" &&
-                  pipe.phase !== "idle" &&
-                  pipe.phase !== "listen" && <span className="tab-live" />}
+                {t.id === "pipeline" && isTurnActive(convState) && (
+                  <span className="tab-live" />
+                )}
               </button>
             ))}
           </div>
@@ -534,7 +476,9 @@ export function AgentView() {
             {tab === "pipeline" ? (
               <PipelinePanel
                 live={appState === "active" || appState === "connecting"}
-                pipe={pipe}
+                convState={convState}
+                userText={lastUserText}
+                replyText={lastAgentText}
                 node={currentNode}
               />
             ) : tab === "trace" ? (

@@ -52,28 +52,6 @@ export interface LogEntry {
   detail: string;
 }
 
-/** Stage of a turn as it travels the live pipeline schematic. */
-export type PipelinePhase =
-  | "idle"
-  | "listen"
-  | "stt"
-  | "turn"
-  | "tool"
-  | "reply"
-  | "tts";
-
-export interface PipelineState {
-  phase: PipelinePhase;
-  userText: string;
-  replyText: string;
-}
-
-export const IDLE_PIPELINE: PipelineState = {
-  phase: "idle",
-  userText: "",
-  replyText: "",
-};
-
 export interface SessionInfo {
   agent?: string;
   transport?: string;

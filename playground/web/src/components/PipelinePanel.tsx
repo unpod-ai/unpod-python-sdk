@@ -1,16 +1,16 @@
 // playground/web/src/components/PipelinePanel.tsx
 //
-// Live transit schematic, driven by real side-channel events:
-//   User speaks → [voice stack · STT] → hook user_turn
-//   → [SuperDialog · DialogMachine.turn()] → hook agent_turn
-//   → [voice stack · TTS] → Caller hears
+// Live transit schematic, driven purely by the worker-authored conversation
+// state (the single source of truth):
+//   listening → [voice stack · STT] · thinking → [DialogMachine.turn()]
+//   · speaking → [voice stack · TTS] → Caller hears
 //
-// `phase` is derived from the actual user_turn / agent_turn events in
-// AgentView (see derivePipeline), so a turn visibly travels the pipeline as the
-// conversation happens.
+// No timers: every lit segment is a pure function of `convState`. Turn text
+// (`userText`/`replyText`) still comes from the user_turn/agent_turn hooks; the
+// readout only gates its display on `convState`.
 import { memo, useEffect, useRef, useState } from "react";
 
-import type { PipelineState } from "../types";
+import { pipelineFlags, type ConvState } from "../state/convState";
 
 type CSSVars = React.CSSProperties & Record<string, string>;
 
@@ -93,19 +93,17 @@ function Endpoint({
 }
 
 function Segment({
-  label,
   hook,
   active,
   accent,
 }: {
-  label: string;
   hook: string;
   active: boolean;
   accent: string;
 }) {
   return (
     <div className={`seg ${active ? "active" : ""}`} style={{ "--sc": accent } as CSSVars}>
-      <span className={`seg-hook mono ${active ? "fired" : ""}`}>hook · {hook}</span>
+      <span className={`seg-hook mono ${active ? "fired" : ""}`}>{hook}</span>
       <div className="seg-rail">
         <span className="seg-line" />
         <span className="seg-token" />
@@ -113,45 +111,35 @@ function Segment({
           <ArrowIcon />
         </span>
       </div>
-      <span className="seg-label mono">{label}</span>
     </div>
   );
 }
 
-const DM_CHIPS = [
-  { id: "state", label: "flow state" },
-  { id: "tools", label: "tools" },
-  { id: "memory", label: "memory" },
-  { id: "transitions", label: "transitions" },
-];
-
 interface PipelinePanelProps {
   live: boolean;
-  pipe: PipelineState;
+  convState: ConvState;
+  userText: string; // latest caller turn (from user_turn)
+  replyText: string; // latest agent reply (from agent_turn)
   node: string | null; // current flow node (from flow_node_changed)
 }
 
 export const PipelinePanel = memo(function PipelinePanel({
   live,
-  pipe,
+  convState,
+  userText,
+  replyText,
   node,
 }: PipelinePanelProps) {
-  const { phase, userText, replyText } = pipe;
-  const sttOn = phase === "listen" || phase === "stt";
-  const dmOn = phase === "turn" || phase === "tool" || phase === "reply";
-  const ttsOn = phase === "tts";
-  const seg1On = phase === "stt" || phase === "turn";
-  const seg2On = phase === "reply" || phase === "tts";
-  const turning = phase === "turn" || phase === "tool";
+  const { sttOn, dmOn, ttsOn } = pipelineFlags(convState);
+  // The user-text leg is lit while the caller's turn travels to the agent
+  // (listening/interrupted) and while the agent reasons over it (thinking);
+  // the agent-reply leg is lit while the bot speaks.
+  const seg1On = sttOn || dmOn;
+  const seg2On = ttsOn;
+  const turning = dmOn; // DialogMachine pulses while thinking
 
-  const chipLit = (id: string): boolean => {
-    if (turning && (id === "state" || id === "transitions")) return true;
-    if (phase === "reply" && id === "memory") return true;
-    return false;
-  };
-
-  const live1 = userText && (phase === "stt" || phase === "turn" || phase === "tool");
-  const live2 = replyText && (phase === "reply" || phase === "tts");
+  const live1 = userText && (sttOn || dmOn);
+  const live2 = replyText && ttsOn;
   let readout: React.ReactNode = null;
   if (live1) {
     readout = (
@@ -171,7 +159,7 @@ export const PipelinePanel = memo(function PipelinePanel({
 
   return (
     <div className={`pipe ${live ? "is-live" : ""}`}>
-      <div className="pipe-cap">SuperDialog · Session</div>
+      <div className="pipe-cap">Session pipeline</div>
 
       <div className="pipe-grid">
         <Endpoint side="in" label="User speaks" icon="mic" active={sttOn} color="var(--cyan)" />
@@ -183,7 +171,7 @@ export const PipelinePanel = memo(function PipelinePanel({
           </div>
         </div>
 
-        <Segment label="user text" hook="user_turn" active={seg1On} accent="var(--cyan)" />
+        <Segment hook="user_turn" active={seg1On} accent="var(--cyan)" />
 
         <div className={`frame super ${dmOn ? "on" : ""} ${turning ? "turning" : ""}`}>
           <span className="frame-cap mono indigo">SuperDialog · your flow</span>
@@ -192,18 +180,11 @@ export const PipelinePanel = memo(function PipelinePanel({
               DialogMachine<span className="dm-fn">.turn()</span>
               {turning && <span className="dm-pulse" />}
             </span>
-            <div className="dm-chips">
-              {DM_CHIPS.map((c) => (
-                <span key={c.id} className={`dm-chip mono ${chipLit(c.id) ? "lit" : ""}`}>
-                  {c.label}
-                </span>
-              ))}
-            </div>
             {node && dmOn && <span className="dm-node mono">▸ {node}</span>}
           </div>
         </div>
 
-        <Segment label="agent reply" hook="agent_turn" active={seg2On} accent="var(--indigo)" />
+        <Segment hook="agent_turn" active={seg2On} accent="var(--indigo)" />
 
         <div className={`frame voice ${ttsOn ? "on" : ""}`}>
           <span className="frame-cap mono">voice stack</span>

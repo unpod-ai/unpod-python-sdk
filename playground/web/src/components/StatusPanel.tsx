@@ -1,12 +1,14 @@
 // playground/web/src/components/StatusPanel.tsx
 // Left-rail "State" section (matches the standalone design): Client/Agent pills
 // + a Transport/Session/Voice/LLM/Round-trip block, wired to live session data.
+// The Agent pill reflects the worker-authored conversation state (convState).
+import { agentPill, type ConvState } from "../state/convState";
 import type { AppState, SessionInfo } from "../types";
 
 interface StatusPanelProps {
   appState: AppState;
   agentReady: boolean;
-  speaking: boolean;
+  convState: ConvState;
   session: SessionInfo | null;
   voiceProfileName: string;
   activeLlm: string;
@@ -42,13 +44,14 @@ function StatRow({
 export function StatusPanel({
   appState,
   agentReady,
-  speaking,
+  convState,
   session,
   voiceProfileName,
   activeLlm,
   latencyMs,
 }: StatusPanelProps) {
   const connected = appState === "active";
+  const speaking = convState === "speaking";
   const sessionId = typeof session?.session_id === "string" ? session.session_id : "";
 
   return (
@@ -68,7 +71,7 @@ export function StatusPanel({
             {connected ? (
               <>
                 <span className={`led ${speaking ? "amber" : agentReady ? "green" : ""}`} />
-                {speaking ? "Speaking" : agentReady ? "Ready" : "…"}
+                {agentReady ? agentPill(convState) : "…"}
               </>
             ) : (
               "—"

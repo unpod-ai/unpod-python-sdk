@@ -8,6 +8,8 @@
  * panel) via optional callbacks.
  */
 
+import type { ConvState } from "../state/convState";
+
 export interface TransportCallbacks {
   onConnected?: () => void;
   onDisconnected?: () => void;
@@ -16,6 +18,11 @@ export interface TransportCallbacks {
   onMicLevel?: (level: number) => void;
   /** Bot output level, 0..1, emitted as playback frames arrive. */
   onBotLevel?: (level: number) => void;
+  /**
+   * Conversation state pushed down the media channel by the worker — the UI's
+   * single source of truth for idle/listening/thinking/speaking/interrupted.
+   */
+  onState?: (state: ConvState) => void;
   /** The resolved session descriptor from `POST /playground/sessions`. */
   onSession?: (info: Record<string, unknown>) => void;
 }
