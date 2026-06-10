@@ -18,13 +18,6 @@ class SuperDialogAdapter:
         result = await self._dm.turn(text)
         return result.text  # type: ignore[no-any-return]
 
-    async def stream(
-        self, text: str, context: dict | None = None
-    ) -> AsyncIterator[str]:
-        """Stream assistant reply chunks."""
-        async for chunk in await self._dm.turn(text, stream=True):
-            yield chunk.text
-
     def assist(self, text: str) -> None:
         """Inject a system-level assist directive."""
         self._dm.assist(text)
@@ -46,11 +39,33 @@ class SuperDialogAdapter:
 
     def register_llm_callback(self, fn: Any) -> None:
         """Register _on_llm_complete on the underlying ToolCallAdapter. No-op if not available."""
+        self._llm_callback = fn
+        # Try immediately in case adapter is already initialized
         _adapter = getattr(self._dm, "_adapter", None)
         if _adapter is not None and hasattr(_adapter, "_on_llm_complete"):
             _adapter._on_llm_complete = fn
+
+    async def stream(
+        self, text: str, context: dict | None = None
+    ) -> AsyncIterator[str]:
+        """Stream assistant reply chunks."""
+        cb = getattr(self, "_llm_callback", None)
+        if cb is not None:
+            # Ensure machine is initialized first — _ensure_machine may create a new adapter
+            # instance, so we must call it before reading _adapter to get the final reference.
+            if hasattr(self._dm, "_ensure_machine"):
+                try:
+                    await self._dm._ensure_machine()
+                except Exception:
+                    pass
+            _adapter = getattr(self._dm, "_adapter", None)
+            if _adapter is not None and hasattr(_adapter, "_on_llm_complete"):
+                _adapter._on_llm_complete = cb
+        async for chunk in await self._dm.turn(text, stream=True):
+            yield chunk.text
 
     @property
     def state(self) -> dict:
         """Current dialog state snapshot."""
         return self._dm.state  # type: ignore[no-any-return]
+

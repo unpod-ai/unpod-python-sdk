@@ -32,7 +32,7 @@ playground = [
   "superdialog>=0.2,<0.3",
   "livekit-agents>=1.0,<2",
 ]
-dev = [
+add = [
   "pytest>=8",
   "pytest-asyncio>=0.23",
   "anyio>=4",
@@ -50,6 +50,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/unpod"]
+
+[tool.uv.sources]
+superdialog = { path = "../superdialog", editable = true }
 
 [tool.ruff]
 line-length = 88

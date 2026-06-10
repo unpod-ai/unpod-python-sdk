@@ -32,6 +32,29 @@ import {
 
 type Tab = "conversation" | "metrics" | "trace";
 
+function startResize(
+  e: React.MouseEvent,
+  axis: "x" | "y",
+  current: number,
+  set: (v: number) => void,
+  direction: 1 | -1,
+  min: number,
+  max: number,
+) {
+  e.preventDefault();
+  const start = axis === "x" ? e.clientX : e.clientY;
+  const onMove = (ev: MouseEvent) => {
+    const pos = axis === "x" ? ev.clientX : ev.clientY;
+    set(Math.max(min, Math.min(max, current + (pos - start) * direction)));
+  };
+  const onUp = () => {
+    document.removeEventListener("mousemove", onMove);
+    document.removeEventListener("mouseup", onUp);
+  };
+  document.addEventListener("mousemove", onMove);
+  document.addEventListener("mouseup", onUp);
+}
+
 const num = (v: unknown): number | null => (typeof v === "number" ? v : null);
 
 /** One-line, human-readable summary of a side-channel event for the log. */
@@ -95,6 +118,10 @@ export function AgentView() {
     kind: "ok" | "err";
     text: string;
   } | null>(null);
+
+  const [leftColWidth, setLeftColWidth] = useState(250);
+  const [rightColWidth, setRightColWidth] = useState(300);
+  const [eventsHeight, setEventsHeight] = useState(168);
 
   const clientRef = useRef<SupervoiceClient | null>(null);
   const logId = useRef(0);
@@ -263,7 +290,21 @@ export function AgentView() {
         const next =
           idx === -1
             ? [...prev, incoming]
-            : prev.map((item) => (item.turn_id === incoming.turn_id ? incoming : item));
+            : prev.map((item) =>
+                item.turn_id === incoming.turn_id
+                  ? {
+                      ...item,
+                      ...incoming,
+                      // Preserve non-null node data — TurnMetricsEvent has null nodes
+                      from_node: incoming.from_node ?? item.from_node,
+                      to_node: incoming.to_node ?? item.to_node,
+                      // Keep higher llm count and total from either event
+                      llm_call_count:
+                        incoming.llm_call_count || item.llm_call_count,
+                      llm_total_ms: incoming.llm_total_ms ?? item.llm_total_ms,
+                    }
+                  : item,
+              );
         return next.length > 200 ? next.slice(-200) : next;
       });
     });
@@ -337,7 +378,12 @@ export function AgentView() {
         onDisconnect={disconnect}
       />
 
-      <div className="grid">
+      <div
+        className="grid"
+        style={{
+          gridTemplateColumns: `${leftColWidth}px 10px 1fr 10px ${rightColWidth}px`,
+        }}
+      >
         <div className="leftcol">
           <Sidebar
             flows={flows}
@@ -350,6 +396,13 @@ export function AgentView() {
           />
           <BotAudioPanel appState={appState} level={botLevel} />
         </div>
+
+        <div
+          className="col-resize-handle"
+          onMouseDown={(e) =>
+            startResize(e, "x", leftColWidth, setLeftColWidth, 1, 150, 480)
+          }
+        />
 
         <section className="panel center">
           <div className="tabs">
@@ -386,6 +439,13 @@ export function AgentView() {
           )}
         </section>
 
+        <div
+          className="col-resize-handle"
+          onMouseDown={(e) =>
+            startResize(e, "x", rightColWidth, setRightColWidth, -1, 200, 520)
+          }
+        />
+
         <StatusPanel
           appState={appState}
           agentReady={agentReady}
@@ -396,7 +456,13 @@ export function AgentView() {
         />
       </div>
 
-      <EventsLog entries={events} />
+      <div
+        className="row-resize-handle"
+        onMouseDown={(e) =>
+          startResize(e, "y", eventsHeight, setEventsHeight, -1, 80, 420)
+        }
+      />
+      <EventsLog entries={events} height={eventsHeight} />
     </div>
   );
 }

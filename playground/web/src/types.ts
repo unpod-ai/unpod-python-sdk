@@ -39,6 +39,7 @@ export interface TurnCompleteEvent {
   tts_ms?: number | null;
   ttfa_ms: number | null;
   asr_ms: number | null;
+  stt_latency_ms: number | null;
   tts_ttfb_ms: number | null;
   llm_call_count: number;
   llm_total_ms: number | null;
