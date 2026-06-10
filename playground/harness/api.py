@@ -139,7 +139,10 @@ def build_app() -> FastAPI:
                     voice_profiles = [
                         {
                             "id": p["profile_id"],
-                            "name": f"{p['name']} ({p.get('stt_provider', '')} + {p.get('tts_provider', '')})",
+                            "name": p.get("name", p["profile_id"]),
+                            "stt": p.get("stt_provider", ""),
+                            "tts": p.get("tts_provider", ""),
+                            "description": p.get("description", ""),
                         }
                         for p in resp.json()
                     ]

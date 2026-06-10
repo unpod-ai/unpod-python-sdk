@@ -30,3 +30,4 @@ node_modules/
 .superpowers/
 docs/superpowers/
 unpod-playground-standalone.html
+uv.lock

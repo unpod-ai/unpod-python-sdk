@@ -3,6 +3,9 @@
 export interface VoiceProfile {
   id: string;
   name: string;
+  stt?: string;
+  tts?: string;
+  description?: string;
 }
 
 export interface UnpodConfig {

@@ -11,26 +11,31 @@ import {
 import { SupervoiceClient } from "../client/SupervoiceClient";
 import { SupervoiceWSTransport } from "../transport/SupervoiceWSTransport";
 import { BotAudioPanel } from "../components/BotAudioPanel";
+import { Composer } from "../components/Composer";
 import { DashboardPanel } from "../components/DashboardPanel";
 import { ConversationPanel } from "../components/ConversationPanel";
+import { FlowsList } from "../components/FlowsList";
 import { MetricsPanel } from "../components/MetricsPanel";
-import { Sidebar } from "../components/Sidebar";
+import { PipelinePanel } from "../components/PipelinePanel";
 import { StatusPanel } from "../components/StatusPanel";
+import { VoiceProfilePanel } from "../components/VoiceProfilePanel";
 import { EventsLog } from "../components/EventsLog";
 import { TopBar } from "../components/TopBar";
 import {
   clockTime,
   EMPTY_METRICS,
+  IDLE_PIPELINE,
   type AppState,
   type LLMCallEvent,
   type LogEntry,
   type MetricSnapshot,
+  type PipelineState,
   type SessionInfo,
   type TurnCompleteEvent,
   type Turn,
 } from "../types";
 
-type Tab = "conversation" | "metrics" | "trace";
+type Tab = "pipeline" | "conversation" | "metrics" | "trace";
 
 function startResize(
   e: React.MouseEvent,
@@ -98,7 +103,8 @@ export function AgentView() {
   const [config, setConfig] = useState<UnpodConfig | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
   const [selectedVoiceProfile, setSelectedVoiceProfile] = useState("");
-  const [tab, setTab] = useState<Tab>("conversation");
+  const [tab, setTab] = useState<Tab>("pipeline");
+  const [pipe, setPipe] = useState<PipelineState>(IDLE_PIPELINE);
 
   const [flows, setFlows] = useState<Flow[]>([]);
   const [activeFlow, setActiveFlow] = useState("");
@@ -119,7 +125,7 @@ export function AgentView() {
     text: string;
   } | null>(null);
 
-  const [leftColWidth, setLeftColWidth] = useState(250);
+  const [leftColWidth, setLeftColWidth] = useState(300);
   const [rightColWidth, setRightColWidth] = useState(300);
   const [eventsHeight, setEventsHeight] = useState(168);
 
@@ -130,6 +136,22 @@ export function AgentView() {
   const connectingRef = useRef(false); // synchronous re-entrancy guard
   const pendingAgentQueue = useRef<Array<{ text: string; shown: boolean }>>([]);
   const botWasSpeaking = useRef(false);
+  const pipeTimers = useRef<number[]>([]); // scheduled pipeline phase transitions
+  const phaseRef = useRef(pipe.phase); // latest phase, for sync reads in callbacks
+  const mounted = useRef(true);
+
+  // Keep phaseRef in sync so audio-level callbacks can read the live phase.
+  useEffect(() => {
+    phaseRef.current = pipe.phase;
+  }, [pipe.phase]);
+
+  const clearPipeTimers = useCallback(() => {
+    pipeTimers.current.forEach((t) => window.clearTimeout(t));
+    pipeTimers.current = [];
+  }, []);
+  const pipeAt = useCallback((ms: number, fn: () => void) => {
+    pipeTimers.current.push(window.setTimeout(fn, ms));
+  }, []);
 
   useEffect(() => {
     Promise.all([fetchConfig(), fetchFlows()])
@@ -152,10 +174,12 @@ export function AgentView() {
   // Tear down the live client (mic + WebSockets) if the view unmounts.
   useEffect(
     () => () => {
+      mounted.current = false;
       void clientRef.current?.disconnect();
       clientRef.current = null;
+      clearPipeTimers();
     },
-    [],
+    [clearPipeTimers],
   );
 
   // Level meters decay toward 0 between audio frames.
@@ -182,6 +206,7 @@ export function AgentView() {
   }, []);
 
   const addTurn = useCallback((role: Turn["role"], text: string) => {
+    if (!mounted.current) return;
     setTurns((prev) => [...prev, { role, text, time: clockTime() }]);
   }, []);
 
@@ -212,16 +237,24 @@ export function AgentView() {
     setBotLevel(0);
     pendingAgentQueue.current = [];
     botWasSpeaking.current = false;
+    clearPipeTimers();
+    setPipe(IDLE_PIPELINE);
 
     const transport = new SupervoiceWSTransport(undefined, selectedVoiceProfile);
     const client = new SupervoiceClient({ transport });
     clientRef.current = client;
 
     client.onAny(pushEvent);
-    client.onMicLevel((l) => setMicLevel((cur) => Math.max(cur, l)));
+    client.onMicLevel((l) => {
+      if (!mounted.current) return;
+      setMicLevel((cur) => Math.max(cur, l));
+    });
     client.onBotLevel((l) => {
+      if (!mounted.current) return;
       const speaking = l > 0.04;
-      if (speaking && !botWasSpeaking.current && pendingAgentQueue.current.length > 0) {
+      const rising = speaking && !botWasSpeaking.current;
+      const falling = !speaking && botWasSpeaking.current;
+      if (rising && pendingAgentQueue.current.length > 0) {
         const items = pendingAgentQueue.current.splice(0);
         for (const item of items) {
           if (!item.shown) {
@@ -230,14 +263,29 @@ export function AgentView() {
           }
         }
       }
+      // Pipeline fidelity: light "Caller hears" (tts) on the real audio onset,
+      // and fall back to "listen" when the reply audio actually stops — rather
+      // than guessing with fixed timers.
+      if (rising && phaseRef.current === "reply") {
+        setPipe((p) => ({ ...p, phase: "tts" }));
+      }
+      if (falling && phaseRef.current === "tts") {
+        clearPipeTimers();
+        setPipe({ phase: "listen", userText: "", replyText: "" });
+      }
       botWasSpeaking.current = speaking;
       setBotLevel((cur) => Math.max(cur, l));
     });
 
-    client.on("connected", () => setAppState("active"));
+    client.on("connected", () => {
+      setAppState("active");
+      setPipe({ phase: "listen", userText: "", replyText: "" });
+    });
     client.on("disconnected", () => {
       setAppState("disconnected");
       setAgentReady(false);
+      clearPipeTimers();
+      setPipe(IDLE_PIPELINE);
     });
     client.on("ready", () => {
       setAgentReady(true);
@@ -249,24 +297,62 @@ export function AgentView() {
         switchFlow(startFlow, false).catch(() => {});
       }
     });
+    client.on("interruption", () => {
+      // Barge-in: the worker abandons the current reply — snap back to listening.
+      clearPipeTimers();
+      setPipe({ phase: "listen", userText: "", replyText: "" });
+    });
     client.on("session", (d) => setSession(d as SessionInfo));
     client.on("flow_node_changed", (d) =>
       setCurrentNode(d.node_id != null ? String(d.node_id) : null),
     );
-    client.on("user_turn", (d) => addTurn("user", String(d.text ?? "")));
+    client.on("user_turn", (d) => {
+      const text = String(d.text ?? "");
+      addTurn("user", text);
+      // Drive the pipeline: user text enters STT → DialogMachine.turn().
+      clearPipeTimers();
+      setPipe({ phase: "stt", userText: text, replyText: "" });
+      pipeAt(550, () => setPipe((p) => ({ ...p, phase: "turn" })));
+      // Watchdog: if no agent_turn ever lands (dead turn / agent error), don't
+      // stay lit forever. agent_turn clears timers first, so this is a no-op on
+      // the happy path. 12s is comfortably above worst-case LLM latency.
+      pipeAt(12000, () =>
+        setPipe((p) =>
+          p.phase === "turn" || p.phase === "stt"
+            ? { phase: "listen", userText: "", replyText: "" }
+            : p,
+        ),
+      );
+    });
     client.on("agent_turn", (d) => {
       const text = String(d.text ?? "");
+      // Drive the pipeline: reply generated → (real audio onset advances to
+      // tts via onBotLevel) → listen. Timers are only fallbacks for when no
+      // bot audio frames arrive.
+      clearPipeTimers();
+      setPipe((p) => ({ ...p, phase: "reply", userText: "", replyText: text }));
+      pipeAt(1500, () =>
+        setPipe((p) => (p.phase === "reply" ? { ...p, phase: "tts" } : p)),
+      );
+      pipeAt(4000, () =>
+        setPipe((p) =>
+          p.phase === "reply" || p.phase === "tts"
+            ? { phase: "listen", userText: "", replyText: "" }
+            : p,
+        ),
+      );
+      // Transcript: show the agent turn synced to real bot audio onset, with a
+      // tracked 900ms fallback (cancelled by clearPipeTimers on teardown).
       const entry: { text: string; shown: boolean } = { text, shown: false };
       pendingAgentQueue.current.push(entry);
-      // Safety fallback: show after 900ms even if bot audio never starts
-      window.setTimeout(() => {
+      pipeAt(900, () => {
         if (!entry.shown) {
           entry.shown = true;
           const idx = pendingAgentQueue.current.indexOf(entry);
           if (idx !== -1) pendingAgentQueue.current.splice(idx, 1);
           addTurn("agent", text);
         }
-      }, 900);
+      });
     });
     client.on("metric", (d) =>
       setMetrics({
@@ -311,6 +397,8 @@ export function AgentView() {
     client.on("error", (d) => {
       addTurn("system", `Error: ${String(d.message ?? "unknown")}`);
       setAppState("idle");
+      clearPipeTimers();
+      setPipe(IDLE_PIPELINE);
     });
 
     try {
@@ -323,7 +411,7 @@ export function AgentView() {
     } finally {
       connectingRef.current = false;
     }
-  }, [appState, selectedVoiceProfile, addTurn, pushEvent]);
+  }, [appState, selectedVoiceProfile, addTurn, pushEvent, clearPipeTimers, pipeAt]);
 
   const disconnect = useCallback(async () => {
     await clientRef.current?.disconnect();
@@ -338,6 +426,8 @@ export function AgentView() {
       }
       setSwitchingFlow(flowId);
       setCurrentNode(null); // don't show the previous flow's node on the new card
+      // preserve_memory=true on a live switch so the conversation context
+      // survives (vs the initial start switch on "ready", which uses false).
       const res = await switchFlow(flowId, true);
       setSwitchingFlow(null);
       if (res.ok) {
@@ -366,13 +456,23 @@ export function AgentView() {
 
   const voiceProfileName =
     config.voice_profiles.find((vp) => vp.id === selectedVoiceProfile)?.name ?? "";
+  const speaking = botLevel > 0.04;
+  const flowName = flowLabel(activeFlow);
+  const voiceLocked = appState === "connecting" || appState === "active";
+
+  const TABS: Array<{ id: Tab; label: string }> = [
+    { id: "pipeline", label: "Pipeline" },
+    { id: "conversation", label: "Conversation" },
+    { id: "metrics", label: "Metrics" },
+    { id: "trace", label: "Trace" },
+  ];
 
   return (
     <div className={`shell shell--${appState}`}>
       <TopBar
-        voiceProfiles={config.voice_profiles}
-        selectedVoiceProfile={selectedVoiceProfile}
-        onVoiceProfileChange={setSelectedVoiceProfile}
+        hasVoice={!!selectedVoiceProfile}
+        hasFlow={!!activeFlow}
+        flowName={flowName}
         appState={appState}
         onConnect={connect}
         onDisconnect={disconnect}
@@ -384,18 +484,28 @@ export function AgentView() {
           gridTemplateColumns: `${leftColWidth}px 10px 1fr 10px ${rightColWidth}px`,
         }}
       >
-        <div className="leftcol">
-          <Sidebar
-            flows={flows}
-            activeFlow={activeFlow}
-            currentNode={currentNode}
-            switching={switchingFlow}
-            appState={appState}
-            note={switchNote}
-            onSelect={selectFlow}
+        {/* LEFT: voice profile · state · bot audio */}
+        <aside className="rail left">
+          <VoiceProfilePanel
+            voiceProfiles={config.voice_profiles}
+            selected={selectedVoiceProfile}
+            onChange={setSelectedVoiceProfile}
+            disabled={voiceLocked}
           />
-          <BotAudioPanel appState={appState} level={botLevel} />
-        </div>
+          <StatusPanel
+            appState={appState}
+            agentReady={agentReady}
+            speaking={speaking}
+            session={session}
+            voiceProfileName={voiceProfileName}
+            activeLlm={config.active_llm}
+            latencyMs={metrics.ttfa_ms}
+          />
+          <div className="rail-section botaudio">
+            <div className="rail-label">Bot audio</div>
+            <BotAudioPanel appState={appState} level={botLevel} />
+          </div>
+        </aside>
 
         <div
           className="col-resize-handle"
@@ -404,39 +514,43 @@ export function AgentView() {
           }
         />
 
-        <section className="panel center">
-          <div className="tabs">
-            <button
-              className={`tab${tab === "conversation" ? " tab--active" : ""}`}
-              onClick={() => setTab("conversation")}
-            >
-              Conversation
-            </button>
-            <button
-              className={`tab${tab === "metrics" ? " tab--active" : ""}`}
-              onClick={() => setTab("metrics")}
-            >
-              Metrics
-            </button>
-            <button
-              className={`tab${tab === "trace" ? " tab--active" : ""}`}
-              onClick={() => setTab("trace")}
-            >
-              Trace
-            </button>
+        {/* CENTER: tabs · active panel · composer */}
+        <section className="center">
+          <div className="center-tabs">
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                className={`ctab${tab === t.id ? " on" : ""}`}
+                onClick={() => setTab(t.id)}
+              >
+                {t.label}
+                {t.id === "pipeline" &&
+                  pipe.phase !== "idle" &&
+                  pipe.phase !== "listen" && <span className="tab-live" />}
+              </button>
+            ))}
           </div>
-          {tab === "trace" ? (
-            <DashboardPanel
-              llmCalls={llmCalls}
-              turnTimings={turnTimings}
-              metrics={metrics}
-              turns={turns}
-            />
-          ) : tab === "conversation" ? (
-            <ConversationPanel turns={turns} appState={appState} />
-          ) : (
-            <MetricsPanel metrics={metrics} />
-          )}
+          <div className="center-body">
+            {tab === "pipeline" ? (
+              <PipelinePanel
+                live={appState === "active" || appState === "connecting"}
+                pipe={pipe}
+                node={currentNode}
+              />
+            ) : tab === "trace" ? (
+              <DashboardPanel
+                llmCalls={llmCalls}
+                turnTimings={turnTimings}
+                metrics={metrics}
+                turns={turns}
+              />
+            ) : tab === "conversation" ? (
+              <ConversationPanel turns={turns} appState={appState} />
+            ) : (
+              <MetricsPanel metrics={metrics} />
+            )}
+          </div>
+          <Composer appState={appState} speaking={speaking} />
         </section>
 
         <div
@@ -446,14 +560,18 @@ export function AgentView() {
           }
         />
 
-        <StatusPanel
-          appState={appState}
-          agentReady={agentReady}
-          micLevel={micLevel}
-          session={session}
-          voiceProfileName={voiceProfileName}
-          activeLlm={config.active_llm}
-        />
+        {/* RIGHT: flows */}
+        <aside className="rail right">
+          <FlowsList
+            flows={flows}
+            activeFlow={activeFlow}
+            currentNode={currentNode}
+            switching={switchingFlow}
+            appState={appState}
+            note={switchNote}
+            onSelect={selectFlow}
+          />
+        </aside>
       </div>
 
       <div

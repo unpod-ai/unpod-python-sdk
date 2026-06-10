@@ -1,23 +1,17 @@
 // playground/web/src/components/StatusPanel.tsx
+// Left-rail "State" section (matches the standalone design): Client/Agent pills
+// + a Transport/Session/Voice/LLM/Round-trip block, wired to live session data.
 import type { AppState, SessionInfo } from "../types";
 
 interface StatusPanelProps {
   appState: AppState;
   agentReady: boolean;
-  micLevel: number; // 0..1
+  speaking: boolean;
   session: SessionInfo | null;
   voiceProfileName: string;
   activeLlm: string;
+  latencyMs: number | null;
 }
-
-const CLIENT_LABEL: Record<AppState, string> = {
-  idle: "IDLE",
-  connecting: "CONNECTING",
-  active: "CONNECTED",
-  disconnected: "DISCONNECTED",
-};
-
-const MIC_SEGMENTS = 12;
 
 function truncate(value: string, head = 8, tail = 4): string {
   return value.length > head + tail + 1
@@ -25,86 +19,77 @@ function truncate(value: string, head = 8, tail = 4): string {
     : value;
 }
 
-function copy(value: string): void {
-  navigator.clipboard?.writeText(value).catch(() => {});
+function StatRow({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+}) {
+  const dim = value === "—";
+  return (
+    <div className="stat-row">
+      <span className="stat-k">{label}</span>
+      <span className={`stat-v${accent ? " accent" : ""}${dim ? " dim" : ""}`}>
+        {value}
+      </span>
+    </div>
+  );
 }
 
 export function StatusPanel({
   appState,
   agentReady,
-  micLevel,
+  speaking,
   session,
   voiceProfileName,
   activeLlm,
+  latencyMs,
 }: StatusPanelProps) {
+  const connected = appState === "active";
   const sessionId = typeof session?.session_id === "string" ? session.session_id : "";
-  const lit = Math.round(micLevel * MIC_SEGMENTS);
 
   return (
-    <aside className="status">
-      <div className="status__group">
-        <div className="status__title">STATUS</div>
-        <div className="status__row">
-          <span>Client</span>
-          <span className={`status__value status__value--${appState}`}>
-            {CLIENT_LABEL[appState]}
+    <div className="rail-section">
+      <div className="rail-label">State</div>
+      <div className="status-pills">
+        <div className={`sp ${connected ? "on" : ""}`}>
+          <span className="sp-k">Client</span>
+          <span className="sp-v">
+            <span className={`led ${connected ? "green" : ""}`} />
+            {connected ? "Live" : appState === "connecting" ? "Connecting" : "Idle"}
           </span>
         </div>
-        <div className="status__row">
-          <span>Agent</span>
-          <span className="status__value">{agentReady ? "READY" : "—"}</span>
-        </div>
-      </div>
-
-      <div className="status__group">
-        <div className="status__title">DEVICES</div>
-        <div className="status__mic">
-          <span className="status__mic-icon">🎙</span>
-          <div className="meter">
-            {Array.from({ length: MIC_SEGMENTS }, (_, i) => (
-              <span
-                key={i}
-                className={`meter__seg${i < lit ? " meter__seg--on" : ""}`}
-              />
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="status__group">
-        <div className="status__title">SESSION</div>
-        <div className="status__row">
-          <span>Transport</span>
-          <span className="status__value">{session?.transport ?? "—"}</span>
-        </div>
-        <div className="status__row">
-          <span>Session ID</span>
-          <span className="status__value status__value--mono">
-            {sessionId ? truncate(sessionId) : "—"}
-            {sessionId && (
-              <button
-                className="status__copy"
-                onClick={() => copy(sessionId)}
-                aria-label="Copy session id"
-              >
-                ⧉
-              </button>
+        <div className={`sp ${connected ? "on" : ""}`}>
+          <span className="sp-k">Agent</span>
+          <span className="sp-v">
+            {connected ? (
+              <>
+                <span className={`led ${speaking ? "amber" : agentReady ? "green" : ""}`} />
+                {speaking ? "Speaking" : agentReady ? "Ready" : "…"}
+              </>
+            ) : (
+              "—"
             )}
           </span>
         </div>
-        <div className="status__row">
-          <span>Agent</span>
-          <span className="status__value">{session?.agent ?? "—"}</span>
-        </div>
-        <div className="status__row">
-          <span>Voice</span>
-          <span className="status__value">{voiceProfileName || "—"}</span>
-        </div>
-        <div className="status__row">
-          <span>LLM</span>
-          <span className="status__value">{activeLlm || "—"}</span>
-        </div>
       </div>
-    </aside>
+      <div className="status-block">
+        <StatRow label="Transport" value={session?.transport ?? "—"} />
+        <StatRow
+          label="Session"
+          value={sessionId ? truncate(sessionId) : "—"}
+        />
+        <StatRow label="Voice" value={voiceProfileName || "—"} accent={!!voiceProfileName} />
+        <StatRow label="LLM" value={activeLlm || "—"} />
+        <StatRow
+          label="First audio"
+          value={latencyMs != null ? `~${latencyMs}ms` : "—"}
+          accent={latencyMs != null}
+        />
+      </div>
+    </div>
   );
 }
