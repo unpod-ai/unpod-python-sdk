@@ -33,6 +33,7 @@ from playground.agents.flows import flow_registry
 from playground.harness.control import ControlError, SessionRegistry
 from playground.harness.events import EventBus
 from playground.harness.runner import build_runner
+from unpod._base_url import ws_base
 
 _HERE = Path(__file__).parent
 _UI_DIST = _HERE.parent / "web" / "dist"
@@ -108,7 +109,12 @@ def build_app() -> FastAPI:
 
     app.state.bus = EventBus()
     app.state.registry = SessionRegistry()
-    app.state.supervoice_url = os.getenv("SUPERVOICE_URL", "ws://127.0.0.1:9000")
+    # Speech backend resolution (mirrors examples/browser_playground/run.py):
+    # explicit SUPERVOICE_URL wins → else the hosted wss://<UNPOD_BASE_URL>
+    # (so a fresh clone needs no local supervoice) → else the local dev service.
+    app.state.supervoice_url = (
+        os.getenv("SUPERVOICE_URL") or ws_base() or "ws://127.0.0.1:9000"
+    )
 
     @app.get("/health")
     async def health() -> dict[str, str]:

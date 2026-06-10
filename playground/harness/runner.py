@@ -106,6 +106,13 @@ def build_runner(
         async def _on_metric(metric: Any) -> None:
             bus.publish("metric", **metric.model_dump(exclude={"event"}))
 
+        @ctx.session.on("state")
+        async def _on_state(evt: Any) -> None:
+            # Proves the SDK 'state' hook fires (shown in the EVENTS log). The
+            # UI's convState is driven by the WS transport, not this side
+            # channel, so this is observability only.
+            bus.publish("state", state=evt.state, turn_id=evt.turn_id)
+
         @ctx.session.on("interruption")
         async def _on_interruption() -> None:
             bus.publish("interruption")

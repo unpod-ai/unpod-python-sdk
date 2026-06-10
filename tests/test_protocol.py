@@ -14,10 +14,26 @@ from unpod._protocol import (
     JobCompleted,
     Register,
     StateChanged,
+    StateEvent,
     UserTextEvent,
     parse_bridge_event,
     parse_dispatch_frame,
 )
+
+
+def test_state_event_parses_from_worker_wire():
+    """A StateEvent serialized by the worker parses back via the bridge map.
+
+    The worker sends an extra ``call_id`` field; ``extra=allow`` keeps it
+    without breaking parsing.
+    """
+    wire = json.dumps(
+        {"event": "state", "call_id": "sess-1", "state": "speaking", "turn_id": 4}
+    )
+    parsed = parse_bridge_event(wire)
+    assert isinstance(parsed, StateEvent)
+    assert parsed.state == "speaking"
+    assert parsed.turn_id == 4
 
 
 def test_register_frame():

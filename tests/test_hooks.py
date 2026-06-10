@@ -65,6 +65,20 @@ def test_valid_event_names() -> None:
     assert "silence" in VALID_EVENTS
     assert "interruption" in VALID_EVENTS
     assert "metric" in VALID_EVENTS
+    assert "state" in VALID_EVENTS
+
+
+@pytest.mark.anyio
+async def test_state_hook_registers_and_fires() -> None:
+    registry = HookRegistry()
+    received: list[str] = []
+
+    @registry.on("state")
+    async def handler(evt: object) -> None:
+        received.append(getattr(evt, "state", ""))
+
+    await registry.fire("state", type("E", (), {"state": "thinking"})())
+    assert received == ["thinking"]
 
 
 def test_invalid_event_raises() -> None:

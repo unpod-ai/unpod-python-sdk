@@ -36,26 +36,48 @@ grep-clean of `pipecat` / `rtvi`.
 
 ## Prerequisites
 
-- A running **supervoice** dev speech service exposing `POST /connect` +
-  `WS /ws/audio`:
-  ```bash
-  cd supervoice && uv run uvicorn supervoice.dev.app:create_dev_app --factory --port 9000
-  ```
+The playground is **self-contained from a fresh clone** — `superdialog` installs
+from PyPI (no sibling `../superdialog` checkout needed). You only need:
+
 - An LLM key: `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`.
+- A **speech backend** the harness can reach for audio. It is resolved in this
+  order (see `harness/api.py`):
+  1. `SUPERVOICE_URL` (explicit) — e.g. a local dev server.
+  2. else `UNPOD_BASE_URL` → the **hosted** `wss://<host>` speech service
+     (a fresh clone needs no local supervoice).
+  3. else `ws://127.0.0.1:9000` (a local `supervoice-dev`).
+
+  Copy [`.env.example`](.env.example) to `.env` at the repo root and set your
+  keys. For hosted voice with zero local backend: `UNPOD_BASE_URL=api.unpod.ai`.
+
+> The harness boots and serves the UI even with no speech backend reachable —
+> only clicking **Connect** (which opens an audio call) needs one.
 
 ## Run it
 
-From `unpod-sdk/`:
+From `unpod-sdk/` (with `.env` configured):
 
 ```bash
-# 1. Build the web UI (served by the harness from web/dist)
-cd playground/web && npm install && npm run build && cd ../..
+task pg        # builds web/dist, then serves UI + in-process agent on :9100
+```
 
-# 2. Start the harness + in-process agent (serves UI on :9100)
-uv run python -m playground.run
+Or manually:
+
+```bash
+cd playground/web && npm install && npm run build && cd ../..
+uv run --extra playground python -m playground.run
 ```
 
 Open <http://localhost:9100>, click **Connect**, allow the mic, and talk.
+
+### Fully-local dev (own supervoice + editable superdialog)
+
+```bash
+task supervoice-dev    # local supervoice on :9000 (needs ../supervoice)
+task pg-local          # playground with an editable ../superdialog overlay
+# or: task pg-stack    # boots a local supervoice-dev only if ../supervoice exists
+#                        and no SUPERVOICE_URL/UNPOD_BASE_URL is set
+```
 
 ### Frontend dev loop (hot reload)
 

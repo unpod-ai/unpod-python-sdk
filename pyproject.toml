@@ -51,8 +51,12 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/unpod"]
 
-[tool.uv.sources]
-superdialog = { path = "../superdialog", editable = true }
+# superdialog installs from PyPI by default so a fresh clone is self-contained
+# (no sibling ../superdialog checkout required). To co-develop superdialog
+# locally, layer an editable overlay for a single run instead of pinning a path
+# source here:
+#   uv run --extra playground --with-editable ../superdialog python -m playground.run
+# (or `task pg-local`).
 
 [tool.ruff]
 line-length = 88

@@ -9,6 +9,7 @@ from unpod._protocol import (
     AgentSayVerb,
     AgentTextEndEvent,
     AgentTransferVerb,
+    StateEvent,
     TurnMetricsEvent,
 )
 from unpod.adapters.base import DialogAdapter
@@ -162,6 +163,13 @@ class Session:
                 if isinstance(event, MetricEvent):
                     self._last_metric_event = event
                     await self._hooks.fire("metric", event)
+                    continue
+
+                if isinstance(event, StateEvent):
+                    # Conversation state (idle/listening/thinking/speaking/
+                    # interrupted) from the media worker — observability only;
+                    # never drives dialog. Mirrors the metric branch.
+                    await self._hooks.fire("state", event)
                     continue
 
                 if isinstance(event, TurnMetricsEvent):

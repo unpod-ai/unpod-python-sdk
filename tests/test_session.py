@@ -274,6 +274,38 @@ async def test_session_fires_metric_hook():
 
 
 @pytest.mark.anyio
+async def test_session_fires_state_hook():
+    """A StateEvent from the bridge fires the 'state' hook (mirrors metric).
+
+    The hook is observability only — it must never drive dialog or end the
+    call, so the loop continues past it (here the next recv raises to stop).
+    """
+    from unpod._protocol import StateEvent
+
+    received: list[StateEvent] = []
+    mock_bridge = AsyncMock()
+    mock_bridge.recv_event = AsyncMock(
+        side_effect=[
+            StateEvent(state="thinking", turn_id=2),
+            Exception("connection closed"),
+        ]
+    )
+
+    session = Session(bridge=mock_bridge)
+
+    @session.on("state")
+    async def _(evt: StateEvent) -> None:
+        received.append(evt)
+
+    await session.run()
+    assert len(received) == 1
+    assert received[0].state == "thinking"
+    assert received[0].turn_id == 2
+    # State is not a dialog driver: no verbs were sent in response.
+    mock_bridge.send_verb.assert_not_called()
+
+
+@pytest.mark.anyio
 async def test_session_wires_llm_callback_to_superdialog_adapter():
     """Session registers _on_llm_complete on SuperDialogAdapter if present."""
     from unittest.mock import AsyncMock, MagicMock

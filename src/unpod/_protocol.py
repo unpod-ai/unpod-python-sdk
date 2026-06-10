@@ -169,6 +169,22 @@ class TurnMetricsEvent(BaseModel):
     to_node: str | None = None
 
 
+class StateEvent(BaseModel):
+    """Conversation-state transition computed by the media worker.
+
+    The worker is the single authority; ``state`` is one of
+    ``idle | listening | thinking | speaking | interrupted``. Mirrors the
+    ``metric`` path: the SDK surfaces it via the ``state`` hook. ``extra`` is
+    allowed for forward-compatibility (e.g. ``call_id``).
+    """
+
+    model_config = {"extra": "allow"}
+
+    event: Literal["state"] = "state"
+    state: str = "idle"
+    turn_id: int = 0
+
+
 # -- Downstream (session -> bridge) --
 
 
@@ -283,6 +299,7 @@ BridgeEvent = Union[
     ErrorEvent,
     MetricEvent,
     TurnMetricsEvent,
+    StateEvent,
     AgentTextDeltaEvent,
     AgentTextEndEvent,
     AgentSayVerb,
@@ -303,6 +320,7 @@ _BRIDGE_EVENT_MAP: dict[str, type[BaseModel]] = {
     "error": ErrorEvent,
     "metric": MetricEvent,
     "turn.metrics": TurnMetricsEvent,
+    "state": StateEvent,
     "agent.text.delta": AgentTextDeltaEvent,
     "agent.text.end": AgentTextEndEvent,
     "agent.say": AgentSayVerb,

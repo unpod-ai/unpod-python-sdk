@@ -40,6 +40,7 @@ _SUPPORTED_EVENTS = [
     "error",
     "metric",
     "turn.metrics",
+    "state",
     "call.started",
 ]
 _SUPPORTED_VERBS = [

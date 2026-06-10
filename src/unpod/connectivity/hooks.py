@@ -16,6 +16,7 @@ VALID_EVENTS: frozenset[str] = frozenset(
         "silence",
         "interruption",
         "metric",
+        "state",
         "call_end",
         "error",
         "llm_call",
