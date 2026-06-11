@@ -54,6 +54,15 @@ def build_runner(
 
     async def entrypoint(ctx: CallContext) -> None:
         machine = spec.build(model)
+        # Switch to the requested flow BEFORE start() so the opening greeting
+        # comes from the correct flow, not always the default (bank_agent).
+        flow = ctx.data.get("flow") if isinstance(ctx.data, dict) else None
+        if flow and hasattr(machine, "switch_flow"):
+            try:
+                machine.switch_flow(flow)
+                logger.info(f"[runner] switched to flow={flow!r} before start")
+            except Exception as exc:
+                logger.warning(f"[runner] switch_flow({flow!r}) failed: {exc}")
         ctx.session.dialog_machine = machine
         registry.register(ctx.call_id, ctx.session)
 

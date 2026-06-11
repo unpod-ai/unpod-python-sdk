@@ -248,9 +248,9 @@ tasks:
         trap cleanup EXIT
         if [ -n "${SUPERVOICE_URL:-}" ] || [ -n "${UNPOD_BASE_URL:-}" ]; then
           echo "[pg-stack] hosted/explicit speech configured — not booting a local supervoice"
-        elif [ -d ../supervoice ]; then
-          echo "[pg-stack] booting local supervoice-dev on :9000 (../supervoice)…"
-          ( cd ../supervoice && {{.UV}} run uvicorn supervoice.dev.app:create_dev_app --factory --env-file .env --port 9000 ) &
+        elif [ -d ../super/supervoice ]; then
+          echo "[pg-stack] booting local supervoice-dev on :9000 (../super/supervoice)…"
+          ( cd ../super/supervoice && {{.UV}} run uvicorn supervoice.dev.app:create_dev_app --factory --env-file .env --port 9000 ) &
           SV_PID=$!
           sleep 2
         else

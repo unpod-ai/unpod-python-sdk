@@ -52,6 +52,7 @@ export class SupervoiceWSTransport extends Transport {
   constructor(
     private readonly agent?: string,
     private readonly voiceProfileId?: string,
+    private readonly flow?: string,
   ) {
     super();
   }
@@ -60,6 +61,7 @@ export class SupervoiceWSTransport extends Transport {
     const params = new URLSearchParams();
     if (this.agent) params.set("agent", this.agent);
     if (this.voiceProfileId) params.set("voice_profile_id", this.voiceProfileId);
+    if (this.flow) params.set("flow", this.flow);
     const query = params.size > 0 ? `?${params.toString()}` : "";
     const resp = await fetch(`/playground/sessions${query}`, { method: "POST" });
     if (!resp.ok) throw new Error(`session create failed: HTTP ${resp.status}`);

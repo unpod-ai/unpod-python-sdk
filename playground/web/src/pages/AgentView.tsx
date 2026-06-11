@@ -227,7 +227,7 @@ export function AgentView() {
     setLastUserText("");
     setLastAgentText("");
 
-    const transport = new SupervoiceWSTransport(undefined, selectedVoiceProfile);
+    const transport = new SupervoiceWSTransport(undefined, selectedVoiceProfile, activeFlowRef.current);
     const client = new SupervoiceClient({ transport });
     clientRef.current = client;
 
