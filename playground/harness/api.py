@@ -38,6 +38,69 @@ from unpod._base_url import ws_base
 _HERE = Path(__file__).parent
 _UI_DIST = _HERE.parent / "web" / "dist"
 
+# ── Django token manager ──────────────────────────────────────────────────────
+_django_token: str | None = os.getenv("DJANGO_API_TOKEN") or None
+
+
+async def _django_login() -> str | None:
+    """Login to Django and cache the access token."""
+    global _django_token
+    url = os.getenv("DJANGO_API_URL")
+    email = os.getenv("DJANGO_EMAIL")
+    password = os.getenv("DJANGO_PASSWORD")
+    if not url or not email or not password:
+        return _django_token
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                f"{url}/api/v1/auth/login/",
+                json={"email": email, "password": password},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            token = (
+                data.get("access")
+                or data.get("token")
+                or (data.get("data") or {}).get("access")
+                or (data.get("data") or {}).get("token")
+            )
+            if token:
+                _django_token = token
+                logger.info("[django] token refreshed")
+    except Exception as exc:
+        logger.warning(f"[django] login failed: {type(exc).__name__}: {exc}")
+    return _django_token
+
+
+async def _django_get(path: str) -> httpx.Response | None:
+    """GET with auto-relogin on 401."""
+    global _django_token
+    url = os.getenv("DJANGO_API_URL")
+    if not url:
+        return None
+    if not _django_token:
+        await _django_login()
+    if not _django_token:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(
+                f"{url}{path}",
+                headers={"Authorization": f"Bearer {_django_token}"},
+            )
+            if resp.status_code == 401:
+                await _django_login()
+                if not _django_token:
+                    return None
+                resp = await client.get(
+                    f"{url}{path}",
+                    headers={"Authorization": f"Bearer {_django_token}"},
+                )
+            return resp
+    except Exception as exc:
+        logger.warning(f"[django] GET {path} failed: {exc}")
+        return None
+
 
 def _audio_ws_url(supervoice_url: str) -> str:
     """Return the browser audio WebSocket URL for a supervoice ws base."""
@@ -133,27 +196,51 @@ def build_app() -> FastAPI:
             ]
         }
 
+    async def _fetch_django_voice_profiles() -> list[dict[str, Any]]:
+        if not os.getenv("DJANGO_API_URL"):
+            return []
+        try:
+            resp = await _django_get("/api/v1/core/voice-profiles/")
+            if resp is None or resp.status_code != 200:
+                return []
+            raw = resp.json()
+            profiles = raw.get("data", raw) if isinstance(raw, dict) else raw
+            return [
+                {
+                    "id": p["agent_profile_id"],
+                    "name": p.get("name", p["agent_profile_id"]),
+                    "stt": p.get("transcriber", {}).get("name", ""),
+                    "tts": p.get("voice", {}).get("name", ""),
+                    "description": p.get("description", ""),
+                }
+                for p in profiles
+            ]
+        except Exception as exc:
+            logger.warning(f"[playground] django voice-profiles fetch failed: {exc}")
+            return []
+
     @app.get("/playground/config")
     async def get_config() -> dict[str, Any]:
         llm = "claude-3-haiku" if os.getenv("ANTHROPIC_API_KEY") else "gpt-4.1-mini"
-        voice_profiles: list[dict[str, Any]] = []
-        try:
-            base = _http_base_url(app.state.supervoice_url)
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                resp = await client.get(f"{base}/voice-profiles")
-                if resp.status_code == 200:
-                    voice_profiles = [
-                        {
-                            "id": p["profile_id"],
-                            "name": p.get("name", p["profile_id"]),
-                            "stt": p.get("stt_provider", ""),
-                            "tts": p.get("tts_provider", ""),
-                            "description": p.get("description", ""),
-                        }
-                        for p in resp.json()
-                    ]
-        except Exception as exc:
-            logger.warning(f"[playground] voice-profiles fetch failed: {exc}")
+        voice_profiles: list[dict[str, Any]] = await _fetch_django_voice_profiles()
+        if not voice_profiles:
+            try:
+                base = _http_base_url(app.state.supervoice_url)
+                async with httpx.AsyncClient(timeout=3.0) as client:
+                    resp = await client.get(f"{base}/voice-profiles")
+                    if resp.status_code == 200:
+                        voice_profiles = [
+                            {
+                                "id": p["profile_id"],
+                                "name": p.get("name", p["profile_id"]),
+                                "stt": p.get("stt_provider", ""),
+                                "tts": p.get("tts_provider", ""),
+                                "description": p.get("description", ""),
+                            }
+                            for p in resp.json()
+                        ]
+            except Exception as exc:
+                logger.warning(f"[playground] voice-profiles fetch failed: {exc}")
         return {
             "voice_profiles": voice_profiles,
             "flows": [

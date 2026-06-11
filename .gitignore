@@ -4,6 +4,7 @@
 !.env.example
 .venv/
 venv/
+myenv
 
 # Python
 __pycache__/
