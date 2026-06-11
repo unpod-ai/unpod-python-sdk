@@ -49,6 +49,20 @@ export class SupervoiceWSTransport extends Transport {
   private mic: MicCapture | null = null;
   private player: AudioPlayer | null = null;
 
+  /** Best-effort close on tab close/refresh. Browsers won't await the async
+   *  disconnect() during unload, but a synchronous ws.close() gets the close
+   *  frame (or at least the TCP FIN) out, so the server tears the call down
+   *  immediately instead of waiting for the keepalive timeout. */
+  private readonly handlePageHide = (): void => {
+    try {
+      if (this.ws && this.ws.readyState <= WebSocket.OPEN) {
+        this.ws.close(1000, "pagehide");
+      }
+    } catch {
+      /* best effort */
+    }
+  };
+
   constructor(
     private readonly agent?: string,
     private readonly voiceProfileId?: string,
@@ -81,6 +95,7 @@ export class SupervoiceWSTransport extends Transport {
     const ws = new WebSocket(session.ws_url);
     ws.binaryType = "arraybuffer";
     this.ws = ws;
+    window.addEventListener("pagehide", this.handlePageHide);
 
     ws.onopen = async () => {
       this.mic = new MicCapture((pcm) => {
@@ -115,6 +130,7 @@ export class SupervoiceWSTransport extends Transport {
   }
 
   async disconnect(): Promise<void> {
+    window.removeEventListener("pagehide", this.handlePageHide);
     await this.mic?.stop();
     await this.player?.stop();
     this.mic = null;
