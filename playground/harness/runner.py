@@ -54,6 +54,15 @@ def build_runner(
 
     async def entrypoint(ctx: CallContext) -> None:
         machine = spec.build(model)
+        # Per-call flow selection: the playground sends the chosen flow id in
+        # call metadata (lands in ctx.data). Switch before start() so the
+        # opening turn greets from the selected flow, not the FlowSet default.
+        flow = ctx.data.get("flow") if isinstance(ctx.data, dict) else None
+        if flow and hasattr(machine, "switch_flow"):
+            try:
+                machine.switch_flow(flow)
+            except Exception:
+                pass
         ctx.session.dialog_machine = machine
         registry.register(ctx.call_id, ctx.session)
 

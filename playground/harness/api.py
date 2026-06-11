@@ -189,6 +189,7 @@ def build_app() -> FastAPI:
     async def create_session(
         agent: str | None = None,
         voice_profile_id: str | None = None,
+        flow: str | None = None,
     ) -> dict[str, Any]:
         """Proxy supervoice /connect, return a transport descriptor."""
         spec = resolve_agent(agent) if agent else app.state.agent_spec
@@ -198,15 +199,20 @@ def build_app() -> FastAPI:
         params: dict[str, str] = {"agent_id": spec.agent_id}
         if voice_profile_id:
             params["voice_profile_id"] = voice_profile_id
+        if flow:
+            params["flow"] = flow
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(target, params=params)
             resp.raise_for_status()
         data = dict(resp.json())
-        # Carry agent_id (and voice profile) on the audio socket so the dev
-        # speech service routes the call to this agent's worker.
+        # Carry agent_id (and voice profile / flow) on the audio socket so the
+        # dev speech service routes the call to this agent's worker and starts
+        # it on the selected flow.
         query: dict[str, str] = {"agent_id": spec.agent_id}
         if voice_profile_id:
             query["voice_profile_id"] = voice_profile_id
+        if flow:
+            query["flow"] = flow
         data["ws_url"] = f"{_audio_ws_url(app.state.supervoice_url)}?{urlencode(query)}"
         data["transport"] = "ws"
         data["agent"] = spec.name

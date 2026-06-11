@@ -37,12 +37,12 @@ class SessionRegistry:
         ``"active"`` resolves the single live session (M1 convenience).
         """
         if session_id == "active":
-            if len(self._sessions) != 1:
-                raise ControlError(
-                    f"'active' requires exactly one live session, "
-                    f"found {len(self._sessions)}"
-                )
-            return next(iter(self._sessions.values()))
+            if not self._sessions:
+                raise ControlError("'active' requires a live session, found none")
+            # Single-user dev convenience: the most recently registered call is
+            # the active one. Tolerates stale sessions left by prior calls that
+            # did not unregister cleanly (failed handshakes, abrupt disconnects).
+            return next(reversed(self._sessions.values()))
         session = self._sessions.get(session_id)
         if session is None:
             raise ControlError(f"no live session {session_id!r}")
