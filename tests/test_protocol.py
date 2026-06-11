@@ -96,11 +96,12 @@ def test_parse_bridge_event():
 
 def test_hello_handshake():
     hello = HelloEvent(
-        protocol_version="2",
+        protocol_version=2,
         supported_events=["user.text"],
         supported_verbs=["agent.text.delta"],
     )
     assert hello.event == "hello"
+    assert hello.protocol_version == 2
 
 
 def test_dispatch_ack():
@@ -170,6 +171,7 @@ def test_parse_bridge_event_agent_say():
 
 def test_hello_ack():
     ack = HelloAckEvent(
+        protocol_version=2,
         negotiated_events=["user.text"],
         negotiated_verbs=["agent.text.delta"],
         call_id="c1",
@@ -178,12 +180,13 @@ def test_hello_ack():
         room_id="r1",
     )
     assert ack.event == "hello.ack"
+    assert ack.protocol_version == 2
 
 
 def test_bridge_frames_use_event_discriminator() -> None:
     from unpod._protocol import HelloEvent, parse_bridge_event
 
-    hello = HelloEvent(protocol_version="2", supported_events=[], supported_verbs=[])
+    hello = HelloEvent(protocol_version=2, supported_events=[], supported_verbs=[])
     dumped = hello.model_dump()
     assert dumped["event"] == "hello" and "type" not in dumped
     assert isinstance(parse_bridge_event(hello.model_dump_json()), HelloEvent)

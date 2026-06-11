@@ -261,17 +261,18 @@ class HelloEvent(BaseModel):
     """Session -> Bridge: protocol negotiation."""
 
     event: Literal["hello"] = "hello"
-    protocol_version: str
-    supported_events: list[str]
-    supported_verbs: list[str]
+    protocol_version: int
+    supported_events: list[str] = Field(default_factory=list)
+    supported_verbs: list[str] = Field(default_factory=list)
 
 
 class HelloAckEvent(BaseModel):
     """Bridge -> Session: negotiation acknowledgement."""
 
     event: Literal["hello.ack"] = "hello.ack"
-    negotiated_events: list[str]
-    negotiated_verbs: list[str]
+    protocol_version: int
+    negotiated_events: list[str] = Field(default_factory=list)
+    negotiated_verbs: list[str] = Field(default_factory=list)
     call_id: str
     session_id: str
     job_id: str

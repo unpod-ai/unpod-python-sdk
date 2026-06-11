@@ -33,7 +33,7 @@ from unpod.connectivity.session import Session
 # (and a tracked slot) forever.
 _HANDSHAKE_TIMEOUT_S = 10.0
 
-_PROTOCOL_VERSION = "2"
+_PROTOCOL_VERSION = 2
 _SUPPORTED_EVENTS = [
     "user.text",
     "user.interrupted",
