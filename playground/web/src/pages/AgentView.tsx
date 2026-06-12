@@ -227,7 +227,11 @@ export function AgentView() {
     setLastUserText("");
     setLastAgentText("");
 
-    const transport = new SupervoiceWSTransport(undefined, selectedVoiceProfile, activeFlowRef.current);
+    const transport = new SupervoiceWSTransport(
+      undefined,
+      selectedVoiceProfile,
+      activeFlowRef.current, // live selection (closure's activeFlow is stale)
+    );
     const client = new SupervoiceClient({ transport });
     clientRef.current = client;
 
@@ -269,13 +273,10 @@ export function AgentView() {
     });
     client.on("ready", () => {
       setAgentReady(true);
-      // Start the conversation on the currently-selected flow (worker defaults
-      // to the first flow in the set). Read the live selection (the user may
-      // have changed it during "connecting"); fresh memory on initial select.
-      const startFlow = activeFlowRef.current;
-      if (startFlow && startFlow !== flowsDefaultRef.current) {
-        switchFlow(startFlow, false).catch(() => {});
-      }
+      // The selected flow is applied on the worker BEFORE the opening turn
+      // (sent as call metadata via /playground/sessions → ctx.data["flow"]),
+      // so the greeting already matches the selection — no post-start switch
+      // here (which would re-greet from bank and reset memory mid-call).
     });
     // Barge-in is reflected by convState (interrupted → listening) from the
     // worker; the side-channel "interruption" still surfaces in the EVENTS log

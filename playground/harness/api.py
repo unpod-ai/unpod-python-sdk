@@ -292,8 +292,9 @@ def build_app() -> FastAPI:
             resp = await client.post(target, params=params)
             resp.raise_for_status()
         data = dict(resp.json())
-        # Carry agent_id (and voice profile) on the audio socket so the dev
-        # speech service routes the call to this agent's worker.
+        # Carry agent_id (and voice profile / flow) on the audio socket so the
+        # dev speech service routes the call to this agent's worker and starts
+        # it on the selected flow.
         query: dict[str, str] = {"agent_id": spec.agent_id}
         if voice_profile_id:
             query["voice_profile_id"] = voice_profile_id
