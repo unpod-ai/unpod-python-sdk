@@ -59,3 +59,13 @@ def service_base() -> str | None:
     """Management REST base ``<http_base>/platform``; ``None`` when unset."""
     base = http_base()
     return f"{base}/platform" if base else None
+
+
+def platform_base() -> str | None:
+    """backend-core platform REST base ``<http_base>/api/v2/platform``.
+
+    The home of the telephony plane (``/telephony/*``) — a different service from
+    the supervoice management plane at ``/platform``. ``None`` when unset.
+    """
+    base = http_base()
+    return f"{base}/api/v2/platform" if base else None

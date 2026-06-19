@@ -7,7 +7,7 @@ import os
 from typing import Any
 
 from dotenv import load_dotenv
-from unpod._base_url import service_base
+from unpod._base_url import platform_base, service_base
 from unpod.management._auth import Auth, BearerAuth
 from unpod.management._http import AsyncHTTPClient
 from unpod.management.api_keys import ApiKeysResource
@@ -19,6 +19,7 @@ from unpod.management.sessions import SessionsResource
 from unpod.management.transcripts import TranscriptsResource
 from unpod.management.trunks import TrunksResource
 from unpod.management.voice_profiles import VoiceProfilesResource
+from unpod.telephony import TelephonyNamespace
 
 load_dotenv()
 
@@ -84,6 +85,19 @@ class AsyncClient:
             )
         )
         self._orch_http = AsyncHTTPClient(auth=auth, base_url=orch_base)
+        # backend-core platform plane (telephony): a different service from the
+        # supervoice management plane. Requires JWT/proxy auth (Org-Handle-scoped).
+        platform_url = (
+            os.environ.get("UNPOD_PLATFORM_BASE_URL")
+            or platform_base()
+            or (
+                self._base_url[: -len("/platform")] + "/api/v2/platform"
+                if self._base_url.endswith("/platform")
+                else self._base_url
+            )
+        )
+        self._platform_http = AsyncHTTPClient(auth=auth, base_url=platform_url)
+        self.telephony = TelephonyNamespace(self._platform_http)
         self.voice_profiles = VoiceProfilesResource(self._http)
         self.trunks = TrunksResource(self._http)
         self.numbers = NumbersResource(self._http)
@@ -103,6 +117,7 @@ class AsyncClient:
     async def close(self) -> None:
         await self._http.close()
         await self._orch_http.close()
+        await self._platform_http.close()
 
 
 class Client:
@@ -132,6 +147,7 @@ class Client:
         self.recordings = _SyncResource(self._async_client.recordings)
         self.transcripts = _SyncResource(self._async_client.transcripts)
         self.api_keys = _SyncResource(self._async_client.api_keys)
+        self.telephony = _SyncTelephonyNamespace(self._async_client.telephony)
 
     def close(self) -> None:
         _run_blocking(self._async_client.close())
@@ -171,3 +187,15 @@ def _run_blocking(coro: Any) -> Any:
     raise RuntimeError(
         "Client cannot be used from a running event loop; use AsyncClient"
     )
+
+
+class _SyncTelephonyNamespace:
+    """Blocking facade over ``client.telephony`` (nested resources + overview)."""
+
+    def __init__(self, async_ns: Any) -> None:
+        self._async = async_ns
+        self.numbers = _SyncResource(async_ns.numbers)
+        self.trunks = _SyncResource(async_ns.trunks)
+
+    def overview(self) -> Any:
+        return _run_blocking(self._async.overview())
