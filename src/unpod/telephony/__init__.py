@@ -1,18 +1,20 @@
 """The backend-core telephony plane: ``client.telephony.*``.
 
-A *trunk-centric* surface over backend-core's ``/api/v2/platform/telephony/*``
-(distinct from the supervoice management plane at ``client.numbers`` /
-``client.trunks``). A "Trunk" here is the SIP carrier credential; you create a
-trunk, map one-or-many numbers to it, and get back the carrier *origin endpoint*:
+A surface over backend-core's ``/api/v2/platform/telephony/*`` (distinct from the
+supervoice management plane at ``client.numbers`` / ``client.trunks``). The
+PRIMARY flow attaches a number to an agent — the Leg-B termination
+(SuperSBC → agent/LiveKit):
 
     async with AsyncClient(auth=JWTAuth(token, org_handle="acme")) as client:
-        nums  = await client.telephony.numbers.list()
-        trunk = await client.telephony.trunks.create(
-            name="My Carrier", sip_url="sip:carrier.net",
-            username="u", password="p", source_ips=["203.0.113.10"])
-        res = await client.telephony.trunks.attach_numbers(
-            trunk.id, number_ids=[n.id for n in nums[:2]])
-        print(res.origin_endpoint.ingress)   # point your carrier here
+        nums = await client.telephony.numbers.list()
+        res  = await client.telephony.numbers.attach(
+            [n.id for n in nums[:2]], agent_id="asst_sales")
+        print(res.numbers[0].connection_state)
+
+``client.telephony.trunks.*`` is the FUTURE/BETA BYO-carrier path (Leg A: your
+own SIP carrier → SuperSBC). Leg A is the hardcoded SuperSBC default today, so
+the trunk surface is not yet the primary production flow — prefer
+``numbers.attach`` for wiring numbers to agents.
 
 Requires proxy/JWT auth (``JWTAuth(token, org_handle)``) — this plane is
 ``Org-Handle``-scoped and is not reachable in direct/Bearer supervoice mode.
@@ -41,7 +43,8 @@ class Number(BaseModel):
 
 
 class Trunk(BaseModel):
-    """A SIP carrier trunk (secrets masked on read)."""
+    """A SIP carrier trunk (secrets masked on read). Leg A / BYO-carrier —
+    future/beta; the primary flow is ``numbers.attach`` (Leg B)."""
 
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
@@ -75,6 +78,7 @@ class NumberResult(BaseModel):
     number_id: int
     number: str | None = None
     connection_state: str | None = None
+    agent_id: str | None = None  # set by the agent-attach (Leg-B) path
     ok: bool = False
     error: str | None = None
 
@@ -92,6 +96,17 @@ class DetachResult(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     trunk_id: int
+    numbers: list[NumberResult] = Field(default_factory=list)
+    message: str | None = None
+
+
+class AgentAttachResult(BaseModel):
+    """Result of attaching numbers to an agent (Leg B). No carrier origin
+    endpoint — that belongs to the Leg-A / BYO-carrier (trunks) path."""
+
+    model_config = ConfigDict(extra="allow")
+
+    agent_id: str | None = None
     numbers: list[NumberResult] = Field(default_factory=list)
     message: str | None = None
 
@@ -116,7 +131,7 @@ class NumberOverview(BaseModel):
 
 
 class NumbersResource:
-    """The org's available (unassigned) telephony numbers."""
+    """The org's telephony numbers — list, and attach to an agent (Leg B)."""
 
     def __init__(self, http: AsyncHTTPClient) -> None:
         self._http = http
@@ -126,9 +141,37 @@ class NumbersResource:
         resp = unwrap_data(await self._http.get("/telephony/numbers/"))
         return [Number(**item) for item in (resp or [])]
 
+    async def attach(
+        self,
+        number_ids: Sequence[int],
+        *,
+        agent_id: str | None = None,
+        bridge_slug: str | None = None,
+        region: str | None = None,
+    ) -> AgentAttachResult:
+        """Attach numbers to an agent — the primary Leg-B flow.
+
+        Maps each number to the agent termination (SuperSBC → agent/LiveKit); the
+        bridge is auto-resolved (hidden). ``agent_id`` is optional: when set the
+        number routes to that agent, when omitted the number is wired for agent
+        use without binding one yet. Returns the per-number lifecycle (no carrier
+        origin endpoint — that is the Leg-A / BYO-carrier trunks path).
+        Partial-success: each number reports ok/error independently.
+        """
+        body: dict = {"number_ids": list(number_ids)}
+        if agent_id is not None:
+            body["agent_id"] = agent_id
+        if bridge_slug is not None:
+            body["bridge_slug"] = bridge_slug
+        if region is not None:
+            body["region"] = region
+        resp = await self._http.post("/telephony/numbers/attach/", json=body)
+        return AgentAttachResult(**resp)  # not wrapped in `data`
+
 
 class TrunksResource:
-    """SIP carrier trunks + number mapping."""
+    """SIP carrier trunks + number mapping. Leg A / BYO-carrier — FUTURE/BETA;
+    the primary flow for wiring numbers to agents is ``numbers.attach`` (Leg B)."""
 
     def __init__(self, http: AsyncHTTPClient) -> None:
         self._http = http
@@ -218,6 +261,7 @@ class TelephonyNamespace:
 
 
 __all__ = [
+    "AgentAttachResult",
     "AttachResult",
     "DetachResult",
     "Number",

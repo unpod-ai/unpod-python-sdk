@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import pytest
 from unpod._base_url import platform_base
-from unpod.telephony import AttachResult, TelephonyNamespace, Trunk
+from unpod.telephony import (
+    AgentAttachResult,
+    AttachResult,
+    TelephonyNamespace,
+    Trunk,
+)
 
 
 class _FakeHTTP:
@@ -80,6 +85,46 @@ async def test_attach_numbers_returns_origin_endpoint():
     assert res.numbers[0].ok is True
     _, _, body = http.calls[0]
     assert body == {"number_ids": [1], "bridge_slug": "b"}
+
+
+@pytest.mark.anyio
+async def test_numbers_attach_to_agent():
+    resp = {
+        "agent_id": "asst_sales",
+        "numbers": [
+            {
+                "number_id": 1,
+                "number": "+1555",
+                "connection_state": "NOT_LINKED",
+                "agent_id": "asst_sales",
+                "ok": True,
+            }
+        ],
+        "message": "Numbers attached to agent.",
+    }
+    http = _FakeHTTP({("POST", "/telephony/numbers/attach/"): resp})
+    ns = TelephonyNamespace(http)
+    res = await ns.numbers.attach([1], agent_id="asst_sales", bridge_slug="b")
+    assert isinstance(res, AgentAttachResult)
+    assert res.agent_id == "asst_sales"
+    assert res.numbers[0].ok is True
+    assert res.numbers[0].agent_id == "asst_sales"
+    # primary Leg-B flow returns no carrier origin endpoint
+    assert not hasattr(res, "origin_endpoint") or res.origin_endpoint is None
+    _, _, body = http.calls[0]
+    assert body == {"number_ids": [1], "agent_id": "asst_sales", "bridge_slug": "b"}
+
+
+@pytest.mark.anyio
+async def test_numbers_attach_without_agent_id_omits_it():
+    resp = {"agent_id": None, "numbers": [{"number_id": 1, "ok": True}], "message": "ok"}
+    http = _FakeHTTP({("POST", "/telephony/numbers/attach/"): resp})
+    ns = TelephonyNamespace(http)
+    res = await ns.numbers.attach([1])
+    assert isinstance(res, AgentAttachResult)
+    assert res.agent_id is None
+    _, _, body = http.calls[0]
+    assert body == {"number_ids": [1]}  # agent_id omitted, not sent as null
 
 
 @pytest.mark.anyio
