@@ -166,7 +166,7 @@ class NumbersResource:
         if region is not None:
             body["region"] = region
         resp = await self._http.post("/telephony/numbers/attach/", json=body)
-        return AgentAttachResult(**resp)  # not wrapped in `data`
+        return AgentAttachResult(**unwrap_data(resp))
 
 
 class TrunksResource:
@@ -233,7 +233,7 @@ class TrunksResource:
         resp = await self._http.post(
             f"/telephony/trunks/{trunk_id}/attach-numbers/", json=body
         )
-        return AttachResult(**resp)  # not wrapped in `data`
+        return AttachResult(**unwrap_data(resp))
 
     async def detach_numbers(
         self, trunk_id: int | str, number_ids: Sequence[int]
@@ -243,7 +243,7 @@ class TrunksResource:
             f"/telephony/trunks/{trunk_id}/detach-numbers/",
             json={"number_ids": list(number_ids)},
         )
-        return DetachResult(**resp)
+        return DetachResult(**unwrap_data(resp))
 
 
 class TelephonyNamespace:

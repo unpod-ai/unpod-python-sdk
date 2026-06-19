@@ -1,4 +1,10 @@
-"""Tests for the backend-core telephony plane (``client.telephony.*``)."""
+"""Tests for the backend-core telephony plane (``client.telephony.*``).
+
+Fixtures use the REAL backend wire shape: every ``/api/v2/platform`` response is
+wrapped by ``UnpodJSONRenderer`` as ``{"status_code", "message", "data"}``. The
+SDK unwraps that envelope (``unwrap_data``) before binding models — these tests
+feed the enveloped shape so they exercise the true contract.
+"""
 
 from __future__ import annotations
 
@@ -38,7 +44,12 @@ def test_platform_base(monkeypatch):
 
 @pytest.mark.anyio
 async def test_numbers_list():
-    http = _FakeHTTP({("GET", "/telephony/numbers/"): {"data": [{"id": 1, "number": "+1555"}]}})
+    http = _FakeHTTP({
+        ("GET", "/telephony/numbers/"): {
+            "status_code": 200, "message": "ok",
+            "data": [{"id": 1, "number": "+1555"}],
+        }
+    })
     ns = TelephonyNamespace(http)
     nums = await ns.numbers.list()
     assert [n.id for n in nums] == [1]
@@ -47,7 +58,11 @@ async def test_numbers_list():
 
 @pytest.mark.anyio
 async def test_trunk_create_maps_username_password():
-    http = _FakeHTTP({("POST", "/telephony/trunks/"): {"data": {"id": 7, "name": "C"}}})
+    http = _FakeHTTP({
+        ("POST", "/telephony/trunks/"): {
+            "status_code": 201, "message": "ok", "data": {"id": 7, "name": "C"},
+        }
+    })
     ns = TelephonyNamespace(http)
     trunk = await ns.trunks.create(
         "C", "sip:c.net", username="u", password="p", source_ips=["1.2.3.4"]
@@ -66,15 +81,18 @@ async def test_trunk_create_maps_username_password():
 @pytest.mark.anyio
 async def test_attach_numbers_returns_origin_endpoint():
     resp = {
-        "trunk_id": 7,
-        "origin_endpoint": {
-            "ingress": "sip:sbc.unpod",
-            "dids": ["+1555"],
-            "accepted_source_ips": ["1.2.3.4"],
-            "region": "IN",
-        },
-        "numbers": [{"number_id": 1, "number": "+1555", "ok": True}],
+        "status_code": 201,
         "message": "ok",
+        "data": {
+            "trunk_id": 7,
+            "origin_endpoint": {
+                "ingress": "sip:sbc.unpod",
+                "dids": ["+1555"],
+                "accepted_source_ips": ["1.2.3.4"],
+                "region": "IN",
+            },
+            "numbers": [{"number_id": 1, "number": "+1555", "ok": True}],
+        },
     }
     http = _FakeHTTP({("POST", "/telephony/trunks/7/attach-numbers/"): resp})
     ns = TelephonyNamespace(http)
@@ -90,17 +108,20 @@ async def test_attach_numbers_returns_origin_endpoint():
 @pytest.mark.anyio
 async def test_numbers_attach_to_agent():
     resp = {
-        "agent_id": "asst_sales",
-        "numbers": [
-            {
-                "number_id": 1,
-                "number": "+1555",
-                "connection_state": "NOT_LINKED",
-                "agent_id": "asst_sales",
-                "ok": True,
-            }
-        ],
+        "status_code": 201,
         "message": "Numbers attached to agent.",
+        "data": {
+            "agent_id": "asst_sales",
+            "numbers": [
+                {
+                    "number_id": 1,
+                    "number": "+1555",
+                    "connection_state": "NOT_LINKED",
+                    "agent_id": "asst_sales",
+                    "ok": True,
+                }
+            ],
+        },
     }
     http = _FakeHTTP({("POST", "/telephony/numbers/attach/"): resp})
     ns = TelephonyNamespace(http)
@@ -117,7 +138,10 @@ async def test_numbers_attach_to_agent():
 
 @pytest.mark.anyio
 async def test_numbers_attach_without_agent_id_omits_it():
-    resp = {"agent_id": None, "numbers": [{"number_id": 1, "ok": True}], "message": "ok"}
+    resp = {
+        "status_code": 201, "message": "ok",
+        "data": {"agent_id": None, "numbers": [{"number_id": 1, "ok": True}]},
+    }
     http = _FakeHTTP({("POST", "/telephony/numbers/attach/"): resp})
     ns = TelephonyNamespace(http)
     res = await ns.numbers.attach([1])
@@ -129,7 +153,12 @@ async def test_numbers_attach_without_agent_id_omits_it():
 
 @pytest.mark.anyio
 async def test_overview():
-    http = _FakeHTTP({("GET", "/telephony/overview/"): {"data": [{"number_id": 1, "in_sync": True}]}})
+    http = _FakeHTTP({
+        ("GET", "/telephony/overview/"): {
+            "status_code": 200, "message": "ok",
+            "data": [{"number_id": 1, "in_sync": True}],
+        }
+    })
     ns = TelephonyNamespace(http)
     rows = await ns.overview()
     assert rows[0].in_sync is True
