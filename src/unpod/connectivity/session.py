@@ -15,6 +15,7 @@ from unpod._protocol import (
 from unpod.adapters.base import DialogAdapter
 from unpod.connectivity.hooks import HookRegistry
 from unpod.connectivity.metrics import MetricsTracker
+from unpod.connectivity.usage import UsageReporter
 from unpod.observability import ObservabilityManager
 
 if TYPE_CHECKING:
@@ -55,10 +56,14 @@ class Session:
         async def _fire_hook(event_name: str, **kwargs: Any) -> None:
             await self._hooks.fire(event_name, **kwargs)
 
+        _session_id = getattr(self._bridge, "session_id", "") or ""
         self._obs = ObservabilityManager(
-            session_id=getattr(self._bridge, "session_id", "") or "",
+            session_id=_session_id,
             fire_hook=_fire_hook,
         )
+        # SDK half of the usage ledger: buffers LLM tokens, flushed to the cloud
+        # ingest on call_end. No-op unless UNPOD_USAGE_INGEST_URL is configured.
+        self._usage = UsageReporter(_session_id)
 
     # --- Dialog machine property ---
 
@@ -85,6 +90,12 @@ class Session:
         if hasattr(self._dialog_adapter, "register_llm_callback"):
             async def _llm_cb(data: Any) -> None:
                 await self._obs.record_llm_call(data)
+                # Accumulate billable LLM tokens for the cloud usage ledger.
+                self._usage.record_llm(
+                    tokens_in=getattr(data, "tokens_in", 0),
+                    tokens_out=getattr(data, "tokens_out", 0),
+                    model=getattr(data, "model", "") or "",
+                )
 
             self._dialog_adapter.register_llm_callback(_llm_cb)
 
@@ -257,6 +268,9 @@ class Session:
                     break
         finally:
             await self._hooks.fire("call_end", "error" if _ended_by_error else "hangup")
+            # Flush the session's accumulated LLM usage to the cloud ledger
+            # (best-effort; no-op unless configured).
+            await self._usage.flush()
 
 
 def _is_superdialog_type(obj: Any) -> bool:
