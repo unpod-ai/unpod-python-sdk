@@ -63,6 +63,7 @@ class UsageReporter:
         self._prompt = 0
         self._completion = 0
         self._cached = 0
+        self._cache_write = 0
         self._provider = ""
         self._model = ""
         self._seq = 0
@@ -78,12 +79,14 @@ class UsageReporter:
         tokens_in: int = 0,
         tokens_out: int = 0,
         cached: int = 0,
+        cache_write: int = 0,
         model: str = "",
     ) -> None:
         """Accumulate one LLM call's token usage (sync; safe to call per turn)."""
         self._prompt += int(tokens_in or 0)
         self._completion += int(tokens_out or 0)
         self._cached += int(cached or 0)
+        self._cache_write += int(cache_write or 0)
         if model:
             self._provider, self._model = _split_model_uri(model)
 
@@ -95,6 +98,8 @@ class UsageReporter:
             counters["llm_completion_tokens"] = self._completion
         if self._cached:
             counters["llm_cached_tokens"] = self._cached
+        if self._cache_write:
+            counters["llm_cache_write_tokens"] = self._cache_write
         return counters
 
     def _headers(self) -> dict[str, str]:
@@ -141,7 +146,7 @@ class UsageReporter:
             # Best-effort: a down/slow ingest must never break the call.
             return False
         self._seq += 1
-        self._prompt = self._completion = self._cached = 0
+        self._prompt = self._completion = self._cached = self._cache_write = 0
         return True
 
 

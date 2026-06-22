@@ -94,6 +94,8 @@ class Session:
                 self._usage.record_llm(
                     tokens_in=getattr(data, "tokens_in", 0),
                     tokens_out=getattr(data, "tokens_out", 0),
+                    cached=getattr(data, "cached", 0),
+                    cache_write=getattr(data, "cache_write", 0),
                     model=getattr(data, "model", "") or "",
                 )
 

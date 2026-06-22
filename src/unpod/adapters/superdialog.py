@@ -38,9 +38,18 @@ class SuperDialogAdapter:
         return self._dm.is_complete  # type: ignore[no-any-return]
 
     def register_llm_callback(self, fn: Any) -> None:
-        """Register _on_llm_complete on the underlying ToolCallAdapter. No-op if not available."""
+        """Register a per-LLM-call usage callback on the underlying DialogMachine.
+
+        Prefers ``DialogMachine.register_llm_callback`` which wires both the
+        graph (ToolCallAdapter) and playbook (provider adapters) engines. Falls
+        back to setting the toolcall adapter's ``_on_llm_complete`` directly for
+        older superdialog builds without that method."""
         self._llm_callback = fn
-        # Try immediately in case adapter is already initialized
+        dm_register = getattr(self._dm, "register_llm_callback", None)
+        if callable(dm_register):
+            dm_register(fn)
+            return
+        # Fallback (graph-only): older superdialog without register_llm_callback.
         _adapter = getattr(self._dm, "_adapter", None)
         if _adapter is not None and hasattr(_adapter, "_on_llm_complete"):
             _adapter._on_llm_complete = fn
