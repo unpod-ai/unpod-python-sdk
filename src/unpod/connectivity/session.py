@@ -257,6 +257,15 @@ class Session:
 
                 elif isinstance(event, UserInterruptEvent):
                     await self._hooks.fire("interruption")
+                    if hasattr(self._dialog_adapter, "assist"):
+                        self._dialog_adapter.assist(
+                            "Note: The user just interrupted the agent mid-speech. "
+                            "Their next utterance may be incomplete or unclear. "
+                            "If what they say is ambiguous — do NOT repeat your previous statement. "
+                            "Ask them to repeat: e.g. 'Sorry, I didn't catch that — what were you saying?' "
+                            "/ 'माफ़ करें, आपकी बात समझ नहीं आई — आपने क्या कहा?' "
+                            "If their utterance IS clear — acknowledge it, answer, then continue from where you left off."
+                        )
 
                 elif isinstance(event, ErrorEvent):
                     _ended_by_error = True

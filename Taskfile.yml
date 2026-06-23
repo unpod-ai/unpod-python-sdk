@@ -194,3 +194,4 @@ tasks:
   # --- Voice Agent Playground ---
   # The voice-agent playground moved to the sibling superdialog repo
   # (../superdialog/playground/). Run it from there: `cd ../superdialog && task pg`.
+  # --- Voice Agent Playground (playground/) ---
