@@ -10,7 +10,7 @@ from unpod.connectivity.runner import AgentRunner
 def _bridge_inbound() -> list[str]:
     """Scripted hello.ack + call.started frames for a single call (s1)."""
     return [
-        '{"event":"hello.ack","negotiated_events":[],'
+        '{"event":"hello.ack","protocol_version":2,"negotiated_events":[],'
         '"negotiated_verbs":[],"call_id":"s1","session_id":"s1",'
         '"job_id":"j1","room_id":"s1"}',
         '{"event":"call.started","session_id":"s1","job_id":"j1",'
@@ -470,7 +470,7 @@ async def test_runner_malformed_handshake_counts_as_neither() -> None:
     # hello.ack arrives, then a bogus event instead of call.started.
     ws = _FakeWS(
         [
-            '{"event":"hello.ack","negotiated_events":[],'
+            '{"event":"hello.ack","protocol_version":2,"negotiated_events":[],'
             '"negotiated_verbs":[],"call_id":"s1","session_id":"s1",'
             '"job_id":"j1","room_id":"s1"}',
             '{"event":"user.text","text":"hi"}',
@@ -506,7 +506,7 @@ async def test_runner_handshake_timeout_does_not_hang() -> None:
 
     ws = _HangingWS(
         [
-            '{"event":"hello.ack","negotiated_events":[],'
+            '{"event":"hello.ack","protocol_version":2,"negotiated_events":[],'
             '"negotiated_verbs":[],"call_id":"s1","session_id":"s1",'
             '"job_id":"j1","room_id":"s1"}',
         ]
