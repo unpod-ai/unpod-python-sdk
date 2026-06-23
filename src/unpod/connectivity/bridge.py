@@ -112,6 +112,7 @@ class BridgeClient:
                 "user.interrupted",
                 "error",
                 "metric",
+                "turn.metrics",
             ],
             supported_verbs=[
                 "agent.text.delta",

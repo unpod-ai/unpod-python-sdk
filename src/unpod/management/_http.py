@@ -10,11 +10,21 @@ from unpod.management._auth import Auth
 
 
 def unwrap_data(resp: dict | list) -> dict | list:
-    """Return the common API payload body."""
+    """Return the common API payload body, unwrapping the response envelope.
+
+    Two envelope shapes occur across the planes:
+    - the supervoice ``/v1`` plane returns a bare ``{"data": ...}``; and
+    - the backend-core ``/api/v2/platform`` plane wraps every response through
+      ``UnpodJSONRenderer`` as ``{"status_code", "message", "data"}``.
+
+    Unwrap when ``data`` is present AND the payload is one of those envelopes
+    (sole key, or accompanied by the renderer's ``status_code``/``message``).
+    A genuine body that merely happens to carry a ``data`` field is left intact.
+    """
     if (
         isinstance(resp, dict)
-        and len(resp) == 1
         and isinstance(resp.get("data"), (dict, list))
+        and (len(resp) == 1 or "status_code" in resp or "message" in resp)
     ):
         return resp["data"]
     return resp

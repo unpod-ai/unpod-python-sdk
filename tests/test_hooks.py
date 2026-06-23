@@ -65,6 +65,20 @@ def test_valid_event_names() -> None:
     assert "silence" in VALID_EVENTS
     assert "interruption" in VALID_EVENTS
     assert "metric" in VALID_EVENTS
+    assert "state" in VALID_EVENTS
+
+
+@pytest.mark.anyio
+async def test_state_hook_registers_and_fires() -> None:
+    registry = HookRegistry()
+    received: list[str] = []
+
+    @registry.on("state")
+    async def handler(evt: object) -> None:
+        received.append(getattr(evt, "state", ""))
+
+    await registry.fire("state", type("E", (), {"state": "thinking"})())
+    assert received == ["thinking"]
 
 
 def test_invalid_event_raises() -> None:
@@ -74,6 +88,17 @@ def test_invalid_event_raises() -> None:
         @registry.on("invalid_event")
         async def handler() -> None:
             pass
+
+
+def test_llm_call_and_turn_complete_are_valid_events():
+    from unpod.connectivity.hooks import HookRegistry
+    registry = HookRegistry()
+
+    async def _noop(**kwargs): pass
+
+    # Should not raise ValueError
+    registry.on("llm_call")(_noop)
+    registry.on("turn_complete")(_noop)
 
 
 def test_metrics_tracker() -> None:

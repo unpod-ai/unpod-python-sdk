@@ -16,10 +16,12 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/unpod-ai/unpod-python-sdk"
+Homepage = "https://unpod.ai"
+Documentation = "https://github.com/unpod-ai/unpod-python-sdk/tree/main/docs"
 Repository = "https://github.com/unpod-ai/unpod-python-sdk"
 
 [project.optional-dependencies]
+observability = ["langfuse>=2.0"]
 dialog = ["superdialog>=0.2,<0.3"]
 langchain = ["langchain-core>=0.3"]
 mcp = ["mcp>=0.9"]
@@ -30,7 +32,7 @@ playground = [
   "superdialog>=0.2,<0.3",
   "livekit-agents>=1.0,<2",
 ]
-dev = [
+add = [
   "pytest>=8",
   "pytest-asyncio>=0.23",
   "anyio>=4",
@@ -48,6 +50,14 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/unpod"]
+
+# superdialog installs from PyPI by default so a fresh clone is self-contained
+# (no sibling ../superdialog checkout required). The voice-agent playground now
+# lives in the sibling superdialog repo (../superdialog/playground/) — run it
+# from there with `task pg`. To co-develop superdialog locally against this SDK,
+# layer an editable overlay for a single run instead of pinning a path source
+# here:
+#   uv run --extra dialog --with-editable ../superdialog python your_script.py
 
 [tool.ruff]
 line-length = 88

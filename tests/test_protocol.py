@@ -14,10 +14,26 @@ from unpod._protocol import (
     JobCompleted,
     Register,
     StateChanged,
+    StateEvent,
     UserTextEvent,
     parse_bridge_event,
     parse_dispatch_frame,
 )
+
+
+def test_state_event_parses_from_worker_wire():
+    """A StateEvent serialized by the worker parses back via the bridge map.
+
+    The worker sends an extra ``call_id`` field; ``extra=allow`` keeps it
+    without breaking parsing.
+    """
+    wire = json.dumps(
+        {"event": "state", "call_id": "sess-1", "state": "speaking", "turn_id": 4}
+    )
+    parsed = parse_bridge_event(wire)
+    assert isinstance(parsed, StateEvent)
+    assert parsed.state == "speaking"
+    assert parsed.turn_id == 4
 
 
 def test_register_frame():
@@ -80,11 +96,12 @@ def test_parse_bridge_event():
 
 def test_hello_handshake():
     hello = HelloEvent(
-        protocol_version="2",
+        protocol_version=2,
         supported_events=["user.text"],
         supported_verbs=["agent.text.delta"],
     )
     assert hello.event == "hello"
+    assert hello.protocol_version == 2
 
 
 def test_dispatch_ack():
@@ -154,6 +171,7 @@ def test_parse_bridge_event_agent_say():
 
 def test_hello_ack():
     ack = HelloAckEvent(
+        protocol_version=2,
         negotiated_events=["user.text"],
         negotiated_verbs=["agent.text.delta"],
         call_id="c1",
@@ -162,12 +180,22 @@ def test_hello_ack():
         room_id="r1",
     )
     assert ack.event == "hello.ack"
+    assert ack.protocol_version == 2
 
 
 def test_bridge_frames_use_event_discriminator() -> None:
     from unpod._protocol import HelloEvent, parse_bridge_event
 
-    hello = HelloEvent(protocol_version="2", supported_events=[], supported_verbs=[])
+    hello = HelloEvent(protocol_version=2, supported_events=[], supported_verbs=[])
     dumped = hello.model_dump()
     assert dumped["event"] == "hello" and "type" not in dumped
     assert isinstance(parse_bridge_event(hello.model_dump_json()), HelloEvent)
+
+
+def test_turn_metrics_event_parse():
+    from unpod._protocol import TurnMetricsEvent, parse_bridge_event
+    evt = TurnMetricsEvent(turn_id=2, ttfa_ms=1500.0, from_node="greet")
+    # parse_bridge_event takes a JSON string
+    parsed = parse_bridge_event(evt.model_dump_json())
+    assert isinstance(parsed, TurnMetricsEvent)
+    assert parsed.ttfa_ms == 1500.0

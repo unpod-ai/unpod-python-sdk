@@ -4,6 +4,7 @@
 !.env.example
 .venv/
 venv/
+myenv
 
 # Python
 __pycache__/
@@ -25,3 +26,9 @@ dist/
 
 # Node (browser examples / playground web UI)
 node_modules/
+
+# Generated superpowers docs
+.superpowers/
+docs/superpowers/
+unpod-playground-standalone.html
+uv.lock

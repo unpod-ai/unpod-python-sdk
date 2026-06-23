@@ -241,3 +241,135 @@ async def test_session_call_end_reason_is_hangup_on_normal_exit():
 
     await session.run()
     assert end_reasons == ["hangup"]
+
+
+@pytest.mark.anyio
+async def test_session_fires_metric_hook():
+    """A MetricEvent from the bridge fires the 'metric' hook (regression).
+
+    Previously run() dropped MetricEvents with a bare ``continue``, so the
+    declared 'metric' hook never fired and metrics could not be surfaced.
+    """
+    from unpod._protocol import MetricEvent
+
+    received: list[MetricEvent] = []
+    mock_bridge = AsyncMock()
+    mock_bridge.recv_event = AsyncMock(
+        side_effect=[
+            MetricEvent(ttfa_ms=120, turns=2, cost_usd_so_far=0.01),
+            Exception("connection closed"),
+        ]
+    )
+
+    session = Session(bridge=mock_bridge)
+
+    @session.on("metric")
+    async def _(metric: MetricEvent) -> None:
+        received.append(metric)
+
+    await session.run()
+    assert len(received) == 1
+    assert received[0].ttfa_ms == 120
+    assert received[0].turns == 2
+
+
+@pytest.mark.anyio
+async def test_session_fires_state_hook():
+    """A StateEvent from the bridge fires the 'state' hook (mirrors metric).
+
+    The hook is observability only — it must never drive dialog or end the
+    call, so the loop continues past it (here the next recv raises to stop).
+    """
+    from unpod._protocol import StateEvent
+
+    received: list[StateEvent] = []
+    mock_bridge = AsyncMock()
+    mock_bridge.recv_event = AsyncMock(
+        side_effect=[
+            StateEvent(state="thinking", turn_id=2),
+            Exception("connection closed"),
+        ]
+    )
+
+    session = Session(bridge=mock_bridge)
+
+    @session.on("state")
+    async def _(evt: StateEvent) -> None:
+        received.append(evt)
+
+    await session.run()
+    assert len(received) == 1
+    assert received[0].state == "thinking"
+    assert received[0].turn_id == 2
+    # State is not a dialog driver: no verbs were sent in response.
+    mock_bridge.send_verb.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_session_wires_llm_callback_to_superdialog_adapter():
+    """Session registers _on_llm_complete on SuperDialogAdapter if present."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from unpod.adapters.superdialog import SuperDialogAdapter
+    from unpod.connectivity.session import Session
+
+    mock_dm = MagicMock()
+    mock_adapter = MagicMock()
+    mock_dm._adapter = mock_adapter
+    mock_dm.is_complete = False
+
+    sd_adapter = SuperDialogAdapter(mock_dm)
+
+    mock_bridge = AsyncMock()
+    mock_bridge.session_id = "sess-wire-test"
+
+    ctx = MagicMock()
+    ctx.call_id = "c1"
+    ctx.session_id = "sess-wire-test"
+
+    session = Session(ctx, mock_bridge)
+    session.dialog_machine = sd_adapter
+
+    # After setting dialog_machine, the LLM callback should be registered.
+    assert mock_adapter._on_llm_complete is not None
+
+
+@pytest.mark.anyio
+async def test_session_emits_turn_complete_without_turn_metrics_event() -> None:
+    """A completed turn still emits turn_complete if turn.metrics never arrives."""
+    from unpod._protocol import UserTextEvent
+
+    received: list[dict[str, object]] = []
+
+    class FakeAdapter:
+        is_complete = False
+
+        async def turn(self, text: str, context: dict | None = None) -> str:
+            return "ok"
+
+        async def stream(self, text: str, context: dict | None = None):  # type: ignore[override]
+            yield "hello"
+
+        def assist(self, text: str) -> None:
+            pass
+
+    mock_bridge = AsyncMock()
+    mock_bridge.recv_event = AsyncMock(
+        side_effect=[
+            UserTextEvent(text="hi", is_final=True),
+            Exception("done"),
+        ]
+    )
+    mock_bridge.send_verb = AsyncMock()
+
+    session = Session(bridge=mock_bridge)
+    session.dialog_machine = FakeAdapter()
+
+    @session.on("turn_complete")
+    async def _(**data: object) -> None:
+        received.append(data)
+
+    await session.run()
+
+    assert len(received) == 1
+    assert received[0]["turn_id"] == 1

@@ -153,6 +153,38 @@ class MetricEvent(BaseModel):
     cost_usd_so_far: float | None = None
 
 
+class TurnMetricsEvent(BaseModel):
+    """Pipeline timing snapshot for one completed turn."""
+
+    event: Literal["turn.metrics"] = "turn.metrics"
+    call_id: str = ""
+    turn_id: int = 0
+    ttfa_ms: float | None = None
+    asr_ms: float | None = None
+    llm_ttft_ms: float | None = None
+    tts_ttfb_ms: float | None = None
+    llm_call_count: int = 0
+    llm_total_ms: float | None = None
+    from_node: str | None = None
+    to_node: str | None = None
+
+
+class StateEvent(BaseModel):
+    """Conversation-state transition computed by the media worker.
+
+    The worker is the single authority; ``state`` is one of
+    ``idle | listening | thinking | speaking | interrupted``. Mirrors the
+    ``metric`` path: the SDK surfaces it via the ``state`` hook. ``extra`` is
+    allowed for forward-compatibility (e.g. ``call_id``).
+    """
+
+    model_config = {"extra": "allow"}
+
+    event: Literal["state"] = "state"
+    state: str = "idle"
+    turn_id: int = 0
+
+
 # -- Downstream (session -> bridge) --
 
 
@@ -229,17 +261,18 @@ class HelloEvent(BaseModel):
     """Session -> Bridge: protocol negotiation."""
 
     event: Literal["hello"] = "hello"
-    protocol_version: str
-    supported_events: list[str]
-    supported_verbs: list[str]
+    protocol_version: int
+    supported_events: list[str] = Field(default_factory=list)
+    supported_verbs: list[str] = Field(default_factory=list)
 
 
 class HelloAckEvent(BaseModel):
     """Bridge -> Session: negotiation acknowledgement."""
 
     event: Literal["hello.ack"] = "hello.ack"
-    negotiated_events: list[str]
-    negotiated_verbs: list[str]
+    protocol_version: int
+    negotiated_events: list[str] = Field(default_factory=list)
+    negotiated_verbs: list[str] = Field(default_factory=list)
     call_id: str
     session_id: str
     job_id: str
@@ -266,6 +299,8 @@ BridgeEvent = Union[
     UserInterruptEvent,
     ErrorEvent,
     MetricEvent,
+    TurnMetricsEvent,
+    StateEvent,
     AgentTextDeltaEvent,
     AgentTextEndEvent,
     AgentSayVerb,
@@ -285,6 +320,8 @@ _BRIDGE_EVENT_MAP: dict[str, type[BaseModel]] = {
     "user.interrupted": UserInterruptEvent,
     "error": ErrorEvent,
     "metric": MetricEvent,
+    "turn.metrics": TurnMetricsEvent,
+    "state": StateEvent,
     "agent.text.delta": AgentTextDeltaEvent,
     "agent.text.end": AgentTextEndEvent,
     "agent.say": AgentSayVerb,

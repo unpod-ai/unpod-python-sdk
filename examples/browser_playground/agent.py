@@ -10,9 +10,9 @@ from __future__ import annotations
 import logging
 import os
 import re
+import sys
 
 from loguru import logger
-
 
 # Intercept superdialog's standard-library logging so [SMART-SKIP-DEBUG] appears
 class _InterceptHandler(logging.Handler):
@@ -23,21 +23,19 @@ class _InterceptHandler(logging.Handler):
             level = record.levelno
         logger.opt(depth=6, exception=record.exc_info).log(level, record.getMessage())
 
-
 logging.basicConfig(handlers=[_InterceptHandler()], level=logging.DEBUG, force=True)
 # Only show INFO+ from superdialog to reduce noise
 logging.getLogger("superdialog").setLevel(logging.INFO)
-from unpod import AgentRunner, CallContext  # noqa: E402
-from unpod._base_url import ws_base  # noqa: E402
-from unpod._protocol import AgentTextDeltaEvent, AgentTextEndEvent  # noqa: E402
+from unpod import AgentRunner, CallContext
+from unpod._protocol import AgentTextDeltaEvent, AgentTextEndEvent
 
-from superdialog import DialogMachine, LLMAgent  # noqa: E402
-from superdialog.flow import load_flow  # noqa: E402
+from superdialog import DialogMachine, LLMAgent
+from superdialog.flow import load_flow
 
 # Devanagari Unicode block — presence = Hindi speech
 _DEVANAGARI_RE = re.compile(r"[ऀ-ॿ]")
 
-SUPERVOICE_URL = os.getenv("SUPERVOICE_URL") or ws_base() or "ws://127.0.0.1:9000"
+SUPERVOICE_URL = os.getenv("SUPERVOICE_URL", "ws://127.0.0.1:9000")
 AGENT_ID = os.getenv("AGENT_ID", "browser-playground")
 
 _SYSTEM_PROMPT = """You are a helpful voice assistant in a dev test playground.
@@ -73,10 +71,12 @@ async def entrypoint(ctx: CallContext) -> None:
     flow_path = os.getenv("FLOW_JSON_PATH")
     model = _pick_llm()
 
+    traversal_dir = os.getenv("TRAVERSAL_DIR")
+
     if flow_path and os.path.exists(flow_path):
         logger.info(f"[playground] loading flow from {flow_path}")
         agent: DialogMachine | LLMAgent = DialogMachine(
-            flow=load_flow(flow_path), llm=model
+            flow=load_flow(flow_path), llm=model, traversal_dir=traversal_dir
         )
         try:
             greeting = await agent.start()
