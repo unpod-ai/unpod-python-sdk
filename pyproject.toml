@@ -52,11 +52,12 @@ build-backend = "hatchling.build"
 packages = ["src/unpod"]
 
 # superdialog installs from PyPI by default so a fresh clone is self-contained
-# (no sibling ../superdialog checkout required). To co-develop superdialog
-# locally, layer an editable overlay for a single run instead of pinning a path
-# source here:
-#   uv run --extra playground --with-editable ../superdialog python -m playground.run
-# (or `task pg-local`).
+# (no sibling ../superdialog checkout required). The voice-agent playground now
+# lives in the sibling superdialog repo (../superdialog/playground/) — run it
+# from there with `task pg`. To co-develop superdialog locally against this SDK,
+# layer an editable overlay for a single run instead of pinning a path source
+# here:
+#   uv run --extra dialog --with-editable ../superdialog python your_script.py
 
 [tool.ruff]
 line-length = 88

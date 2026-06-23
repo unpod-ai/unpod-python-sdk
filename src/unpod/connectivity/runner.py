@@ -4,6 +4,7 @@ orchestrator and SERVES a per-call bridge that media agents dial into."""
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import os
 import time
 import uuid
@@ -17,6 +18,15 @@ from unpod.connectivity.bridge_server import handle_bridge_connection
 from unpod.connectivity.call_context import CallContext
 from unpod.connectivity.hooks import HookRegistry
 from unpod.models.session import RunnerStats
+
+
+def _is_ip_literal(host: str) -> bool:
+    """True if ``host`` is a literal IPv4/IPv6 address (bindable as-is)."""
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return True
 
 
 class AgentRunner:
@@ -181,12 +191,22 @@ class AgentRunner:
     _DEFAULT_BIND_PORT = 8765
 
     def _serving_host_port(self) -> tuple[str, int]:
-        """Derive (host, port) for the bridge server from the serving URL."""
+        """Derive the bridge server's ``(bind_host, port)`` from the serving URL.
+
+        The serving URL's host is what the runner ADVERTISES (where media agents
+        dial it, carried in the Register frame). The *bind* host must be a local
+        address: a literal IP is bound as-is (so ``ws://127.0.0.1:8765`` stays
+        loopback-only), but a *hostname* — e.g. a Docker/Kubernetes service name
+        that resolves to this host — can't be bound directly, so we listen on
+        all interfaces and let the name route inbound dials here.
+        """
         if not self._serving_url:
             return (self._DEFAULT_BIND_HOST, self._DEFAULT_BIND_PORT)
         parsed = urlparse(self._serving_url)
         host = parsed.hostname or self._DEFAULT_BIND_HOST
         port = parsed.port or self._DEFAULT_BIND_PORT
+        if not _is_ip_literal(host):
+            host = self._DEFAULT_BIND_HOST
         return (host, port)
 
     async def _track_call_start(self, ctx: CallContext) -> None:

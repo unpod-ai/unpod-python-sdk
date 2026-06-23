@@ -296,6 +296,41 @@ def test_runner_serving_host_port_parsed_from_url() -> None:
     assert r._serving_host_port() == ("0.0.0.0", 9000)
 
 
+def test_runner_serving_host_port_literal_ip_preserves_bind() -> None:
+    """A literal IP is bound as-is (loopback stays loopback-only)."""
+
+    async def entrypoint(ctx):  # type: ignore[no-untyped-def]
+        pass
+
+    r = AgentRunner(
+        entrypoint=entrypoint,
+        agent_id="bot",
+        api_key="k",
+        serving_url="ws://127.0.0.1:8765",
+    )
+    assert r._serving_host_port() == ("127.0.0.1", 8765)
+
+
+def test_runner_serving_host_port_hostname_binds_all_interfaces() -> None:
+    """A hostname (e.g. a Docker/K8s service name) can't be bound directly, so
+    the bridge binds all interfaces while still ADVERTISING that hostname — this
+    is what makes the speech container's dial-back reach the harness in compose."""
+
+    async def entrypoint(ctx):  # type: ignore[no-untyped-def]
+        pass
+
+    r = AgentRunner(
+        entrypoint=entrypoint,
+        agent_id="bot",
+        api_key="k",
+        serving_url="ws://supervoice-playground:8765",
+    )
+    # Bind: all interfaces (a hostname is not a bindable local address).
+    assert r._serving_host_port() == ("0.0.0.0", 8765)
+    # Advertise: the hostname is preserved for the Register frame / relay.
+    assert r._serving_url == "ws://supervoice-playground:8765"
+
+
 @pytest.mark.anyio
 async def test_runner_bridge_handler_runs_entrypoint_and_counts() -> None:
     """_bridge_handler runs the entrypoint and tracks the in-flight count."""
