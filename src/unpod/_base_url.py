@@ -6,6 +6,7 @@ is derived from it in code:
 - Management REST   -> ``https://<host>/platform``
 - Orchestrator WSS  -> ``wss://<host>``
 - Speech service    -> ``wss://<host>``
+- Auth plane        -> ``https://<host>``
 
 Per-component overrides (``UNPOD_SERVICE_BASE_URL``,
 ``UNPOD_ORCHESTRATOR_URL``, ``SUPERVOICE_URL``) still win when set.
@@ -69,3 +70,12 @@ def platform_base() -> str | None:
     """
     base = http_base()
     return f"{base}/api/v2/platform" if base else None
+
+
+def auth_base() -> str | None:
+    """Auth/identity plane base ``https://<host>`` (bare host, no path).
+
+    Callers append the auth path themselves, e.g. ``f"{auth_base()}/auth/me/"``
+    or ``f"{auth_base()}/api/v1/auth/login/"``. ``None`` when unset.
+    """
+    return http_base()

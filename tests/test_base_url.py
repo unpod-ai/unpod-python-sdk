@@ -91,6 +91,27 @@ def test_client_default_without_any_env(
     assert client._base_url == "https://api.unpod.ai/platform"
 
 
+def test_auth_base_derives_bare_host(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("UNPOD_BASE_URL", "api.unpod.ai")
+    assert _base_url.auth_base() == "https://api.unpod.ai"
+
+
+def test_auth_base_respects_insecure_scheme(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("UNPOD_BASE_URL", "http://localhost:8000")
+    assert _base_url.auth_base() == "http://localhost:8000"
+
+
+def test_auth_base_none_when_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("UNPOD_BASE_URL", raising=False)
+    assert _base_url.auth_base() is None
+
+
 async def _noop(ctx: object) -> None:  # pragma: no cover - never called
     return None
 
