@@ -49,7 +49,10 @@ class MCPAdapter:
         raise NotImplementedError("MCPAdapter.turn() requires full MCP integration")
 
     async def stream(
-        self, text: str, context: dict[str, Any] | None = None
+        self,
+        text: str,
+        context: dict[str, Any] | None = None,
+        language: str | None = None,
     ) -> AsyncIterator[str]:
         """Stream response tokens."""
         result = await self.turn(text, context)

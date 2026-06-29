@@ -213,3 +213,29 @@ async def test_session_llm_cb_forwards_cached_to_usage():
     assert session._usage._prompt == 6000
     assert session._usage._completion == 20
     assert session._usage._counters().get("llm_cached_tokens") == 5800
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "AnthropicAdapter",
+        "HTTPAdapter",
+        "LangChainAdapter",
+        "MCPAdapter",
+        "OpenAIAdapter",
+        "SuperDialogAdapter",
+    ],
+)
+def test_adapter_stream_accepts_language(name):
+    """Every exported adapter's stream() must accept ``language``.
+
+    session.run() calls ``stream(text, language=...)`` on the hot path, so an
+    adapter missing the kwarg raises TypeError on the first user turn.
+    """
+    import inspect
+
+    import unpod.adapters as adapters
+
+    adapter_cls = getattr(adapters, name)
+    params = inspect.signature(adapter_cls.stream).parameters
+    assert "language" in params

@@ -29,7 +29,10 @@ class LangChainAdapter:
         return content
 
     async def stream(
-        self, text: str, context: dict | None = None
+        self,
+        text: str,
+        context: dict | None = None,
+        language: str | None = None,
     ) -> AsyncIterator[str]:
         """Yield response tokens from the chain.
 

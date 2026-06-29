@@ -37,7 +37,10 @@ class HTTPAdapter:
             return data["text"]
 
     async def stream(
-        self, text: str, context: dict | None = None
+        self,
+        text: str,
+        context: dict | None = None,
+        language: str | None = None,
     ) -> AsyncIterator[str]:
         """HTTP adapter falls back to non-streaming."""
         result = await self.turn(text, context)
