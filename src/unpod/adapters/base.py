@@ -18,7 +18,10 @@ class DialogAdapter(Protocol):
     async def turn(self, text: str, context: dict | None = None) -> str: ...
 
     async def stream(
-        self, text: str, context: dict | None = None
+        self,
+        text: str,
+        context: dict | None = None,
+        language: str | None = None,
     ) -> AsyncIterator[str]:
         """Yield response tokens.
 

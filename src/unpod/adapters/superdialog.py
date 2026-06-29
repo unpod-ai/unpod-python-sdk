@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from typing import Any, AsyncIterator
 
 
@@ -10,6 +11,12 @@ class SuperDialogAdapter:
 
     def __init__(self, dm: Any) -> None:
         self._dm = dm
+        try:
+            self._dm_accepts_language = (
+                "language" in inspect.signature(dm.turn).parameters
+            )
+        except (TypeError, ValueError, AttributeError):
+            self._dm_accepts_language = False
 
     # --- core dialog interface ---
 
@@ -55,7 +62,10 @@ class SuperDialogAdapter:
             _adapter._on_llm_complete = fn
 
     async def stream(
-        self, text: str, context: dict | None = None
+        self,
+        text: str,
+        context: dict | None = None,
+        language: str | None = None,
     ) -> AsyncIterator[str]:
         """Stream assistant reply chunks."""
         cb = getattr(self, "_llm_callback", None)
@@ -70,11 +80,13 @@ class SuperDialogAdapter:
             _adapter = getattr(self._dm, "_adapter", None)
             if _adapter is not None and hasattr(_adapter, "_on_llm_complete"):
                 _adapter._on_llm_complete = cb
-        async for chunk in await self._dm.turn(text, stream=True):
+        kwargs: dict[str, Any] = {"stream": True}
+        if language is not None and self._dm_accepts_language:
+            kwargs["language"] = language
+        async for chunk in await self._dm.turn(text, **kwargs):
             yield chunk.text
 
     @property
     def state(self) -> dict:
         """Current dialog state snapshot."""
         return self._dm.state  # type: ignore[no-any-return]
-

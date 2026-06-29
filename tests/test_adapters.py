@@ -122,6 +122,58 @@ def test_register_llm_callback_fallback_without_dm_method():
 
 
 @pytest.mark.anyio
+async def test_stream_forwards_language_when_brain_accepts_it():
+    """Brain whose turn() accepts language -> stream forwards it."""
+    from types import SimpleNamespace
+
+    from unpod.adapters.superdialog import SuperDialogAdapter
+
+    class _LangBrain:
+        def __init__(self):
+            self.captured: dict = {}
+
+        async def turn(self, text, stream=False, language=None):
+            self.captured = {"stream": stream, "language": language}
+
+            async def _gen():
+                yield SimpleNamespace(text="hi")
+
+            return _gen()
+
+    brain = _LangBrain()
+    adapter = SuperDialogAdapter(brain)
+    chunks = [c async for c in adapter.stream("hello", language="hi")]
+    assert chunks == ["hi"]
+    assert brain.captured == {"stream": True, "language": "hi"}
+
+
+@pytest.mark.anyio
+async def test_stream_omits_language_for_legacy_brain():
+    """Legacy brain without language param -> no raise and language not passed."""
+    from types import SimpleNamespace
+
+    from unpod.adapters.superdialog import SuperDialogAdapter
+
+    class _LegacyBrain:
+        def __init__(self):
+            self.captured: dict = {}
+
+        async def turn(self, text, stream=False):
+            self.captured = {"stream": stream}
+
+            async def _gen():
+                yield SimpleNamespace(text="ok")
+
+            return _gen()
+
+    brain = _LegacyBrain()
+    adapter = SuperDialogAdapter(brain)
+    chunks = [c async for c in adapter.stream("hello", language="hi")]
+    assert chunks == ["ok"]
+    assert brain.captured == {"stream": True}
+
+
+@pytest.mark.anyio
 async def test_session_llm_cb_forwards_cached_to_usage():
     """Session._llm_cb passes data.cached → UsageReporter (billable cache tokens)."""
     from types import SimpleNamespace
