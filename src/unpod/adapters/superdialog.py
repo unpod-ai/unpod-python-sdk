@@ -11,11 +11,12 @@ class SuperDialogAdapter:
 
     def __init__(self, dm: Any) -> None:
         self._dm = dm
+        turn = getattr(dm, "turn", None)
         try:
             self._dm_accepts_language = (
-                "language" in inspect.signature(dm.turn).parameters
+                turn is not None and "language" in inspect.signature(turn).parameters
             )
-        except (TypeError, ValueError, AttributeError):
+        except (TypeError, ValueError):
             self._dm_accepts_language = False
 
     # --- core dialog interface ---
