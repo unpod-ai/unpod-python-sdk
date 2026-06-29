@@ -88,6 +88,7 @@ class Session:
             )
 
         if hasattr(self._dialog_adapter, "register_llm_callback"):
+
             async def _llm_cb(data: Any) -> None:
                 await self._obs.record_llm_call(data)
                 # Accumulate billable LLM tokens for the cloud usage ledger.
@@ -205,6 +206,7 @@ class Session:
 
                 if isinstance(event, UserTextEvent):
                     text = event.text
+                    language = (getattr(event, "extra", None) or {}).get("language")
                     await self._hooks.fire("user_turn", text)
                     self._turn_counter += 1
                     if self._dialog_adapter is not None:
@@ -212,7 +214,9 @@ class Session:
                         self._obs.start_turn(turn_id, text)
                         full_text = ""
                         try:
-                            async for chunk in self._dialog_adapter.stream(text):
+                            async for chunk in self._dialog_adapter.stream(
+                                text, language=language
+                            ):
                                 if chunk:
                                     full_text += chunk
                                     await self._bridge.send_verb(

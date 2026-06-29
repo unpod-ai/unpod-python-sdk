@@ -347,7 +347,12 @@ async def test_session_emits_turn_complete_without_turn_metrics_event() -> None:
         async def turn(self, text: str, context: dict | None = None) -> str:
             return "ok"
 
-        async def stream(self, text: str, context: dict | None = None):  # type: ignore[override]
+        async def stream(  # type: ignore[override]
+            self,
+            text: str,
+            context: dict | None = None,
+            language: str | None = None,
+        ):
             yield "hello"
 
         def assist(self, text: str) -> None:
@@ -373,3 +378,71 @@ async def test_session_emits_turn_complete_without_turn_metrics_event() -> None:
 
     assert len(received) == 1
     assert received[0]["turn_id"] == 1
+
+
+class _CapturingAdapter:
+    """Records the ``language`` the session forwards to ``stream``."""
+
+    is_complete = False
+    stream_language: str | None = None
+
+    async def turn(self, text: str, context: dict | None = None) -> str:
+        return "ok"
+
+    async def stream(  # type: ignore[override]
+        self,
+        text: str,
+        context: dict | None = None,
+        language: str | None = None,
+    ):
+        self.stream_language = language
+        yield "hello"
+
+    def assist(self, text: str) -> None:
+        pass
+
+
+@pytest.mark.anyio
+async def test_session_passes_bridge_language_to_adapter() -> None:
+    """UserTextEvent.extra['language'] is threaded into adapter.stream."""
+    from unpod._protocol import UserTextEvent
+
+    adapter = _CapturingAdapter()
+    mock_bridge = AsyncMock()
+    mock_bridge.recv_event = AsyncMock(
+        side_effect=[
+            UserTextEvent(text="namaste", extra={"language": "hi"}),
+            Exception("done"),
+        ]
+    )
+    mock_bridge.send_verb = AsyncMock()
+
+    session = Session(bridge=mock_bridge)
+    session.dialog_machine = adapter
+
+    await session.run()
+
+    assert adapter.stream_language == "hi"
+
+
+@pytest.mark.anyio
+async def test_session_handles_missing_language() -> None:
+    """No extra language → adapter receives None and nothing crashes."""
+    from unpod._protocol import UserTextEvent
+
+    adapter = _CapturingAdapter()
+    mock_bridge = AsyncMock()
+    mock_bridge.recv_event = AsyncMock(
+        side_effect=[
+            UserTextEvent(text="hello"),
+            Exception("done"),
+        ]
+    )
+    mock_bridge.send_verb = AsyncMock()
+
+    session = Session(bridge=mock_bridge)
+    session.dialog_machine = adapter
+
+    await session.run()
+
+    assert adapter.stream_language is None

@@ -119,6 +119,10 @@ def parse_dispatch_frame(raw: str) -> DispatchFrame:
 class UserTextEvent(BaseModel):
     """User speech-to-text result."""
 
+    # ``extra`` carries per-turn side-channel data (e.g. bridge-detected
+    # ``language``); allow it so it survives the wire instead of being dropped.
+    model_config = {"extra": "allow"}
+
     event: Literal["user.text"] = "user.text"
     text: str
     is_final: bool = True
