@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 from typing import TYPE_CHECKING, Any, Callable, Coroutine
 
 from unpod._protocol import (
@@ -49,6 +51,15 @@ class Session:
         self._metrics = MetricsTracker()
         self._dialog_adapter: DialogAdapter | None = None
         self._turn_counter = 0
+        # A2a: a speculative draft has been streamed (held by the worker) and is
+        # awaiting its committed turn to release it.
+        self._draft_in_flight = False
+        # A2b revise-on-divergence: the draft now streams in a background task so
+        # the run loop keeps reading events and can abort a stale draft when a
+        # newer partial arrives. _draft_grounded is the text that draft assumed —
+        # if the committed turn matches it the draft is released, else retracted.
+        self._draft_task: asyncio.Task[None] | None = None
+        self._draft_grounded: str | None = None
         self._last_metric_event: Any | None = None
         self.data: dict[str, Any] = {}
         self.recording = RecordingControl(self._bridge)
@@ -150,12 +161,93 @@ class Session:
         """End the call with the given reason."""
         await self._bridge.send_verb(AgentEndCallVerb(reason=reason))
 
+    async def _relay_draft(self, text: str, language: str | None) -> None:
+        """Stream a speculative draft reply and relay HELD draft deltas (A2a).
+
+        Runs as a background task (started by ``_start_draft``) so the run loop
+        can keep reading events and abort this draft when a newer partial lands
+        (A2b). Calls the adapter's optional ``draft_stream`` (superdialog's
+        ``draft_turn`` — no log, no tools, no obs); relays each chunk as a
+        draft-tagged ``agent.text.delta`` the worker buffers without speaking.
+        Each send is shielded so a supersede-cancel never tears a half-written WS
+        frame — the cancel lands cleanly at the next chunk boundary instead.
+        No-op when the adapter has no draft surface (e.g. the legacy DialogMachine
+        path), so a partial there is silently ignored rather than crashing.
+        """
+        from unpod._protocol import AgentTextDeltaEvent
+
+        adapter = self._dialog_adapter
+        if adapter is None or not hasattr(adapter, "draft_stream"):
+            return
+        try:
+            async for chunk in adapter.draft_stream(text, language=language):
+                if chunk:
+                    await asyncio.shield(
+                        self._bridge.send_verb(
+                            AgentTextDeltaEvent(text=chunk, draft=True)
+                        )
+                    )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # A draft is best-effort speculation; a failure must never crash the
+            # session loop. The committed turn still runs normally.
+            pass
+
+    def _start_draft(self, text: str, language: str | None) -> None:
+        """Begin a speculative draft for ``text`` in a cancellable background task.
+
+        No-op when the adapter has no draft surface (legacy DialogMachine path) —
+        a partial there is ignored, never flipping ``_draft_in_flight``.
+        """
+        adapter = self._dialog_adapter
+        if adapter is None or not hasattr(adapter, "draft_stream"):
+            return
+        self._draft_grounded = text
+        self._draft_in_flight = True
+        self._draft_task = asyncio.create_task(self._relay_draft(text, language))
+
+    async def _drain_draft(self) -> None:
+        """Await the in-flight draft to completion (committed text matched it).
+
+        Leaves ``_draft_in_flight`` set so the committed turn below suppresses its
+        own deltas and the worker speaks this (now fully buffered) draft on commit.
+        """
+        task, self._draft_task = self._draft_task, None
+        self._draft_grounded = None
+        if task is not None:
+            with contextlib.suppress(Exception):
+                await task
+
+    async def _abort_draft(self, turn_id: int) -> None:
+        """Cancel a stale in-flight draft and tell the worker to drop it (A2b).
+
+        Cancels the streaming task (shielded sends drain cleanly), then emits
+        ``agent.draft.retract`` so the worker clears its held buffer. After this
+        the committed stream speaks fresh. Idempotent: a no-op when no draft is
+        in flight.
+        """
+        if not self._draft_in_flight:
+            return
+        from unpod._protocol import AgentDraftRetractVerb
+
+        task, self._draft_task = self._draft_task, None
+        self._draft_grounded = None
+        self._draft_in_flight = False
+        if task is not None and not task.done():
+            task.cancel()
+        if task is not None:
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await task
+        await self._bridge.send_verb(AgentDraftRetractVerb(turn_id=turn_id))
+
     async def run(self) -> None:
         """Main loop: read bridge events, fire hooks, route to dialog.
 
         Blocks until call ends.
         """
         from unpod._protocol import (
+            AgentDraftCommitVerb,
             AgentTextDeltaEvent,
             AgentTextEndEvent,
             ErrorEvent,
@@ -207,6 +299,26 @@ class Session:
                 if isinstance(event, UserTextEvent):
                     text = event.text
                     language = (getattr(event, "extra", None) or {}).get("language")
+                    # A2a/A2b speculative draft: a non-final partial drafts a reply
+                    # the worker HOLDS (draft-tagged deltas, no TTS) until commit.
+                    # No hook, no obs, no turn counter — a draft must leave zero
+                    # trace (mirrors superdialog draft_turn). A2b: a newer partial
+                    # supersedes — abort the stale draft (cancel + retract so the
+                    # worker drops it) before drafting afresh.
+                    if not event.is_final:
+                        await self._abort_draft(self._turn_counter + 1)
+                        self._start_draft(text, language)
+                        continue
+                    # Commit boundary. If a draft is held and the committed text
+                    # matches what it assumed, drain + release it (A2a path). If it
+                    # diverged, retract it and speak the committed stream fresh
+                    # (A2b revise-on-divergence). Exact-string compare is the
+                    # cheapest divergence metric (design §11).
+                    if self._draft_in_flight:
+                        if self._draft_grounded == text:
+                            await self._drain_draft()
+                        else:
+                            await self._abort_draft(self._turn_counter + 1)
                     await self._hooks.fire("user_turn", text)
                     self._turn_counter += 1
                     if self._dialog_adapter is not None:
@@ -219,9 +331,24 @@ class Session:
                             ):
                                 if chunk:
                                     full_text += chunk
-                                    await self._bridge.send_verb(
-                                        AgentTextDeltaEvent(text=chunk)
-                                    )
+                                    # A2a release-on-final: when a draft is held,
+                                    # the worker speaks THAT on commit, so the
+                                    # committed text is suppressed here — the
+                                    # committed turn still runs to advance state +
+                                    # fire tools. ponytail: divergence-blind (speaks
+                                    # the draft even if it diverged from the final);
+                                    # the prefix/redraft guard is A2b.
+                                    if not self._draft_in_flight:
+                                        await self._bridge.send_verb(
+                                            AgentTextDeltaEvent(text=chunk)
+                                        )
+                            # Commit BEFORE end so the worker opens its response
+                            # from the held draft, then end closes it.
+                            if self._draft_in_flight:
+                                self._draft_in_flight = False
+                                await self._bridge.send_verb(
+                                    AgentDraftCommitVerb(turn_id=turn_id)
+                                )
                             await self._bridge.send_verb(AgentTextEndEvent())
                             if full_text:
                                 await self._hooks.fire("agent_turn", full_text)
@@ -260,6 +387,11 @@ class Session:
                             break
 
                 elif isinstance(event, UserInterruptEvent):
+                    # A barge-in kills any held draft — it grounds in speech the
+                    # user has now overridden. Cancel the stream (stop wasting LLM)
+                    # and retract (the worker also clears locally; retract is
+                    # idempotent).
+                    await self._abort_draft(self._turn_counter + 1)
                     await self._hooks.fire("interruption")
                     if hasattr(self._dialog_adapter, "assist"):
                         self._dialog_adapter.assist(
@@ -282,6 +414,9 @@ class Session:
                     )
                     break
         finally:
+            # Don't leak a draft task if the loop exits mid-draft (call end).
+            if self._draft_task is not None and not self._draft_task.done():
+                self._draft_task.cancel()
             await self._hooks.fire("call_end", "error" if _ended_by_error else "hangup")
             # Flush the session's accumulated LLM usage to the cloud ledger
             # (best-effort; no-op unless configured).

@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from typing import Any, Literal, Union
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 # ---------------------------------------------------------------------------
 # Dispatch protocol frames (orchestrator <-> runner)
@@ -125,7 +125,12 @@ class UserTextEvent(BaseModel):
 
     event: Literal["user.text"] = "user.text"
     text: str
-    is_final: bool = True
+    # The media worker serializes this key as ``final`` (its protocol's field
+    # name); accept either so a non-final partial (A2a) actually reads through
+    # instead of defaulting True and landing in ``extra``.
+    is_final: bool = Field(
+        default=True, validation_alias=AliasChoices("is_final", "final")
+    )
 
 
 class UserInterruptEvent(BaseModel):
@@ -193,10 +198,41 @@ class StateEvent(BaseModel):
 
 
 class AgentTextDeltaEvent(BaseModel):
-    """Streaming text chunk from agent."""
+    """Streaming text chunk from agent.
+
+    ``draft=True`` marks a SPECULATIVE chunk (A2a): the reply drafted for a
+    not-yet-final partial. The worker HOLDS draft deltas (no TTS) until the
+    matching ``agent.draft.commit``. ``draft=False`` (default) is the committed
+    hot path — byte-for-byte the legacy behaviour.
+    """
 
     event: Literal["agent.text.delta"] = "agent.text.delta"
     text: str
+    draft: bool = False
+
+
+class AgentDraftCommitVerb(BaseModel):
+    """Command: release the held draft for ``turn_id`` to TTS (A2a).
+
+    Emitted when a partial's draft is superseded by its committed turn.
+    Idempotent + turn-id-scoped (§7.1): a duplicate commit for an already
+    released/absent draft is a no-op on the worker.
+    """
+
+    event: Literal["agent.draft.commit"] = "agent.draft.commit"
+    turn_id: int
+
+
+class AgentDraftRetractVerb(BaseModel):
+    """Command: drop the held draft for ``turn_id`` (A2b revise-on-divergence).
+
+    A newer partial superseded the draft, so the relay aborted it; the worker
+    clears its held buffer and a fresh draft (or the committed stream) follows.
+    Idempotent: retracting an already-cleared/absent draft is a no-op.
+    """
+
+    event: Literal["agent.draft.retract"] = "agent.draft.retract"
+    turn_id: int
 
 
 class AgentTextEndEvent(BaseModel):
@@ -307,6 +343,8 @@ BridgeEvent = Union[
     StateEvent,
     AgentTextDeltaEvent,
     AgentTextEndEvent,
+    AgentDraftCommitVerb,
+    AgentDraftRetractVerb,
     AgentSayVerb,
     AgentTransferVerb,
     AgentEndCallVerb,
@@ -328,6 +366,8 @@ _BRIDGE_EVENT_MAP: dict[str, type[BaseModel]] = {
     "state": StateEvent,
     "agent.text.delta": AgentTextDeltaEvent,
     "agent.text.end": AgentTextEndEvent,
+    "agent.draft.commit": AgentDraftCommitVerb,
+    "agent.draft.retract": AgentDraftRetractVerb,
     "agent.say": AgentSayVerb,
     "agent.transfer": AgentTransferVerb,
     "agent.end_call": AgentEndCallVerb,
