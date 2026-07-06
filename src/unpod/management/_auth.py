@@ -37,6 +37,26 @@ class BearerAuth:
 
 
 @dataclass(frozen=True)
+class TokenAuth:
+    """DRF-token auth: ``Authorization: Token <key>`` (+ optional Org-Handle).
+
+    Used to reach the backend-core native ``/api/v2/platform`` surface with a
+    per-user DRF token (``rest_framework.authtoken``) instead of a platform JWT.
+    Org-scoped endpoints (telephony) additionally require the ``Org-Handle``
+    header.
+    """
+
+    token: str
+    org_handle: str | None = None
+
+    def headers(self) -> dict[str, str]:
+        headers = {"Authorization": f"Token {self.token}"}
+        if self.org_handle:
+            headers["Org-Handle"] = self.org_handle
+        return headers
+
+
+@dataclass(frozen=True)
 class JWTAuth:
     """Proxy-mode auth: ``Authorization: JWT <token>`` (+ optional Org-Handle).
 

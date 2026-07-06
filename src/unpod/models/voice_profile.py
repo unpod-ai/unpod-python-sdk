@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
 class VoiceProfile(BaseModel):
@@ -12,7 +12,9 @@ class VoiceProfile(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
-    profile_id: str = Field(alias="id")
+    profile_id: str = Field(
+        validation_alias=AliasChoices("profile_id", "id", "agent_profile_id")
+    )
     project_id: str | None = None  # None = global/seeded profile
     name: str = Field(default="", alias="persona")
     description: str | None = None

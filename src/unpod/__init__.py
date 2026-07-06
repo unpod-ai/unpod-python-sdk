@@ -4,7 +4,7 @@ from unpod.client import AsyncClient, Client
 from unpod.connectivity.call_context import CallContext
 from unpod.connectivity.runner import AgentRunner
 from unpod.connectivity.session import Session
-from unpod.management._auth import Auth, BearerAuth, JWTAuth
+from unpod.management._auth import Auth, BearerAuth, JWTAuth, TokenAuth
 
 __all__ = [
     "AgentRunner",
@@ -14,5 +14,6 @@ __all__ = [
     "CallContext",
     "Client",
     "JWTAuth",
+    "TokenAuth",
     "Session",
 ]
