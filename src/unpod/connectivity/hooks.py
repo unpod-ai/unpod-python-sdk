@@ -33,7 +33,9 @@ class HookRegistry:
             defaultdict(list)
         )
 
-    def on(self, event: str) -> Callable[
+    def on(
+        self, event: str
+    ) -> Callable[
         [Callable[..., Coroutine[Any, Any, None]]],
         Callable[..., Coroutine[Any, Any, None]],
     ]:

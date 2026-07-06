@@ -63,7 +63,9 @@ def test_runner_builds_call_context_from_call_started_metadata() -> None:
     )
 
     ctx = _context_from_call_started(
-        started, agent_id="support-bot", session=object()  # type: ignore[arg-type]
+        started,
+        agent_id="support-bot",
+        session=object(),  # type: ignore[arg-type]
     )
 
     assert ctx.session_id == "sess_1"

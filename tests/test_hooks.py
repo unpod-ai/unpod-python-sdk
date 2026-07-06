@@ -92,9 +92,11 @@ def test_invalid_event_raises() -> None:
 
 def test_llm_call_and_turn_complete_are_valid_events():
     from unpod.connectivity.hooks import HookRegistry
+
     registry = HookRegistry()
 
-    async def _noop(**kwargs): pass
+    async def _noop(**kwargs):
+        pass
 
     # Should not raise ValueError
     registry.on("llm_call")(_noop)

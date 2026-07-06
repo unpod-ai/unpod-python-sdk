@@ -19,7 +19,9 @@ class Call(BaseModel):
     agent_id: str | None = None
     direction: str = "outbound"
     from_number: str | None = None
-    to_number: str | None = Field(default=None, validation_alias=AliasChoices("to_number", "user_number"))
+    to_number: str | None = Field(
+        default=None, validation_alias=AliasChoices("to_number", "user_number")
+    )
     number_id: str | None = None
     trunk_id: str | None = None
     session_id: str | None = None

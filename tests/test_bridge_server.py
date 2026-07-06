@@ -61,6 +61,7 @@ async def test_handler_runs_entrypoint_with_call_started_context() -> None:
 @pytest.mark.anyio
 async def test_handler_advertises_turn_metrics() -> None:
     """The bridge hello must advertise turn.metrics so workers emit per-turn traces."""
+
     async def entrypoint(ctx) -> None:  # type: ignore[no-untyped-def]
         pass
 

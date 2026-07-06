@@ -44,12 +44,15 @@ def test_platform_base(monkeypatch):
 
 @pytest.mark.anyio
 async def test_numbers_list():
-    http = _FakeHTTP({
-        ("GET", "/telephony/numbers/"): {
-            "status_code": 200, "message": "ok",
-            "data": [{"id": 1, "number": "+1555"}],
+    http = _FakeHTTP(
+        {
+            ("GET", "/telephony/numbers/"): {
+                "status_code": 200,
+                "message": "ok",
+                "data": [{"id": 1, "number": "+1555"}],
+            }
         }
-    })
+    )
     ns = TelephonyNamespace(http)
     nums = await ns.numbers.list()
     assert [n.id for n in nums] == [1]
@@ -58,11 +61,15 @@ async def test_numbers_list():
 
 @pytest.mark.anyio
 async def test_trunk_create_maps_username_password():
-    http = _FakeHTTP({
-        ("POST", "/telephony/trunks/"): {
-            "status_code": 201, "message": "ok", "data": {"id": 7, "name": "C"},
+    http = _FakeHTTP(
+        {
+            ("POST", "/telephony/trunks/"): {
+                "status_code": 201,
+                "message": "ok",
+                "data": {"id": 7, "name": "C"},
+            }
         }
-    })
+    )
     ns = TelephonyNamespace(http)
     trunk = await ns.trunks.create(
         "C", "sip:c.net", username="u", password="p", source_ips=["1.2.3.4"]
@@ -139,7 +146,8 @@ async def test_numbers_attach_to_agent():
 @pytest.mark.anyio
 async def test_numbers_attach_without_agent_id_omits_it():
     resp = {
-        "status_code": 201, "message": "ok",
+        "status_code": 201,
+        "message": "ok",
         "data": {"agent_id": None, "numbers": [{"number_id": 1, "ok": True}]},
     }
     http = _FakeHTTP({("POST", "/telephony/numbers/attach/"): resp})
@@ -153,12 +161,15 @@ async def test_numbers_attach_without_agent_id_omits_it():
 
 @pytest.mark.anyio
 async def test_overview():
-    http = _FakeHTTP({
-        ("GET", "/telephony/overview/"): {
-            "status_code": 200, "message": "ok",
-            "data": [{"number_id": 1, "in_sync": True}],
+    http = _FakeHTTP(
+        {
+            ("GET", "/telephony/overview/"): {
+                "status_code": 200,
+                "message": "ok",
+                "data": [{"number_id": 1, "in_sync": True}],
+            }
         }
-    })
+    )
     ns = TelephonyNamespace(http)
     rows = await ns.overview()
     assert rows[0].in_sync is True

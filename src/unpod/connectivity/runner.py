@@ -107,7 +107,9 @@ class AgentRunner:
     # Public helpers
     # ------------------------------------------------------------------
 
-    def on(self, event: str) -> Callable[
+    def on(
+        self, event: str
+    ) -> Callable[
         [Callable[..., Any]],
         Callable[..., Any],
     ]:

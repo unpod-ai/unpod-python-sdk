@@ -3,6 +3,7 @@
 Activated when LANGFUSE_SECRET_KEY env var is present. All methods are
 no-ops on the Langfuse side (but hooks still fire) when env var is absent.
 """
+
 from __future__ import annotations
 
 import os
@@ -38,6 +39,7 @@ class ObservabilityManager:
     def _init_langfuse(self) -> Any:
         try:
             from langfuse import get_client  # type: ignore[import]
+
             return get_client()
         except Exception:
             return None

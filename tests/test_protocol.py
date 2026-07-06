@@ -194,6 +194,7 @@ def test_bridge_frames_use_event_discriminator() -> None:
 
 def test_turn_metrics_event_parse():
     from unpod._protocol import TurnMetricsEvent, parse_bridge_event
+
     evt = TurnMetricsEvent(turn_id=2, ttfa_ms=1500.0, from_node="greet")
     # parse_bridge_event takes a JSON string
     parsed = parse_bridge_event(evt.model_dump_json())

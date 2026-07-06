@@ -10,9 +10,9 @@ from __future__ import annotations
 import logging
 import os
 import re
-import sys
 
 from loguru import logger
+
 
 # Intercept superdialog's standard-library logging so [SMART-SKIP-DEBUG] appears
 class _InterceptHandler(logging.Handler):
@@ -23,14 +23,15 @@ class _InterceptHandler(logging.Handler):
             level = record.levelno
         logger.opt(depth=6, exception=record.exc_info).log(level, record.getMessage())
 
+
 logging.basicConfig(handlers=[_InterceptHandler()], level=logging.DEBUG, force=True)
 # Only show INFO+ from superdialog to reduce noise
 logging.getLogger("superdialog").setLevel(logging.INFO)
-from unpod import AgentRunner, CallContext
-from unpod._protocol import AgentTextDeltaEvent, AgentTextEndEvent
+from unpod import AgentRunner, CallContext  # noqa: E402
+from unpod._protocol import AgentTextDeltaEvent, AgentTextEndEvent  # noqa: E402
 
-from superdialog import DialogMachine, LLMAgent
-from superdialog.flow import load_flow
+from superdialog import DialogMachine, LLMAgent  # noqa: E402
+from superdialog.flow import load_flow  # noqa: E402
 
 # Devanagari Unicode block — presence = Hindi speech
 _DEVANAGARI_RE = re.compile(r"[ऀ-ॿ]")

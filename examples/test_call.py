@@ -24,7 +24,6 @@ Required env vars:
 from __future__ import annotations
 
 import asyncio
-import os
 import sys
 
 from unpod import AgentRunner, AsyncClient, CallContext
@@ -92,7 +91,9 @@ async def entrypoint(ctx: CallContext) -> None:
                 "Keep every reply under two sentences — your words will be spoken aloud."
             ),
         )
-        await ctx.session.say("Hello! This is a test call from the engineering team. Can you hear me clearly?")
+        await ctx.session.say(
+            "Hello! This is a test call from the engineering team. Can you hear me clearly?"
+        )
         await ctx.session.run()
 
     except Exception as exc:
@@ -102,7 +103,9 @@ async def entrypoint(ctx: CallContext) -> None:
 
 
 def run_agent() -> None:
-    print(f"Starting AgentRunner (agent_id={AGENT_ID!r}, bridge={RUNNER_BRIDGE_URL})...")
+    print(
+        f"Starting AgentRunner (agent_id={AGENT_ID!r}, bridge={RUNNER_BRIDGE_URL})..."
+    )
     print("Press Ctrl-C to stop.\n")
     AgentRunner(
         entrypoint=entrypoint,
@@ -131,10 +134,12 @@ async def make_call() -> None:
         to_number=TO_NUMBER,
         instructions="This is a test call. Greet warmly and confirm audio quality.",
     )
-    print(f"\nCall dispatched!")
+    print("\nCall dispatched!")
     print(f"  call_id : {call.call_id}")
     print(f"  status  : {call.status}")
-    print(f"\nCheck status: uv run python examples/test_call.py --status {call.call_id}")
+    print(
+        f"\nCheck status: uv run python examples/test_call.py --status {call.call_id}"
+    )
     await client.close()
 
 
