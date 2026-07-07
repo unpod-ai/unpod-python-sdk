@@ -2,7 +2,7 @@
 
 from unpod.models.api_key import ApiKey
 from unpod.models.call import Call, CallCreate
-from unpod.models.number import Number, NumberPurchase
+from unpod.models.number import Number
 from unpod.models.orchestrator_session import (
     MergeOutcome,
     OrchestratorParticipant,
@@ -35,7 +35,6 @@ __all__ = [
     "CostBreakdown",
     "MergeOutcome",
     "Number",
-    "NumberPurchase",
     "OrchestratorParticipant",
     "OrchestratorSession",
     "Pipe",

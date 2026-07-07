@@ -38,7 +38,7 @@ supervoice exposes your agent to the outside world via three transports — you 
 | Transport | Use case | How browser/phone connects |
 |-----------|----------|---------------------------|
 | WebSocket | Browser testing, web widget | `POST /connect?agent_id=X` → `WS /ws/audio` |
-| Telephony | Phone calls (PSTN/SIP) | Number purchased via Management SDK |
+| Telephony | Phone calls (PSTN/SIP) | Number synced/attached via Management SDK |
 | WebRTC | Native mobile / embedded | Room join via supervoice room engine |
 
 All three converge at the same bridge: your `AgentRunner` receives plain text turns regardless of transport.
@@ -51,7 +51,7 @@ All three converge at the same bridge: your `AgentRunner` receives plain text tu
 
 CRUD operations against Unpod's Control Plane:
 
-- **Numbers** — purchase, list, release, bring-your-own
+- **Numbers** — list, sync from SIP trunks, attach/detach, release, bring-your-own
 - **Voice Profiles** — browse catalog (read-only, per-minute pricing)
 - **Speech Pipes** — create bindings (number + voice profile + brain endpoint)
 - **Calls** — trigger outbound, list, get status, hangup

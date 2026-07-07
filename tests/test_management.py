@@ -33,22 +33,6 @@ async def test_numbers_list(client: AsyncClient):
 
 
 @pytest.mark.anyio
-async def test_numbers_purchase(client: AsyncClient):
-    with patch.object(
-        client.numbers._http, "post", new_callable=AsyncMock
-    ) as mock_post:
-        mock_post.return_value = {
-            "id": "num_1",
-            "number": "+919800000001",
-            "country": "IN",
-            "capabilities": ["voice"],
-            "status": "active",
-        }
-        num = await client.numbers.purchase(country="IN", capabilities=["voice"])
-        assert num.id == "num_1"
-
-
-@pytest.mark.anyio
 async def test_numbers_release(client: AsyncClient):
     with patch.object(
         client.numbers._http, "delete", new_callable=AsyncMock
@@ -112,7 +96,7 @@ async def test_pipes_create(client: AsyncClient):
 
 @pytest.mark.anyio
 async def test_pipes_update(client: AsyncClient):
-    with patch.object(client.pipes._http, "put", new_callable=AsyncMock) as mock_put:
+    with patch.object(client.pipes._http, "patch", new_callable=AsyncMock) as mock_put:
         mock_put.return_value = {
             "pipe_id": "pipe_1",
             "project_id": "proj_1",

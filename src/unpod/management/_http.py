@@ -89,6 +89,13 @@ class AsyncHTTPClient:
         resp.raise_for_status()
         return resp.json()  # type: ignore[no-any-return]
 
+    async def patch(self, path: str, json: dict | None = None) -> dict:
+        """Send a PATCH request and return parsed JSON response."""
+        client = await self._ensure_client()
+        resp = await client.patch(path, headers=self._headers(), json=json)
+        resp.raise_for_status()
+        return resp.json()  # type: ignore[no-any-return]
+
     async def delete(self, path: str) -> None:
         """Send a DELETE request (no response body)."""
         client = await self._ensure_client()

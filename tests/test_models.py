@@ -6,7 +6,6 @@ from unpod.models import (
     CallMetrics,
     CostBreakdown,
     Number,
-    NumberPurchase,
     OrchestratorSession,
     Pipe,
     PipeCreate,
@@ -41,14 +40,6 @@ def test_number_optional_created_at():
     )
     assert n.created_at is None
 
-
-def test_number_purchase_model():
-    np = NumberPurchase(
-        country="IN",
-        capabilities=["voice", "sms"],
-    )
-    assert np.country == "IN"
-    assert len(np.capabilities) == 2
 
 
 def test_voice_profile_model():

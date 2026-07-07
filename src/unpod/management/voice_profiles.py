@@ -15,14 +15,14 @@ class VoiceProfilesResource:
     async def list(self, language: str | None = None) -> list[VoiceProfile]:
         """List voice profiles, optionally filtered by language."""
         params = {"language": language} if language else None
-        resp = unwrap_data(await self._http.get("/voice-profiles/", params=params))
+        resp = unwrap_data(await self._http.get("/v1/voice-profiles", params=params))
         return [VoiceProfile(**item) for item in resp]
 
     async def get(self, profile_id: str) -> VoiceProfile:
         """Get a single voice profile by ID."""
-        resp = unwrap_data(await self._http.get(f"/voice-profiles/{profile_id}/"))
+        resp = unwrap_data(await self._http.get(f"/v1/voice-profiles/{profile_id}"))
         return VoiceProfile(**resp)
 
     async def delete(self, profile_id: str) -> None:
         """Delete a project-scoped voice profile."""
-        await self._http.delete(f"/voice-profiles/{profile_id}/")
+        await self._http.delete(f"/v1/voice-profiles/{profile_id}")

@@ -29,18 +29,6 @@ class NumbersResource:
         resp = unwrap_data(await self._http.get("/v1/numbers", params=params or None))
         return [Number(**item) for item in resp]
 
-    async def purchase(
-        self, country: str, capabilities: list[str] | None = None
-    ) -> Number:
-        """Provision a phone number."""
-        resp = unwrap_data(
-            await self._http.post(
-                "/v1/numbers",
-                json={"country": country, "capabilities": capabilities or ["voice"]},
-            )
-        )
-        return Number(**resp)
-
     async def delete(self, number_id: str) -> None:
         """Remove a number from My Numbers (reappears in provider sync)."""
         await self._http.delete(f"/v1/numbers/{number_id}")
@@ -52,9 +40,10 @@ class NumbersResource:
     async def sync(self) -> dict:
         """Sync numbers from LiveKit SIP trunks.
 
-        Returns a summary dict: ``{"synced": int, "new": int}``.
+        Returns a summary dict: ``{"synced": int, "new": int}``. Unwrapped like
+        every other method so direct and proxy responses parse identically.
         """
-        resp = await self._http.post("/v1/numbers/sync", json=None)
+        resp = unwrap_data(await self._http.post("/v1/numbers/sync", json=None))
         return resp  # type: ignore[return-value]
 
     async def attach(self, number_id: str, pipe_id: str) -> Number:

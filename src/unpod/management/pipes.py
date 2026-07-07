@@ -49,8 +49,8 @@ class PipesResource:
         return Pipe(**resp)
 
     async def update(self, pipe_id: str, **kwargs: Any) -> Pipe:
-        """Update an existing pipe."""
-        resp = unwrap_data(await self._http.put(f"/v1/pipes/{pipe_id}", json=kwargs))
+        """Update an existing pipe (PATCH — supervoice's only pipe-update verb)."""
+        resp = unwrap_data(await self._http.patch(f"/v1/pipes/{pipe_id}", json=kwargs))
         return Pipe(**resp)
 
     async def delete(self, pipe_id: str) -> None:

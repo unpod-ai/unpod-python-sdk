@@ -37,7 +37,7 @@ unpod
 └── Adapters                superdialog, LangChain, OpenAI, Anthropic, HTTP, MCP
 ```
 
-- **Management SDK** — CRUD against the Unpod Control Plane: purchase numbers, browse voice profiles, bind Speech Pipes, trigger and inspect calls.
+- **Management SDK** — CRUD against the Unpod Control Plane: manage numbers (sync/attach/release), browse voice profiles, bind Speech Pipes, trigger and inspect calls.
 - **Connectivity SDK** — runtime for live calls: a long-lived `AgentRunner` receives plain-text turns over WSS and dispatches them to your agent, regardless of transport (phone, browser, WebRTC).
 - **Adapters** — plug any brain into a call: `superdialog` dialog machines, LangChain runnables, your own HTTP endpoint, or an MCP server.
 

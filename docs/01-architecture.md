@@ -40,7 +40,7 @@ unpod-sdk/
 │   │   ├── __init__.py
 │   │   ├── pipe.py                  # Pipe, PipeCreate
 │   │   ├── call.py                  # Call, CallCreate
-│   │   ├── number.py                # Number, NumberPurchase
+│   │   ├── number.py                # Number
 │   │   ├── voice_profile.py         # VoiceProfile
 │   │   ├── recording.py             # Recording
 │   │   ├── transcript.py            # Transcript

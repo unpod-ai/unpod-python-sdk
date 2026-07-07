@@ -34,9 +34,3 @@ class Number(BaseModel):
     def created_at(self) -> datetime | None:
         return self.created
 
-
-class NumberPurchase(BaseModel):
-    """Request to purchase/provision a phone number."""
-
-    country: str
-    capabilities: list[str] = Field(default_factory=lambda: ["voice"])
