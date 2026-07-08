@@ -46,12 +46,15 @@ class NumbersResource:
         resp = unwrap_data(await self._http.post("/api/v2/platform/speech/v1/numbers/sync", json=None))
         return resp  # type: ignore[return-value]
 
-    async def attach(self, number_id: str, pipe_id: str) -> Number:
-        """Attach a number to a pipe."""
+    async def attach(self, number_id: str, pipe_id: str, agent_id: str | None = None) -> Number:
+        """Attach a number to a pipe, optionally binding it to an agent."""
+        body: dict[str, str] = {"pipe_id": pipe_id}
+        if agent_id is not None:
+            body["agent_id"] = agent_id
         resp = unwrap_data(
             await self._http.post(
                 f"/api/v2/platform/speech/v1/numbers/{number_id}/attach",
-                json={"pipe_id": pipe_id},
+                json=body,
             )
         )
         return Number(**resp)
