@@ -8,7 +8,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 from unpod._base_url import platform_base, service_base
-from unpod.management._auth import Auth, BearerAuth
+from unpod.management._auth import Auth, BearerAuth, TokenAuth
 from unpod.management._http import AsyncHTTPClient
 from unpod.management.api_keys import ApiKeysResource
 from unpod.management.calls import CallsResource
@@ -58,13 +58,25 @@ class AsyncClient:
         for ``/orchestrator``, else ``base_url``.
         """
         if auth is None:
-            api_key = api_key or os.environ.get("UNPOD_API_KEY")
-            if not api_key:
-                raise ValueError(
-                    "provide auth=... (BearerAuth/JWTAuth) or api_key "
-                    "(directly or via UNPOD_API_KEY)"
+            # Proxy mode via backend-core: a DRF ``Token`` (the api-key) plus an
+            # ``Org-Handle`` — matches the curl the backend accepts. Preferred
+            # when ``UNPOD_PLATFORM_TOKEN`` is set; falls back to a direct
+            # supervoice ``Bearer`` api_key otherwise.
+            platform_token = os.environ.get("UNPOD_PLATFORM_TOKEN")
+            if platform_token:
+                auth = TokenAuth(
+                    token=platform_token,
+                    org_handle=os.environ.get("UNPOD_ORG_HANDLE"),
                 )
-            auth = BearerAuth(api_key)
+            else:
+                api_key = api_key or os.environ.get("UNPOD_API_KEY")
+                if not api_key:
+                    raise ValueError(
+                        "provide auth=... (BearerAuth/JWTAuth/TokenAuth), "
+                        "UNPOD_PLATFORM_TOKEN (+ UNPOD_ORG_HANDLE), or api_key "
+                        "(directly or via UNPOD_API_KEY)"
+                    )
+                auth = BearerAuth(api_key)
         self._auth = auth
         # Retained for backward compatibility; None in JWT/proxy mode.
         self._api_key = api_key or os.environ.get("UNPOD_API_KEY")

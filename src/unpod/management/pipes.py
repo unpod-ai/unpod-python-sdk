@@ -16,12 +16,12 @@ class PipesResource:
 
     async def list(self) -> list[Pipe]:
         """List all pipes."""
-        resp = unwrap_data(await self._http.get("/v1/pipes"))
+        resp = unwrap_data(await self._http.get("/api/v2/platform/speech/v1/pipes"))
         return [Pipe(**item) for item in resp]
 
     async def get(self, pipe_id: str) -> Pipe:
         """Get a single pipe by ID."""
-        resp = unwrap_data(await self._http.get(f"/v1/pipes/{pipe_id}"))
+        resp = unwrap_data(await self._http.get(f"/api/v2/platform/speech/v1/pipes/{pipe_id}"))
         return Pipe(**resp)
 
     async def create(
@@ -45,14 +45,14 @@ class PipesResource:
             body["agent_id"] = agent_id
         if agent_endpoint is not None:
             body["agent_endpoint"] = agent_endpoint
-        resp = unwrap_data(await self._http.post("/v1/pipes", json=body))
+        resp = unwrap_data(await self._http.post("/api/v2/platform/speech/v1/pipes", json=body))
         return Pipe(**resp)
 
     async def update(self, pipe_id: str, **kwargs: Any) -> Pipe:
         """Update an existing pipe (PATCH — supervoice's only pipe-update verb)."""
-        resp = unwrap_data(await self._http.patch(f"/v1/pipes/{pipe_id}", json=kwargs))
+        resp = unwrap_data(await self._http.patch(f"/api/v2/platform/speech/v1/pipes/{pipe_id}", json=kwargs))
         return Pipe(**resp)
 
     async def delete(self, pipe_id: str) -> None:
         """Delete a pipe."""
-        await self._http.delete(f"/v1/pipes/{pipe_id}")
+        await self._http.delete(f"/api/v2/platform/speech/v1/pipes/{pipe_id}")
