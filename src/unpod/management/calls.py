@@ -25,12 +25,12 @@ class CallsResource:
             params["call_status"] = status
         if pipe_id:
             params["pipe_id"] = pipe_id
-        resp = unwrap_data(await self._http.get("/v1/calls", params=params or None))
+        resp = unwrap_data(await self._http.get("/api/v2/platform/speech/v1/calls", params=params or None))
         return [Call(**item) for item in resp]
 
     async def get(self, call_id: str) -> Call:
         """Get a single call by ID."""
-        resp = unwrap_data(await self._http.get(f"/v1/calls/{call_id}"))
+        resp = unwrap_data(await self._http.get(f"/api/v2/platform/speech/v1/calls/{call_id}"))
         return Call(**resp)
 
     async def create(
@@ -59,12 +59,12 @@ class CallsResource:
             body["instructions"] = instructions
         if data is not None:
             body["data"] = data
-        resp = unwrap_data(await self._http.post("/v1/calls", json=body))
+        resp = unwrap_data(await self._http.post("/api/v2/platform/speech/v1/calls", json=body))
         return Call(**resp)
 
     async def hangup(self, call_id: str) -> Call:
         """Hang up an active call."""
         resp = unwrap_data(
-            await self._http.post(f"/v1/calls/{call_id}/hangup", json=None)
+            await self._http.post(f"/api/v2/platform/speech/v1/calls/{call_id}/hangup", json=None)
         )
         return Call(**resp) if resp else Call(id=call_id, status="hangup_requested")

@@ -18,7 +18,7 @@ class Number(BaseModel):
     trunk_id: str | None = None
     provider_trunk_id: str | None = None
     trunk_type: str = "livekit"
-    country: str = Field(alias="country" , default=None)
+    country: str | None = Field(default=None)
     capabilities: list[str] = Field(default_factory=list)
     status: str = Field(default="available", validation_alias=AliasChoices("status", "state"))
     pipe_id: str | None = None
