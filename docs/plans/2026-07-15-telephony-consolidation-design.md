@@ -92,7 +92,7 @@ number, pipe, and agent (per `realign-speech-proxy-agent-binding`).
 | --- | --- | --- | --- |
 | `agent` | `agent_id` | LiveKit trunk + dispatch rule (today's path) | LiveKit dispatches to the agent worker |
 | `sip` | trunk link | SBC gateway/DID/routes (today's Leg-A path) | carrier routing |
-| `pipeline` (new) | the pipe's `agent_id` | LiveKit trunk, **no dispatch rule** — a dispatch rule would route to a LiveKit agent | webhook to a central point → number → `agent_id` → pipe → join via PipeCat transport |
+| `pipeline` (new) | the pipe's `agent_id` | LiveKit trunk + dispatch rule targeting the fixed **pipe agent** (`prod-supervoice-pipe-agent-v1` / `qa-supervoice-pipe-agent-v1`), not the number's `agent_id` | LiveKit dispatches to the pipe agent, which resolves number → `agent_id` → pipe and joins the session via PipeCat transport |
 
 UI offers three ways to connect a number — pick an agent, pick a
 pipeline, or enter an `agent_id` string directly. All three store the same
@@ -107,11 +107,14 @@ Django `attach_number` changes:
    only, recorded on the VBN (`sync_detail`) and surfaced in overview —
    an agent number may legitimately precede its pipe pool.
 3. **Sync contract widens:** the sv_numbers push carries the connect type
-   alongside `agent_id`, so supervoice knows a pipeline number routes via
-   webhook/PipeCat and expects no dispatch rule. The supervoice-side field
-   lands first (same rollout pattern as `sv_numbers.agent_id`).
-4. **SBC/LiveKit provisioning skips dispatch-rule creation** for
-   `kind=pipeline`.
+   alongside `agent_id`, so supervoice knows a pipeline number is served
+   by the pipe agent over PipeCat. The supervoice-side field lands first
+   (same rollout pattern as `sv_numbers.agent_id`).
+4. **Dispatch rule for `kind=pipeline` targets the pipe agent**, an
+   env-scoped setting (`prod-supervoice-pipe-agent-v1` /
+   `qa-supervoice-pipe-agent-v1`), not the number's `agent_id`. The
+   number's `agent_id` stays the routing key the pipe agent uses to pick
+   the pipe; the dispatch rule only decides which worker answers.
 
 Number → pipe pinning (supervoice `POST /v1/numbers/{id}/attach`) is
 retired from the SDK: pipes are many-per-agent pools selected at call
@@ -186,10 +189,11 @@ verified current.
    attach/detach commit, respects both flags, and a supervoice failure
    never fails the API response; `pipeline` attach 400s when no pipe
    matches the `agent_id` while `agent` attach warns and succeeds;
-   `kind=pipeline` provisioning creates no dispatch rule; the sv_numbers
-   push carries connect type. V1 suites (`test_phase*_*.py`) pass
-   untouched. Supervoice lands its sv_numbers connect-type field before
-   Django ships the widened sync.
+   `kind=pipeline` provisioning creates a dispatch rule targeting the
+   env's pipe agent (`prod-/qa-supervoice-pipe-agent-v1`), never the
+   number's `agent_id`; the sv_numbers push carries connect type. V1
+   suites (`test_phase*_*.py`) pass untouched. Supervoice lands its
+   sv_numbers connect-type field before Django ships the widened sync.
 2. **Flags:** per the speech README playbook —
    `reconcile_supervoice --dry-run` → verify parity → flip
    `SPEECH_SYNC_ENABLED` per env.
@@ -209,6 +213,7 @@ verified current.
 - A default-configured SDK reaches supervoice data only via Django.
 - A V2 attach is visible in supervoice within the request lifecycle, not
   up to a minute later.
-- A `pipeline`-connected number gets no dispatch rule and routes via
-  webhook → `agent_id` → pipe → PipeCat.
+- A `pipeline`-connected number's dispatch rule targets
+  `{env}-supervoice-pipe-agent-v1`; the pipe agent resolves
+  number → `agent_id` → pipe and joins via PipeCat.
 - Zero diffs to Django V1 APIs or behavior.
