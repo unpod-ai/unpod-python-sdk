@@ -160,6 +160,38 @@ async def test_numbers_attach_without_agent_id_omits_it():
 
 
 @pytest.mark.anyio
+async def test_numbers_attach_sends_attach_type():
+    resp = {
+        "status_code": 201,
+        "message": "ok",
+        "data": {"agent_id": "asst_sales", "numbers": [{"number_id": 1, "ok": True}]},
+    }
+    http = _FakeHTTP({("POST", "/telephony/numbers/attach/"): resp})
+    ns = TelephonyNamespace(http)
+    await ns.numbers.attach(
+        [1], agent_id="asst_sales", attach_type="pipeline", pipe_id="PIPE_y"
+    )
+    _, _, body = http.calls[0]
+    assert body["attach_type"] == "pipeline"
+    assert body["pipe_id"] == "PIPE_y"
+
+
+@pytest.mark.anyio
+async def test_numbers_attach_omits_attach_type_when_unset():
+    resp = {
+        "status_code": 201,
+        "message": "ok",
+        "data": {"agent_id": None, "numbers": [{"number_id": 1, "ok": True}]},
+    }
+    http = _FakeHTTP({("POST", "/telephony/numbers/attach/"): resp})
+    ns = TelephonyNamespace(http)
+    await ns.numbers.attach([1])
+    _, _, body = http.calls[0]
+    assert "attach_type" not in body  # server default ("agent") applies
+    assert "pipe_id" not in body  # agent mode carries no pipe
+
+
+@pytest.mark.anyio
 async def test_overview():
     http = _FakeHTTP(
         {

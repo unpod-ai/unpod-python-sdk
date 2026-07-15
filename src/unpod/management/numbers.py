@@ -31,11 +31,11 @@ class NumbersResource:
 
     async def delete(self, number_id: str) -> None:
         """Remove a number from My Numbers (reappears in provider sync)."""
-        await self._http.delete(f"/api/v2/platform/speech/v1/numbers/{number_id}")
+        await self._http.delete(f"/api/v2/platform/telephony/numbers/{number_id}")
 
     async def release(self, number_id: str) -> None:
         """Release a phone number."""
-        await self._http.delete(f"/api/v2/platform/speech/v1/numbers/{number_id}")
+        await self._http.delete(f"/api/v2/platform/telephony/numbers/{number_id}")
 
     async def sync(self) -> dict:
         """Sync numbers from LiveKit SIP trunks.
@@ -53,7 +53,7 @@ class NumbersResource:
             body["agent_id"] = agent_id
         resp = unwrap_data(
             await self._http.post(
-                f"/api/v2/platform/speech/v1/numbers/{number_id}/attach",
+                f"/api/v2/platform/telephony/numbers/{number_id}/attach-numbers/",
                 json=body,
             )
         )

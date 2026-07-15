@@ -146,6 +146,8 @@ class NumbersResource:
         number_ids: Sequence[int],
         *,
         agent_id: str | None = None,
+        attach_type: str | None = None,
+        pipe_id: str | None = None,
         bridge_slug: str | None = None,
         region: str | None = None,
     ) -> AgentAttachResult:
@@ -154,13 +156,20 @@ class NumbersResource:
         Maps each number to the agent termination (SuperSBC → agent/LiveKit); the
         bridge is auto-resolved (hidden). ``agent_id`` is optional: when set the
         number routes to that agent, when omitted the number is wired for agent
-        use without binding one yet. Returns the per-number lifecycle (no carrier
+        use without binding one yet. ``attach_type`` selects the termination
+        path — ``"agent"`` (default) or ``"pipeline"``; ``pipe_id`` names the
+        supervoice pipe the number routes to and is REQUIRED when
+        ``attach_type="pipeline"``. Returns the per-number lifecycle (no carrier
         origin endpoint — that is the Leg-A / BYO-carrier trunks path).
         Partial-success: each number reports ok/error independently.
         """
         body: dict = {"number_ids": list(number_ids)}
         if agent_id is not None:
             body["agent_id"] = agent_id
+        if attach_type is not None:
+            body["attach_type"] = attach_type
+        if pipe_id is not None:
+            body["pipe_id"] = pipe_id
         if bridge_slug is not None:
             body["bridge_slug"] = bridge_slug
         if region is not None:
