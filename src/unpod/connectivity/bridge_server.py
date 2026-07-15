@@ -111,6 +111,10 @@ def _context_from_call_started(
             for key, value in metadata.items()
             if key not in _RESERVED_METADATA_KEYS
         }
+    # voice_profile_id rides call.started as a top-level field (not metadata);
+    # surface it in data so entrypoints see the profile the media agent used.
+    if started.voice_profile_id:
+        data.setdefault("voice_profile_id", started.voice_profile_id)
     user_number = ""
     for key in _NUMBER_KEYS:
         value = metadata.get(key)

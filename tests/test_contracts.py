@@ -74,4 +74,39 @@ def test_runner_builds_call_context_from_call_started_metadata() -> None:
     assert ctx.direction == "outbound"
     assert ctx.user_number == "+14155550100"
     assert ctx.instructions == "Confirm appointment"
-    assert ctx.data == {"customer_id": "C1"}
+    assert ctx.data == {"customer_id": "C1", "voice_profile_id": "vp_1"}
+
+
+def test_call_context_data_keeps_explicit_voice_profile_id() -> None:
+    started = CallStartedEvent(
+        session_id="sess_1",
+        job_id="call_1",
+        room_id="sess_1",
+        voice_profile_id="vp_frame",
+        metadata={"data": {"voice_profile_id": "vp_meta"}},
+    )
+
+    ctx = _context_from_call_started(
+        started,
+        agent_id="support-bot",
+        session=object(),  # type: ignore[arg-type]
+    )
+
+    assert ctx.data["voice_profile_id"] == "vp_meta"
+
+
+def test_call_context_data_omits_absent_voice_profile_id() -> None:
+    started = CallStartedEvent(
+        session_id="sess_1",
+        job_id="call_1",
+        room_id="sess_1",
+        metadata={"data": {"customer_id": "C1"}},
+    )
+
+    ctx = _context_from_call_started(
+        started,
+        agent_id="support-bot",
+        session=object(),  # type: ignore[arg-type]
+    )
+
+    assert "voice_profile_id" not in ctx.data
