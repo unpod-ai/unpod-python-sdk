@@ -26,7 +26,7 @@ class NumbersResource:
             params["country"] = country
         if trunk_type:
             params["trunk_type"] = trunk_type
-        resp = unwrap_data(await self._http.get("/api/v2/platform/speech/v1/numbers", params=params or None))
+        resp = unwrap_data(await self._http.get("/api/v2/platform/telephony/numbers/", params=params or None))
         return [Number(**item) for item in resp]
 
     async def delete(self, number_id: str) -> None:
