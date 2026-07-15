@@ -36,17 +36,19 @@ A merge of the SDK's telephony surfaces was started and abandoned mid-flight:
 | Django push model | Inline push on commit from V2 endpoints + existing outbox/cron backstop |
 | Break policy | Break the SDK now (pre-1.0); no deprecation aliases |
 | Django V1 | Untouched — changes land only in V2 and the speech app |
+| Attach model | One verb: number → `agent_id` with a connect type (`agent` / `sip` / `pipeline`); no number → pipe pinning |
+| Pipe verification | Django verifies a pipe exists for the `agent_id` in supervoice: hard-fail for `pipeline`, warn for `agent` |
 
 ## Target SDK surface
 
 ```
 client.telephony.*        → Django /api/v2/platform/telephony/   (Django-owned lifecycle)
-    .numbers              pool list, attach-to-agent
+    .numbers              pool list; attach(number_ids, agent_id, connect_type=…)
     .trunks               carrier trunk CRUD, attach/detach-numbers
     .overview()
 
 client.speech.*           → Django /api/v2/platform/speech/v1/   (proxied supervoice)
-    .numbers              supervoice inventory: list, sync, attach-to-pipe, detach, release
+    .numbers              supervoice inventory: list, sync, release
     .pipes                CRUD
     .calls                list / get / create / hangup
     .voice_profiles, .sessions, .recordings, .transcripts
@@ -60,6 +62,10 @@ client.speech.*           → Django /api/v2/platform/speech/v1/   (proxied supe
   `client.speech`.
 - `client.trunks` dies entirely: the speech proxy deliberately excludes
   trunks (Django owns the trunk lifecycle via `client.telephony.trunks`).
+- `client.numbers.attach(pipe_id=…)` / `.detach()` — number → pipe pinning
+  is a legacy verb. Pipes are call-time pools resolved via `agent_id`; the
+  SDK's only attach verb is `client.telephony.numbers.attach`. (The proxy
+  route may stay for FE/ops; it leaves the SDK surface.)
 - `client.api_keys` — internal-only, unproxied.
 - `BearerAuth`-to-supervoice for management resources, the
   `UNPOD_SERVICE_BASE_URL` supervoice-direct escape hatch, and the third
@@ -73,8 +79,43 @@ client.speech.*           → Django /api/v2/platform/speech/v1/   (proxied supe
 
 The two "numbers" resources both survive because they are different
 records: `telephony.numbers` is the Django pool (int ids, agent binding);
-`speech.numbers` is supervoice's synced inventory (str ids, pipe binding).
-The namespace now names which one the caller holds.
+`speech.numbers` is supervoice's synced inventory (str ids). The namespace
+now names which one the caller holds.
+
+## Attach model
+
+One attach verb — number → `agent_id` — with a connect type that drives
+provisioning. The `agent_id` string is the single durable join key across
+number, pipe, and agent (per `realign-speech-proxy-agent-binding`).
+
+| Connect type | Stored | Provisioning | Call-time flow |
+| --- | --- | --- | --- |
+| `agent` | `agent_id` | LiveKit trunk + dispatch rule (today's path) | LiveKit dispatches to the agent worker |
+| `sip` | trunk link | SBC gateway/DID/routes (today's Leg-A path) | carrier routing |
+| `pipeline` (new) | the pipe's `agent_id` | LiveKit trunk, **no dispatch rule** — a dispatch rule would route to a LiveKit agent | webhook to a central point → number → `agent_id` → pipe → join via PipeCat transport |
+
+UI offers three ways to connect a number — pick an agent, pick a
+pipeline, or enter an `agent_id` string directly. All three store the same
+join key; the third is an input method, not a fourth semantic.
+
+Django `attach_number` changes:
+
+1. `kind` gains `pipeline` alongside `agent` / `sip`.
+2. **Verify-pipe step:** on attach, Django queries supervoice for a pipe
+   matching the `agent_id`. No match → `pipeline` attach hard-fails with a
+   clear 400 (the number would be dead on arrival); `agent` attach warns
+   only, recorded on the VBN (`sync_detail`) and surfaced in overview —
+   an agent number may legitimately precede its pipe pool.
+3. **Sync contract widens:** the sv_numbers push carries the connect type
+   alongside `agent_id`, so supervoice knows a pipeline number routes via
+   webhook/PipeCat and expects no dispatch rule. The supervoice-side field
+   lands first (same rollout pattern as `sv_numbers.agent_id`).
+4. **SBC/LiveKit provisioning skips dispatch-rule creation** for
+   `kind=pipeline`.
+
+Number → pipe pinning (supervoice `POST /v1/numbers/{id}/attach`) is
+retired from the SDK: pipes are many-per-agent pools selected at call
+time, never pinned to a number.
 
 ## Routing mechanics
 
@@ -96,7 +137,9 @@ The namespace now names which one the caller holds.
    `disconnect-provider`, `trunks/{id}/attach-numbers`, `detach-numbers`)
    register it via `transaction.on_commit(…)` after
    `attach_number`/`detach_number` returns. A failed push logs and moves
-   on; the API response never blocks on a supervoice outage.
+   on; the API response never blocks on a supervoice outage. (The
+   verify-pipe step in the attach model is the one deliberate exception:
+   it runs before the write and hard-fails `pipeline` attaches.)
 3. The signal still writes the outbox row, so the cron drain and reconcile
    jobs remain the retry backstop. The drain's fingerprint-based upserts
    make double-fire (inline + cron) safe.
@@ -138,9 +181,15 @@ verified current.
 
 1. **Django:** land the V2 dedup helpers (existing V2 tests must pass
    unchanged — that proves behavior preservation), then `provision_inline`
-   + `on_commit` wiring. New tests: inline push fires on V2 attach/detach
-   commit, respects both flags, and a supervoice failure never fails the
-   API response. V1 suites (`test_phase*_*.py`) pass untouched.
+   + `on_commit` wiring, then the attach-model changes (`kind=pipeline`,
+   verify-pipe, widened sync). New tests: inline push fires on V2
+   attach/detach commit, respects both flags, and a supervoice failure
+   never fails the API response; `pipeline` attach 400s when no pipe
+   matches the `agent_id` while `agent` attach warns and succeeds;
+   `kind=pipeline` provisioning creates no dispatch rule; the sv_numbers
+   push carries connect type. V1 suites (`test_phase*_*.py`) pass
+   untouched. Supervoice lands its sv_numbers connect-type field before
+   Django ships the widened sync.
 2. **Flags:** per the speech README playbook —
    `reconcile_supervoice --dry-run` → verify parity → flip
    `SPEECH_SYNC_ENABLED` per env.
@@ -155,7 +204,11 @@ verified current.
 ## Success criteria
 
 - One SDK code path per resource; no duplicate resource classes.
+- One attach verb: `client.telephony.numbers.attach(agent_id, connect_type)`;
+  no number → pipe pinning anywhere in the SDK.
 - A default-configured SDK reaches supervoice data only via Django.
 - A V2 attach is visible in supervoice within the request lifecycle, not
   up to a minute later.
+- A `pipeline`-connected number gets no dispatch rule and routes via
+  webhook → `agent_id` → pipe → PipeCat.
 - Zero diffs to Django V1 APIs or behavior.
