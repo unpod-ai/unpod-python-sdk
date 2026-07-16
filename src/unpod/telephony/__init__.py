@@ -28,6 +28,19 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from unpod.management._http import AsyncHTTPClient, unwrap_data
 
+
+def _as_id_list(number_ids: "int | str | Sequence[int]") -> list[int]:
+    """Coerce a single id or a sequence of ids to ``list[int]``.
+
+    Callers reach for ``attach(123, ...)`` as often as ``attach([123], ...)``, so
+    a bare int/str is wrapped rather than rejected. A str is treated as ONE id —
+    never iterated char-by-char (``list("12")`` → ``["1", "2"]`` is the trap this
+    guards). Each id is coerced to int so ``"123"`` and ``123`` behave the same.
+    """
+    if isinstance(number_ids, (int, str)):
+        return [int(number_ids)]
+    return [int(n) for n in number_ids]
+
 # ── models ───────────────────────────────────────────────────────────────────
 
 
@@ -153,7 +166,7 @@ class NumbersResource:
 
     async def attach(
         self,
-        number_ids: Sequence[int],
+        number_ids: "int | str | Sequence[int]",
         *,
         agent_id: str | None = None,
         attach_type: str | None = None,
@@ -173,7 +186,7 @@ class NumbersResource:
         origin endpoint — that is the Leg-A / BYO-carrier trunks path).
         Partial-success: each number reports ok/error independently.
         """
-        body: dict = {"number_ids": list(number_ids)}
+        body: dict = {"number_ids": _as_id_list(number_ids)}
         if agent_id is not None:
             body["agent_id"] = agent_id
         if attach_type is not None:
@@ -187,7 +200,9 @@ class NumbersResource:
         resp = await self._http.post("/telephony/numbers/attach/", json=body)
         return AgentAttachResult(**unwrap_data(resp))
 
-    async def detach(self, number_ids: Sequence[int]) -> AgentDetachResult:
+    async def detach(
+        self, number_ids: "int | str | Sequence[int]"
+    ) -> AgentDetachResult:
         """Detach numbers — the inverse of :meth:`attach`, for either termination.
 
         Deletes each number's LiveKit trunks (one still carrying other numbers is
@@ -198,7 +213,7 @@ class NumbersResource:
         Partial-success: each number reports ok/error independently.
         """
         resp = await self._http.post(
-            "/telephony/numbers/detach/", json={"number_ids": list(number_ids)}
+            "/telephony/numbers/detach/", json={"number_ids": _as_id_list(number_ids)}
         )
         return AgentDetachResult(**unwrap_data(resp))
 
