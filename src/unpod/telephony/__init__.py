@@ -111,6 +111,16 @@ class AgentAttachResult(BaseModel):
     message: str | None = None
 
 
+class AgentDetachResult(BaseModel):
+    """Result of detaching numbers. No carrier origin endpoint — that belongs to
+    the Leg-A / BYO-carrier (trunks) path."""
+
+    model_config = ConfigDict(extra="allow")
+
+    numbers: list[NumberResult] = Field(default_factory=list)
+    message: str | None = None
+
+
 class NumberOverview(BaseModel):
     """Per-number lifecycle: connection + cross-plane sync state."""
 
@@ -176,6 +186,21 @@ class NumbersResource:
             body["region"] = region
         resp = await self._http.post("/telephony/numbers/attach/", json=body)
         return AgentAttachResult(**unwrap_data(resp))
+
+    async def detach(self, number_ids: Sequence[int]) -> AgentDetachResult:
+        """Detach numbers — the inverse of :meth:`attach`, for either termination.
+
+        Deletes each number's LiveKit trunks (one still carrying other numbers is
+        updated instead), tears down its SBC routes/DID, releases it in supervoice,
+        and returns it to the pool. The termination, agent and pipe are read from
+        the stored record, so they need not be restated. The supervoice number
+        record is RELEASED, not deleted — it stays available for a later attach.
+        Partial-success: each number reports ok/error independently.
+        """
+        resp = await self._http.post(
+            "/telephony/numbers/detach/", json={"number_ids": list(number_ids)}
+        )
+        return AgentDetachResult(**unwrap_data(resp))
 
 
 class TrunksResource:
@@ -271,6 +296,7 @@ class TelephonyNamespace:
 
 __all__ = [
     "AgentAttachResult",
+    "AgentDetachResult",
     "AttachResult",
     "DetachResult",
     "Number",
