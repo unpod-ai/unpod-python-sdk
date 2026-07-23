@@ -124,12 +124,14 @@ def _context_from_call_started(
     return CallContext(
         call_id=started.session_id,
         session_id=started.session_id,
-        agent_id=agent_id,
+        # The CALL's agent identity wins; the runner's own id is runner_id.
+        agent_id=started.agent_id or agent_id,
         direction=metadata.get("direction", "inbound"),
         user_number=user_number,
         instructions=metadata.get("instructions"),
         data=data,
         session=session,
+        runner_id=agent_id,
     )
 
 

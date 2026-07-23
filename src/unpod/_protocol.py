@@ -342,6 +342,9 @@ class CallStartedEvent(BaseModel):
     room_id: str
     metadata: dict[str, Any] = Field(default_factory=dict)
     voice_profile_id: str | None = None
+    # v2: the CALL's agent identity (from the dispatch), so a multi-tenant
+    # runner serves the right agent instead of assuming its own.
+    agent_id: str | None = None
 
 
 BridgeEvent = Union[

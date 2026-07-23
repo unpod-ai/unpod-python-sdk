@@ -20,6 +20,10 @@ class CallContext:
     instructions: str | None
     data: dict[str, Any]
     session: Session
+    runner_id: str = ""
+    """The runner's OWN configured agent_id. ``agent_id`` above is the CALL's
+    agent (from call.started when present) — for a multi-tenant runner the
+    two differ; conflating them is the wrong-agent-answered bug."""
     room: dict[str, Any] = field(default_factory=dict)
     """LiveKit room metadata ({url, token, name}) from dispatch. Informational
     only — the supervoice worker owns media; the SDK brain is text-only."""

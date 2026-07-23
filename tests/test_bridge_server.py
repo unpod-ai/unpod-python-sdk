@@ -261,3 +261,44 @@ async def test_handler_handshake_timeout_closes_without_hang() -> None:
 
     assert fired == []
     assert ws.closed is True
+
+@pytest.mark.anyio
+async def test_ctx_agent_id_prefers_call_started_agent_id() -> None:
+    seen: dict[str, object] = {}
+
+    async def entrypoint(ctx) -> None:  # type: ignore[no-untyped-def]
+        seen["agent_id"] = ctx.agent_id
+        seen["runner_id"] = ctx.runner_id
+
+    ws = _FakeWS(
+        inbound=[
+            '{"event":"hello.ack","protocol_version":1,"negotiated_events":[],'
+            '"negotiated_verbs":[],"call_id":"s1","session_id":"s1",'
+            '"job_id":"j1","room_id":"s1"}',
+            '{"event":"call.started","session_id":"s1","job_id":"j1",'
+            '"room_id":"s1","agent_id":"ag-call","metadata":{}}',
+        ]
+    )
+    await handle_bridge_connection(ws, entrypoint=entrypoint, agent_id="ag-runner")
+    assert seen["agent_id"] == "ag-call"
+    assert seen["runner_id"] == "ag-runner"
+
+
+@pytest.mark.anyio
+async def test_ctx_agent_id_falls_back_to_runner_when_absent() -> None:
+    seen: dict[str, object] = {}
+
+    async def entrypoint(ctx) -> None:  # type: ignore[no-untyped-def]
+        seen["agent_id"] = ctx.agent_id
+
+    ws = _FakeWS(
+        inbound=[
+            '{"event":"hello.ack","protocol_version":1,"negotiated_events":[],'
+            '"negotiated_verbs":[],"call_id":"s1","session_id":"s1",'
+            '"job_id":"j1","room_id":"s1"}',
+            '{"event":"call.started","session_id":"s1","job_id":"j1",'
+            '"room_id":"s1","metadata":{}}',
+        ]
+    )
+    await handle_bridge_connection(ws, entrypoint=entrypoint, agent_id="ag-runner")
+    assert seen["agent_id"] == "ag-runner"
