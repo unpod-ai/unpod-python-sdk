@@ -124,7 +124,7 @@ Unpod Control Plane
   ├── Room created
   ├── Worker dispatched → bridge opened
   │
-  ▼ WSS: Dispatch frame
+  ▼ WSS: job.assign (control) → runner dials bridge (data)
 AgentRunner receives dispatch
   ├── CallContext created
   ├── entrypoint(ctx) invoked
@@ -141,30 +141,33 @@ Between AgentRunner and Unpod Orchestrator over persistent WSS (`/v1/internal/wo
 
 | Frame | Purpose |
 |-------|---------|
-| `Register` | Initial hello: agent_id, max_sessions, capabilities |
-| `Heartbeat` | Periodic liveness: active_jobs count |
-| `DispatchAck` | Accept/reject job dispatch |
-| `StateChanged` | Mid-job state transition (connected / failed / ended) |
-| `JobCompleted` | Terminal report: final_state, duration_s |
+| `Register` | Initial hello: agent_id, max_concurrent, `transport: "dial_out"` |
+| `Heartbeat` | Periodic liveness: active_jobs count + worker_id |
+| `JobAck` | Accept/reject a `job.assign` (reject reasons: `agent_id_mismatch`, `at_capacity`) |
 
 **Orchestrator → Runner:**
 
 | Frame | Purpose |
 |-------|---------|
-| `Registered` | Ack with heartbeat interval |
-| `Dispatch` | Job dispatch: `job_id`, `session_id`, `room`, `voice_profile_id`, `runner_url`, `agent_secret`, `metadata` |
+| `Registered` | Ack with heartbeat interval + `transport_ack` |
+| `JobAssign` | Call assignment (v2): `job_id`, `call_id`, `agent_id`, `bridge_url`, `call_token`, `deadline_ms`, `metadata` |
+| `JobCancel` | Abandon an assigned job (media side failed) |
 
-#### Dispatch frame fields
+#### JobAssign frame fields
 
 | Field | Type | Meaning |
 |-------|------|---------|
-| `job_id` | `str` | Orchestrator job identifier (used in `DispatchAck` / `StateChanged` / `JobCompleted`) |
-| `session_id` | `str` | Per-call session identifier |
-| `room` | `dict` | Media-room coordinates (`url`, `token`, `name`). **Informational only** — see below |
-| `voice_profile_id` | `str` | Voice profile the worker pool was keyed on |
-| `runner_url` | `str` | Bridge URL the runner opens for this call (per-call WSS) |
-| `agent_secret` | `str` | Secret used to HMAC-sign the bridge URL |
-| `metadata` | `dict` | Per-call data/instructions forwarded onto `CallContext` |
+| `job_id` | `str` | Orchestrator job identifier (echoed in `JobAck`) |
+| `call_id` | `str` | Per-call session identifier |
+| `agent_id` | `str` | The CALL's agent — the runner rejects a mismatch instead of answering as the wrong agent |
+| `bridge_url` | `str` | The speech worker's per-call bridge endpoint the runner dials OUT to |
+| `call_token` | `str` | Single-active-connection bearer token, valid for the job lifetime (redial with the same token after a drop) |
+| `deadline_ms` | `int` | Ack deadline; a late ack forfeits the job to failover |
+| `metadata` | `dict` | Per-call data/instructions forwarded onto `CallContext` (incl. `playbook_id`, `org_id`) |
+
+The legacy serve-mode frames (`Dispatch` with `runner_url`/`agent_secret`,
+`DispatchAck`) remain for `transport="serve"` runners during the migration
+window and are removed with it.
 
 ##### `room` is informational — worker owns media, brain is text-only
 

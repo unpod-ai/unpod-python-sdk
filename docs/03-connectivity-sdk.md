@@ -40,7 +40,8 @@ AgentRunner(
 | `permits_per_minute` | `int` | `120` | Rate limit on outbound calls |
 | `drain_timeout_s` | `int` | `60` | Graceful shutdown window (seconds) |
 | `dev_mode` | `bool` | `False` | Hot reload on file change |
-| `base_url` | `str \| None` | `None` | Base URL of the speech service. Falls back to `UNPOD_SERVICE_BASE_URL` env var, then defaults to `wss://api.unpod.ai`. Override for local dev (`ws://127.0.0.1:9000`). SDK appends the worker path internally. |
+| `base_url` | `str \| None` | `None` | Orchestrator base URL. Falls back to `UNPOD_ORCHESTRATOR_URL`, then a `UNPOD_BASE_URL`-derived WSS base, then `wss://api.unpod.ai`. Override for local dev (`ws://127.0.0.1:9000`). SDK appends the worker path internally. |
+| `transport` | `str` | `"dial_out"` | `"dial_out"` (v2, default): the runner never listens — it dials OUT per call to the bridge URL delivered in `job.assign`. `"serve"` (legacy, deprecated): the runner hosts a bridge server that media agents dial into; requires `serving_url`/`UNPOD_RUNNER_URL` and `agent_secret`. |
 
 ### Methods
 
@@ -87,17 +88,31 @@ async def _(ctx: CallContext, metric: CallMetrics):
     push_to_grafana(metric)
 ```
 
-### Lifecycle
+### Lifecycle (dial_out, v2 default)
 
-1. Opens persistent WSS to Unpod orchestrator (`/v1/internal/workers`)
-2. Sends `Register` frame with `agent_id`, `max_sessions`, capabilities
-3. Receives `Registered` ack with heartbeat interval
-4. Runs heartbeat loop (periodic liveness ping)
-5. On `Dispatch` frame:
-   - Checks capacity (`active < max_sessions`)
-   - Sends `DispatchAck(accepted=True/False)`
-   - If accepted: creates `CallContext`, opens per-call bridge WSS, calls `entrypoint(ctx)`
-6. On shutdown signal: stops accepting, drains active calls within `drain_timeout_s`
+1. Opens persistent WSS to the Unpod orchestrator (`/v1/internal/workers`)
+2. Sends `Register` with `agent_id`, `max_concurrent`, `transport: "dial_out"` — no
+   listening socket, no `serving_url`
+3. Receives `Registered` ack (heartbeat interval + `transport_ack`); an orchestrator
+   that doesn't ack `dial_out` is too old — upgrade it or pass `transport="serve"`
+4. Runs the heartbeat loop; on ANY control-socket drop the runner reconnects with
+   jittered exponential backoff (1s → 30s cap) and re-registers under the same
+   `worker_id`. In-flight calls ride their own bridge sockets and survive control
+   drops.
+5. On `job.assign` frame:
+   - Rejects with `job.ack(accepted=False)` on `agent_id_mismatch` / `at_capacity`
+   - Accepts with `job.ack(accepted=True)`, then dials OUT to the frame's
+     `bridge_url` (per-call token in the URL), completes the hello handshake,
+     receives `call.started`, builds `CallContext`, calls `entrypoint(ctx)`
+6. On `job.cancel`: abandons the assigned job (media side failed)
+7. On shutdown signal: stops accepting, drains active calls within `drain_timeout_s`
+
+A laptop runner behind NAT works with zero network setup: both connections are
+outbound. Config collapses to `UNPOD_BASE_URL` + `UNPOD_API_KEY`.
+
+The legacy `transport="serve"` lifecycle (runner hosts the bridge; media agents
+dial in using an HMAC-signed URL) is unchanged but deprecated — it requires a
+publicly reachable `serving_url` and will be removed after the migration window.
 
 ### Multi-Replica
 

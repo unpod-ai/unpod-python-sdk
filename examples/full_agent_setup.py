@@ -122,9 +122,10 @@ def run_agent() -> None:
         entrypoint=entrypoint,
         agent_id=RUNNER_AGENT_ID,
         max_concurrent_calls=1,
-        # base_url and api_key read from env: UNPOD_SERVICE_BASE_URL / UNPOD_API_KEY
-        # serving_url="ws://localhost:8765",  # local dev only: where media agents
-        # dial your runner's bridge. Omit in production (UNPOD_RUNNER_URL is used).
+        # base_url / api_key read from env: UNPOD_ORCHESTRATOR_URL (or
+        # UNPOD_BASE_URL) / UNPOD_API_KEY. No inbound port needed: the
+        # runner dials OUT per call (dial_out transport, the default) —
+        # a laptop behind NAT works with zero network setup.
     ).start()
 
 
