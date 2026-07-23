@@ -26,17 +26,28 @@ class Register(BaseModel):
 
 
 class Registered(BaseModel):
-    """Orchestrator -> Worker: registration acknowledged."""
+    """Orchestrator -> Worker: registration acknowledged.
+
+    ``transport_ack`` echoes the transport the orchestrator accepted for
+    this worker ("dial_out" | "serve"). Absent on pre-v2 orchestrators —
+    a dial_out runner treats that absence as "orchestrator too old".
+    """
 
     type: Literal["registered"] = "registered"
     heartbeat_interval_s: int = 30
+    transport_ack: str | None = None
 
 
 class Heartbeat(BaseModel):
-    """Worker -> Orchestrator: periodic heartbeat."""
+    """Worker -> Orchestrator: periodic heartbeat.
+
+    ``worker_id`` (v2) lets a reconnected control socket correlate
+    explicitly instead of by socket identity. Optional for back-compat.
+    """
 
     type: Literal["heartbeat"] = "heartbeat"
     active_jobs: int
+    worker_id: str | None = None
 
 
 class Dispatch(BaseModel):
@@ -78,6 +89,35 @@ class JobCompleted(BaseModel):
     duration_s: float
 
 
+class JobAssign(BaseModel):
+    """Orchestrator -> Runner (v2 dial-out): assign a call; runner dials out."""
+
+    type: Literal["job.assign"] = "job.assign"
+    job_id: str
+    call_id: str
+    agent_id: str
+    bridge_url: str
+    call_token: str
+    deadline_ms: int = 2000
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class JobAck(BaseModel):
+    """Runner -> Orchestrator: accept/reject a job.assign."""
+
+    type: Literal["job.ack"] = "job.ack"
+    job_id: str
+    accepted: bool
+    reason: str | None = None
+
+
+class JobCancel(BaseModel):
+    """Orchestrator -> Runner: abandon an assigned job (media side failed)."""
+
+    type: Literal["job.cancel"] = "job.cancel"
+    job_id: str
+
+
 DispatchFrame = Union[
     Register,
     Registered,
@@ -86,6 +126,9 @@ DispatchFrame = Union[
     DispatchAck,
     StateChanged,
     JobCompleted,
+    JobAssign,
+    JobAck,
+    JobCancel,
 ]
 
 _DISPATCH_TYPE_MAP: dict[str, type[BaseModel]] = {
@@ -96,6 +139,9 @@ _DISPATCH_TYPE_MAP: dict[str, type[BaseModel]] = {
     "dispatch.ack": DispatchAck,
     "state.changed": StateChanged,
     "job.completed": JobCompleted,
+    "job.assign": JobAssign,
+    "job.ack": JobAck,
+    "job.cancel": JobCancel,
 }
 
 
