@@ -110,7 +110,9 @@ class AsyncClient:
         )
         self._platform_http = AsyncHTTPClient(auth=auth, base_url=platform_url)
         self.telephony = TelephonyNamespace(self._platform_http)
-        self.voice_profiles = VoiceProfilesResource(self._http)
+        # Voice profiles read from the backend-core platform plane (Django
+        # /api/v2/platform/voice-profiles/), same client as telephony.
+        self.voice_profiles = VoiceProfilesResource(self._platform_http)
         self.trunks = TrunksResource(self._http)
         self.numbers = NumbersResource(self._http)
         self.pipes = PipesResource(self._http)

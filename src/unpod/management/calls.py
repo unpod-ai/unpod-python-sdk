@@ -40,19 +40,28 @@ class CallsResource:
         from_number: str | None = None,
         instructions: str | None = None,
         data: dict[str, Any] | None = None,
+        agent_id: str | None = None,
         agent: str | None = None,
         user_number: str | None = None,
     ) -> Call:
         """Initiate an outbound call.
 
+        Provide ``agent_id`` OR ``pipe_id`` (``agent_id`` takes priority). When
+        only ``agent_id`` is given the platform resolves a pipe bound to that
+        agent server-side, so ``pipe_id`` is optional. ``to_number`` is required.
+
         The platform enqueues the call asynchronously (dispatched via the
         orchestration queue); the returned :class:`~unpod.models.Call`
         reflects the queued/accepted state, not call completion.
         """
+        resolved_agent = agent_id or agent
         body: dict[str, Any] = {
-            "pipe_id": pipe_id or agent,
             "to_number": to_number or user_number,
         }
+        if resolved_agent is not None:
+            body["agent_id"] = resolved_agent
+        if pipe_id is not None:
+            body["pipe_id"] = pipe_id
         if from_number is not None:
             body["from_number"] = from_number
         if instructions is not None:

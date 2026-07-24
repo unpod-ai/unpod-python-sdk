@@ -8,7 +8,7 @@ PRIMARY flow attaches a number to an agent — the Leg-B termination
     async with AsyncClient(auth=JWTAuth(token, org_handle="acme")) as client:
         nums = await client.telephony.numbers.list()
         res  = await client.telephony.numbers.attach(
-            [n.id for n in nums[:2]], agent_id="asst_sales")
+            [n.number for n in nums[:2]], agent_id="asst_sales")
         print(res.numbers[0].connection_state)
 
 ``client.telephony.trunks.*`` is the FUTURE/BETA BYO-carrier path (Leg A: your
@@ -24,22 +24,58 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from unpod.management._http import AsyncHTTPClient, unwrap_data
+
+
+def _as_number_list(numbers: "str | Sequence[str]") -> list[str]:
+    """Coerce one E.164 number or a sequence of them to ``list[str]``.
+
+    A bare ``str`` is ONE number, never iterated character-by-character
+    (``list("+91…")`` → ``["+", "9", "1", …]`` is the trap this guards).
+    """
+    if isinstance(numbers, str):
+        return [numbers]
+    return [str(n) for n in numbers]
 
 # ── models ───────────────────────────────────────────────────────────────────
 
 
 class Number(BaseModel):
-    """A telephony number from the org's available pool."""
+    """A telephony number: the number itself and whether it is attachable.
 
-    model_config = ConfigDict(populate_by_name=True, extra="allow")
+    The Postgres id is deliberately not exposed — every verb on this plane takes
+    the E.164 number. ``status`` is derived from Django's ``state`` + ``active``
+    so that ``not_assigned`` ALWAYS means attachable: a number that is
+    ``NOT_ASSIGNED`` but inactive reports ``closed``, never ``not_assigned``,
+    because a listing must not promise an attach that would fail.
+    """
 
-    id: int | None = None
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
     number: str | None = None
-    state: str | None = None
-    country: str | None = None
+    status: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _derive_status(cls, data):
+        """Map Django's ``state``/``active`` onto ``status``.
+
+        ``state`` stores the enum NAME (``"NOT_ASSIGNED"``), not the display
+        label, so match on the uppercase form.
+        """
+        if not isinstance(data, dict) or "status" in data:
+            return data
+        state = str(data.get("state") or "").upper()
+        active = data.get("active", True)
+        if state == "ASSIGNED":
+            data["status"] = "assigned"
+        elif state == "NOT_ASSIGNED" and active:
+            data["status"] = "not_assigned"
+        else:
+            data["status"] = "closed"
+        return data
 
 
 class Trunk(BaseModel):
@@ -111,6 +147,16 @@ class AgentAttachResult(BaseModel):
     message: str | None = None
 
 
+class AgentDetachResult(BaseModel):
+    """Result of detaching numbers. No carrier origin endpoint — that belongs to
+    the Leg-A / BYO-carrier (trunks) path."""
+
+    model_config = ConfigDict(extra="allow")
+
+    numbers: list[NumberResult] = Field(default_factory=list)
+    message: str | None = None
+
+
 class NumberOverview(BaseModel):
     """Per-number lifecycle: connection + cross-plane sync state."""
 
@@ -137,13 +183,22 @@ class NumbersResource:
         self._http = http
 
     async def list(self) -> list[Number]:
-        """List the org's available numbers."""
-        resp = unwrap_data(await self._http.get("/telephony/numbers/"))
+        """List the claimable pool PLUS this org's own attached numbers.
+
+        Sends ``include_assigned=true``: without it the endpoint returns only
+        unassigned numbers, so an org could not see what it already has attached.
+        Another org's assigned numbers are never returned either way.
+        """
+        resp = unwrap_data(
+            await self._http.get(
+                "/telephony/numbers/", params={"include_assigned": "true"}
+            )
+        )
         return [Number(**item) for item in (resp or [])]
 
     async def attach(
         self,
-        number_ids: Sequence[int],
+        numbers: "str | Sequence[str]",
         *,
         agent_id: str | None = None,
         attach_type: str | None = None,
@@ -151,19 +206,16 @@ class NumbersResource:
         bridge_slug: str | None = None,
         region: str | None = None,
     ) -> AgentAttachResult:
-        """Attach numbers to an agent — the primary Leg-B flow.
+        """Attach numbers to an agent by E.164 number — the primary Leg-B flow.
 
-        Maps each number to the agent termination (SuperSBC → agent/LiveKit); the
-        bridge is auto-resolved (hidden). ``agent_id`` is optional: when set the
-        number routes to that agent, when omitted the number is wired for agent
-        use without binding one yet. ``attach_type`` selects the termination
-        path — ``"agent"`` (default) or ``"pipeline"``; ``pipe_id`` names the
-        supervoice pipe the number routes to and is REQUIRED when
-        ``attach_type="pipeline"``. Returns the per-number lifecycle (no carrier
-        origin endpoint — that is the Leg-A / BYO-carrier trunks path).
+        Takes the phone number, not the id: Django resolves it. ``agent_id`` is
+        optional; ``attach_type`` selects the termination (``"agent"`` default or
+        ``"pipeline"``), and ``pipe_id`` is REQUIRED when ``attach_type="pipeline"``.
+        Numbers must be strict E.164 (``+`` and country code). Validation lives in
+        Django, so there is exactly one E.164 rule and the SDK cannot drift from it.
         Partial-success: each number reports ok/error independently.
         """
-        body: dict = {"number_ids": list(number_ids)}
+        body: dict = {"numbers": _as_number_list(numbers)}
         if agent_id is not None:
             body["agent_id"] = agent_id
         if attach_type is not None:
@@ -176,6 +228,19 @@ class NumbersResource:
             body["region"] = region
         resp = await self._http.post("/telephony/numbers/attach/", json=body)
         return AgentAttachResult(**unwrap_data(resp))
+
+    async def detach(self, numbers: "str | Sequence[str]") -> AgentDetachResult:
+        """Detach numbers by E.164 number — the inverse of :meth:`attach`.
+
+        The termination, agent and pipe are read from the stored record, so they
+        need not be restated. The supervoice number record is RELEASED, not
+        deleted — it stays available for a later attach. Partial-success: each
+        number reports ok/error independently.
+        """
+        resp = await self._http.post(
+            "/telephony/numbers/detach/", json={"numbers": _as_number_list(numbers)}
+        )
+        return AgentDetachResult(**unwrap_data(resp))
 
 
 class TrunksResource:
@@ -271,6 +336,7 @@ class TelephonyNamespace:
 
 __all__ = [
     "AgentAttachResult",
+    "AgentDetachResult",
     "AttachResult",
     "DetachResult",
     "Number",
