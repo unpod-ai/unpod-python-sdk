@@ -175,9 +175,19 @@ class UserTextEvent(BaseModel):
 
 
 class UserInterruptEvent(BaseModel):
-    """User interrupted the agent."""
+    """User interrupted the agent.
+
+    ``heard_prefix`` is the worker's best-effort estimate of what the caller
+    actually HEARD before barging in (sentence-level). When present, the Session
+    truncates the brain's last assistant turn to it so the Director's next-turn
+    context is honest instead of reasoning over the full generated reply. Both
+    fields are additive and optional — an older worker sends neither, and the
+    Session falls back to the legacy ``assist()`` nudge.
+    """
 
     event: Literal["user.interrupted"] = "user.interrupted"
+    turn_id: int = 0
+    heard_prefix: str | None = None
 
 
 class ErrorEvent(BaseModel):
@@ -259,12 +269,19 @@ class AgentSayVerb(BaseModel):
 
 
 class AgentTransferVerb(BaseModel):
-    """Command: transfer the call."""
+    """Command: transfer the call.
+
+    ``announcement`` is spoken (in-room) before the agent leaves on a warm
+    transfer; ignored for cold. The worker validates ``target`` against a
+    destination allowlist before dialing (the brain chooses it, so it is
+    prompt-injectable and must not self-police).
+    """
 
     event: Literal["agent.transfer"] = "agent.transfer"
-    transfer_type: str
+    transfer_type: Literal["number", "agent", "human"] = "number"
     target: str
-    mode: str = "cold"
+    mode: Literal["cold", "warm"] = "cold"
+    announcement: str = ""
 
 
 class AgentEndCallVerb(BaseModel):

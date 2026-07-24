@@ -13,6 +13,12 @@ class DialogAdapter(Protocol):
       - ``turn()`` - returns a complete response string (not called during live calls)
       - ``stream()`` - yields tokens; THIS is the hot path called by ``session.run()``
       - ``assist()`` - injects a system instruction before the next turn
+
+    Optional, duck-typed (``session.run()`` calls it ``hasattr``-guarded, so it is
+    NOT a required member):
+      - ``mark_interrupted(heard_text: str | None = None)`` - truncate the last
+        assistant turn to what the caller actually heard on a barge-in, keeping
+        the next turn's context honest.
     """
 
     async def turn(self, text: str, context: dict | None = None) -> str: ...

@@ -446,3 +446,78 @@ async def test_session_handles_missing_language() -> None:
     await session.run()
 
     assert adapter.stream_language is None
+
+
+@pytest.mark.anyio
+async def test_interrupt_with_heard_prefix_truncates_and_nudges():
+    """A UserInterruptEvent carrying heard_prefix truncates the brain's last turn
+    (mark_interrupted) AND still fires the legacy nudge (additive)."""
+    from unpod._protocol import UserInterruptEvent
+
+    mock_bridge = AsyncMock()
+    mock_bridge.recv_event = AsyncMock(
+        side_effect=[
+            UserInterruptEvent(turn_id=3, heard_prefix="Your booking is"),
+            Exception("connection closed"),
+        ]
+    )
+    session = Session(bridge=mock_bridge)
+    adapter = MagicMock()
+    adapter.mark_interrupted = MagicMock()
+    adapter.assist = MagicMock()
+    session._dialog_adapter = adapter
+
+    await session.run()
+
+    adapter.mark_interrupted.assert_called_once_with("Your booking is")
+    adapter.assist.assert_called_once()  # legacy nudge preserved
+
+
+@pytest.mark.anyio
+async def test_interrupt_without_heard_prefix_keeps_legacy_only():
+    """An old-worker interrupt (no heard_prefix) must NOT call mark_interrupted;
+    only the legacy assist nudge fires — full back-compat."""
+    from unpod._protocol import UserInterruptEvent
+
+    mock_bridge = AsyncMock()
+    mock_bridge.recv_event = AsyncMock(
+        side_effect=[UserInterruptEvent(), Exception("connection closed")]
+    )
+    session = Session(bridge=mock_bridge)
+    adapter = MagicMock()
+    adapter.mark_interrupted = MagicMock()
+    adapter.assist = MagicMock()
+    session._dialog_adapter = adapter
+
+    await session.run()
+
+    adapter.mark_interrupted.assert_not_called()
+    adapter.assist.assert_called_once()
+
+
+@pytest.mark.anyio
+async def test_session_transfer_emits_verb_with_announcement():
+    from unpod._protocol import AgentTransferVerb
+
+    bridge = AsyncMock()
+    session = Session(bridge=bridge)
+    await session.transfer("+15551234567", mode="warm", announcement="One moment.")
+    verb = bridge.send_verb.call_args[0][0]
+    assert isinstance(verb, AgentTransferVerb)
+    assert verb.transfer_type == "number"
+    assert verb.target == "+15551234567"
+    assert verb.mode == "warm"
+    assert verb.announcement == "One moment."
+
+
+@pytest.mark.anyio
+async def test_transfer_to_human_threads_announcement():
+    from unpod._protocol import AgentTransferVerb
+
+    bridge = AsyncMock()
+    session = Session(bridge=bridge)
+    await session.transfer_to_human("sales", announcement="Connecting you now.")
+    verb = bridge.send_verb.call_args[0][0]
+    assert isinstance(verb, AgentTransferVerb)
+    assert verb.transfer_type == "human" and verb.target == "sales"
+    assert verb.announcement == "Connecting you now."

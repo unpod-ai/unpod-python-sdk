@@ -239,3 +239,39 @@ def test_adapter_stream_accepts_language(name):
     adapter_cls = getattr(adapters, name)
     params = inspect.signature(adapter_cls.stream).parameters
     assert "language" in params
+
+
+def test_superdialog_adapter_mark_interrupted_passthrough():
+    from unittest.mock import MagicMock
+
+    from unpod.adapters.superdialog import SuperDialogAdapter
+
+    mock_dm = MagicMock()
+    adapter = SuperDialogAdapter(mock_dm)
+    adapter.mark_interrupted("Your booking is")
+    mock_dm.mark_interrupted.assert_called_once_with("Your booking is")
+
+
+def test_superdialog_adapter_mark_interrupted_noop_when_absent():
+    from unpod.adapters.superdialog import SuperDialogAdapter
+
+    class _Bare:  # no mark_interrupted attribute
+        def turn(self):  # pragma: no cover - never called
+            ...
+
+    adapter = SuperDialogAdapter(_Bare())
+    adapter.mark_interrupted("x")  # best-effort: must not raise
+
+
+def test_user_interrupt_event_optional_fields_default_and_set():
+    from unpod._protocol import UserInterruptEvent
+
+    default = UserInterruptEvent()
+    assert default.turn_id == 0 and default.heard_prefix is None
+
+    full = UserInterruptEvent(turn_id=5, heard_prefix="Your booking is")
+    assert full.turn_id == 5 and full.heard_prefix == "Your booking is"
+
+    # Old-worker payload: missing fields default, unknown keys ignored.
+    legacy = UserInterruptEvent.model_validate({"event": "user.interrupted"})
+    assert legacy.heard_prefix is None and legacy.turn_id == 0

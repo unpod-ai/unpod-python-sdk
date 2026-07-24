@@ -30,6 +30,17 @@ class SuperDialogAdapter:
         """Inject a system-level assist directive."""
         self._dm.assist(text)
 
+    def mark_interrupted(self, heard_text: str | None = None) -> None:
+        """Truncate the brain's last assistant turn to what the caller heard.
+
+        Best-effort passthrough: no-op when the underlying dialog object doesn't
+        expose ``mark_interrupted`` (older superdialog, or a wrapper without it),
+        in which case the Session keeps its legacy interruption nudge.
+        """
+        fn = getattr(self._dm, "mark_interrupted", None)
+        if callable(fn):
+            fn(heard_text)
+
     # --- superdialog-specific helpers ---
 
     def set_llm(self, uri: str) -> None:
