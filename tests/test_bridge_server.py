@@ -5,7 +5,10 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from unpod.connectivity.bridge_server import handle_bridge_connection
+from unpod.connectivity.bridge_server import (
+    BridgeHandshakeError,
+    handle_bridge_connection,
+)
 
 
 class _FakeWS:
@@ -193,7 +196,9 @@ async def test_handler_on_call_end_failed_when_entrypoint_raises() -> None:
 @pytest.mark.anyio
 async def test_handler_no_callbacks_on_pre_call_abort() -> None:
     """A wrong event before call.started builds no context, so neither
-    callback fires and the entrypoint never runs."""
+    callback fires and the entrypoint never runs. It raises
+    BridgeHandshakeError (not a silent return) so a dialer can retry rather
+    than mistake the abort for a completed call."""
     fired: list[str] = []
 
     async def entrypoint(ctx) -> None:  # type: ignore[no-untyped-def]
@@ -213,13 +218,14 @@ async def test_handler_no_callbacks_on_pre_call_abort() -> None:
         ]
     )
 
-    await handle_bridge_connection(
-        ws,
-        entrypoint=entrypoint,
-        agent_id="ag-x",
-        on_call_start=on_start,
-        on_call_end=on_end,
-    )
+    with pytest.raises(BridgeHandshakeError):
+        await handle_bridge_connection(
+            ws,
+            entrypoint=entrypoint,
+            agent_id="ag-x",
+            on_call_start=on_start,
+            on_call_end=on_end,
+        )
 
     assert fired == []
     assert ws.closed is True
@@ -251,13 +257,14 @@ async def test_handler_handshake_timeout_closes_without_hang() -> None:
     )
 
     async with asyncio.timeout(2.0):
-        await handle_bridge_connection(
-            ws,
-            entrypoint=entrypoint,
-            agent_id="ag-x",
-            on_call_end=on_end,
-            handshake_timeout_s=0.05,
-        )
+        with pytest.raises(BridgeHandshakeError):
+            await handle_bridge_connection(
+                ws,
+                entrypoint=entrypoint,
+                agent_id="ag-x",
+                on_call_end=on_end,
+                handshake_timeout_s=0.05,
+            )
 
     assert fired == []
     assert ws.closed is True

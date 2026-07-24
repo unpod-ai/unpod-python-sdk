@@ -325,7 +325,12 @@ class AgentRunner:
             # _jobs covers accepted-but-still-dialing AND in-call jobs;
             # _active_calls alone would undercount during a dial burst.
             reason = "at_capacity"
-        ack = JobAck(job_id=assign.job_id, accepted=reason is None, reason=reason)
+        ack = JobAck(
+            job_id=assign.job_id,
+            assign_id=assign.assign_id,
+            accepted=reason is None,
+            reason=reason,
+        )
         await ws.send(ack.model_dump_json())
         if reason is not None:
             return

@@ -98,6 +98,10 @@ class JobAssign(BaseModel):
     agent_id: str
     bridge_url: str
     call_token: str
+    # Per-attempt nonce the runner must echo back in its JobAck so the
+    # orchestrator resolves the exact attempt's waiter (job_id is constant
+    # across failover attempts). Empty from a legacy orchestrator.
+    assign_id: str = ""
     deadline_ms: int = 2000
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -107,6 +111,8 @@ class JobAck(BaseModel):
 
     type: Literal["job.ack"] = "job.ack"
     job_id: str
+    # Echoes JobAssign.assign_id (empty if the assign carried none).
+    assign_id: str = ""
     accepted: bool
     reason: str | None = None
 

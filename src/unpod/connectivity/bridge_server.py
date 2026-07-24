@@ -33,6 +33,16 @@ from unpod.connectivity.session import Session
 # (and a tracked slot) forever.
 _HANDSHAKE_TIMEOUT_S = 10.0
 
+
+class BridgeHandshakeError(Exception):
+    """The per-call bridge handshake did not complete as expected.
+
+    Raised (rather than silently returning) so a dialing caller can retry:
+    an unexpected/mis-ordered frame or a handshake timeout is a real failure,
+    not a completed call. A silent return would look identical to a call that
+    ran and ended, black-holing the call.
+    """
+
 _PROTOCOL_VERSION = 2
 _SUPPORTED_EVENTS = [
     "user.text",
@@ -189,14 +199,18 @@ async def handle_bridge_connection(
                 # Expect hello.ack.
                 ack = parse_bridge_event(await ws.recv())
                 if not isinstance(ack, HelloAckEvent):
-                    return
+                    raise BridgeHandshakeError(
+                        f"expected hello.ack, got {type(ack).__name__}"
+                    )
 
                 # Expect call.started carrying call metadata.
                 started = parse_bridge_event(await ws.recv())
                 if not isinstance(started, CallStartedEvent):
-                    return
-        except TimeoutError:
-            return
+                    raise BridgeHandshakeError(
+                        f"expected call.started, got {type(started).__name__}"
+                    )
+        except TimeoutError as exc:
+            raise BridgeHandshakeError("handshake timed out") from exc
 
         transport = _ServerTransport(ws)
         session = Session(bridge=transport)

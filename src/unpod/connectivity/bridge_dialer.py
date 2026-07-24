@@ -29,6 +29,12 @@ def _with_token(bridge_url: str, call_token: str) -> str:
     return urlunparse(parsed._replace(query=query))
 
 
+# Bound the TCP/WS connect so an unreachable acceptor host fails fast into the
+# dialer's bounded retry instead of hanging on the OS TCP timeout (which, times
+# the retry count, can exceed the worker's pairing window).
+_CONNECT_TIMEOUT_S = 5.0
+
+
 async def dial_bridge(
     bridge_url: str,
     *,
@@ -37,11 +43,14 @@ async def dial_bridge(
     agent_id: str,
     on_call_start: Callable[[CallContext], Awaitable[None]] | None = None,
     on_call_end: Callable[[CallContext, str], Awaitable[None]] | None = None,
+    connect_timeout_s: float = _CONNECT_TIMEOUT_S,
 ) -> None:
     """Dial the worker's bridge and drive one call to completion."""
     import websockets
 
-    async with websockets.connect(_with_token(bridge_url, call_token)) as ws:
+    async with websockets.connect(
+        _with_token(bridge_url, call_token), open_timeout=connect_timeout_s
+    ) as ws:
         await handle_bridge_connection(
             ws,
             entrypoint=entrypoint,

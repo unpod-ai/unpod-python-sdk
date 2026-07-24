@@ -512,14 +512,17 @@ async def test_runner_handshake_timeout_does_not_hang() -> None:
         ]
     )
 
-    # Short timeout via the bridge-server constant so the test is fast.
+    # Short timeout via the bridge-server constant so the test is fast. The
+    # handshake now raises (rather than silently returning) so a dialer can
+    # retry; it still closes fast without hanging and counts neither outcome.
     async with asyncio.timeout(2.0):
-        await bs.handle_bridge_connection(
-            ws,
-            entrypoint=r._entrypoint,
-            agent_id=r._agent_id,
-            handshake_timeout_s=0.05,
-        )
+        with pytest.raises(bs.BridgeHandshakeError):
+            await bs.handle_bridge_connection(
+                ws,
+                entrypoint=r._entrypoint,
+                agent_id=r._agent_id,
+                handshake_timeout_s=0.05,
+            )
 
     assert ws.closed is True
     assert r._completed_count == 0
