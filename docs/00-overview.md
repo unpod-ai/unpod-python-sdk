@@ -1,140 +1,142 @@
 # Unpod SDK — Overview
 
-## What is Unpod SDK?
+Unpod SDK (`pip install unpod`) is the Python package for putting your own
+dialog logic on a live voice call. Unpod runs the voice side — telephony,
+audio, speech-to-text, text-to-speech; you run the text side — a long-lived
+**Agent Runner** process hosting your brain. The one architectural commitment:
+the wire between the two carries **text, never audio**.
 
-Unpod SDK (`pip install unpod`) is the developer-facing Python package for building voice agents on Unpod's infrastructure. It handles everything between your brain (dialog logic) and a live phone call — without exposing audio, SIP, STT, or TTS internals.
+## What Unpod owns vs what you own
 
-**Single architectural commitment:** The wire between Unpod infrastructure and your code carries **text, not audio**. You bring the brain; Unpod brings the voice.
+| Unpod (infrastructure) | You (the developer) |
+|---|---|
+| PSTN / SIP carrier legs and phone numbers (`client.telephony`) | Dialog logic: Playbook, LangChain chain, HTTP service, MCP server, or raw LLM calls |
+| Media rooms and audio transport (phone, WebSocket, WebRTC) | LLM choice — and your own LLM API billing (the OpenAI/Anthropic adapters take a client *you* construct) |
+| STT + TTS — the Speech Worker; audio never reaches your code | Prompts, tools, business logic, conversation memory |
+| Voice-profile catalog (read-only, resolved by name) | Where your Agent Runner runs: your laptop, your server, or Unpod-hosted via Publish |
+| Call dispatch: Pipe resolution, runner pick by `agent_id`, failover | The `agent_id` — the rendezvous key that ties your runner to Pipes and numbers |
+| Recording and transcript capture (`client.recordings`, `client.transcripts`) | |
+| Voice-minute billing | |
 
-## What Unpod Owns vs What You Own
+## Terminology
 
-| Unpod (invisible)                        | You (the developer)              |
-|------------------------------------------|----------------------------------|
-| PSTN / SIP / carriers                    | LLM choice                      |
-| Phone numbers                            | Prompts & flows                  |
-| Media server / Room                      | Tools & business logic           |
-| STT + TTS + provider rotation            | Conversation memory              |
-| Voice profile catalog                    | Per-call business logic          |
-| Channel adapters (WA, SMS, widget)       | Cost optimization (model swaps)  |
-| Recording capture                        | Your own LLM billing             |
-| Billing for voice minutes                |                                  |
+The same canon is used across all Unpod docs:
 
-## Three Layers
+| Canonical name | Meaning | In code/logs | Deprecated aliases |
+|---|---|---|---|
+| **Speech Worker** | Voice-side worker. Joins the media room with STT/TTS (PipeCat pipeline). Audio never leaves it. | `worker/`, "media worker" in comments | media agent, speech agent, PipeWorker, pipecat side |
+| **Agent Runner** | Text-side worker: the developer's (or playbook pool's) long-lived process running the brain. Registers under an `agent_id`. | "brain runner" (`brain_resolver.py`, `brain_assign.py`), `playbook_pool/`, `[pbpool]` log prefix | agent worker, brain |
+| **Pipe** | Voice profile + `agent_id` binding, attachable to numbers. Many pipes may share one `agent_id`. | `Pipe`, `pipe_id` | speech pipe (prose form is fine), **Identity** (doc-only model; does not exist in code) |
+| **Playbook** | SuperDialog artifact the Agent Runner executes. | `Playbook`, `playbook_id` | — |
+| **Publish** | Managed hosting of an Agent Runner on Unpod cloud. Today: playbook-pool processes; roadmap: Docker per agent. | `publish/` saga | deploy (reserved for the three deployment mechanisms) |
+| **Transport: `serve` / `dial_out`** | Who connects to whom on the text bus. `dial_out` (current): the Agent Runner dials the Speech Worker's bridge acceptor. `serve` (deprecated, teardown scheduled): the runner serves, the worker dials. | `contracts/dispatch_protocol.py::WorkerCapabilities.transport` | "the runner serves the bridge" (03's stale locked model) |
 
+The identity trio your runner registers with — `agent_id`, `worker_id`,
+`pool` — is defined in [02-run-your-agent.md](02-run-your-agent.md).
+
+## How a call reaches your code
+
+```mermaid
+flowchart LR
+    caller((Caller<br/>phone or browser))
+    subgraph unpod["Unpod cloud"]
+        plat["Platform REST<br/>pipes / numbers / calls"]
+        sw["Speech Worker<br/>STT + TTS"]
+    end
+    subgraph yours["Your process — anywhere"]
+        runner["Agent Runner"]
+        brain["Adapter → your brain"]
+    end
+    mgmt["Your scripts<br/>(management client)"] -- REST --> plat
+    caller -- audio --> sw
+    runner -- "text only (bridge WSS)" --> sw
+    runner --> brain
 ```
-LAYER 1 (Local)      Your brain — DialogMachine / LangChain / HTTP / MCP
-                     ↕ text via WSS (Bridge protocol)
-LAYER 2 (Infra)      AgentRunner + Session (connectivity)
-                     supervoice — speech service (STT, TTS, WebSocket, telephony, WebRTC)
-                     Management SDK: numbers, voice profiles, Speech Pipes, calls
-                     ↕ REST
-LAYER 3 (Control)    Unpod Control Plane — UI, dashboards, recordings
-```
 
-## Connectivity Options
+At call time the platform resolves the Pipe, the orchestrator picks a live
+Agent Runner registered under the Pipe's `agent_id`, and a Speech Worker
+joins the media room. The runner then dials the worker's bridge (`dial_out`,
+the default in `connectivity/runner.py::AgentRunner`) and exchanges text
+turns. The full sequence, as observed live, is in
+[01-quickstart.md](01-quickstart.md).
 
-supervoice exposes your agent to the outside world via three transports — you pick one:
+## Media transports (as shipped)
 
-| Transport | Use case | How browser/phone connects |
-|-----------|----------|---------------------------|
-| WebSocket | Browser testing, web widget | `POST /connect?agent_id=X` → `WS /ws/audio` |
-| Telephony | Phone calls (PSTN/SIP) | Number synced/attached via Management SDK |
-| WebRTC | Native mobile / embedded | Room join via supervoice room engine |
+Every media path converges on the same Speech Worker runtime — your Agent
+Runner sees identical text turns regardless of how the audio arrives
+(supervoice `worker/pipeline/transports.py` registers exactly three kinds:
+`livekit`, `websocket`, `webrtc`).
 
-All three converge at the same bridge: your `AgentRunner` receives plain text turns regardless of transport.
+| Path | Status | How it connects |
+|---|---|---|
+| Phone (PSTN/SIP) | Shipped | Attach a number to your `agent_id` (`client.telephony.numbers.attach`); calls join a LiveKit room where the Speech Worker runs |
+| Browser WebSocket | Shipped | Speech service session ingress: `POST /v1/sessions` (API-key auth) returns a `wss_url`; audio streams over `WS /ws/audio` |
+| WebRTC | Shipped | Same ingress with `transport="webrtc"`: returns a `webrtc_offer_url`; SmallWebRTC signaling via `POST /webrtc/offer` |
 
-## Package Scope
+The WebSocket and WebRTC rows are the client-session ingress of the speech
+service (supervoice `dev/app.py::create_dev_app`) — the same surface the
+browser playground uses. See
+[07-browser-quickstart.md](07-browser-quickstart.md).
 
-`unpod-sdk` contains two major components:
+## Package scope
 
-### 1. Management SDK (REST Client)
+### Management client (REST)
 
-CRUD operations against Unpod's Control Plane:
+`AsyncClient` / `Client` (`client.py`) expose two planes, both derived from
+the single `UNPOD_BASE_URL` knob (`_base_url.py`):
 
-- **Numbers** — list, sync from SIP trunks, attach/detach, release, bring-your-own
-- **Voice Profiles** — browse catalog (read-only, per-minute pricing)
-- **Speech Pipes** — create bindings (number + voice profile + brain endpoint)
-- **Calls** — trigger outbound, list, get status, hangup
-- **Recordings** — list, download
-- **Transcripts** — retrieve per-call transcripts
+| Namespace | Plane / auth | What it does |
+|---|---|---|
+| `client.pipes`, `client.calls`, `client.numbers`, `client.trunks`, `client.sessions`, `client.recordings`, `client.transcripts`, `client.api_keys` | Management plane, Bearer `UNPOD_API_KEY` | Pipes, outbound calls, LiveKit-trunk numbers, recordings, transcripts |
+| `client.telephony` (numbers, trunks BETA, `overview()`), `client.voice_profiles` | Telephony plane, org-scoped `UNPOD_PLATFORM_TOKEN` + `UNPOD_ORG_HANDLE` | The primary number-attach flow (`numbers.attach(..., agent_id=)`), voice-profile catalog |
 
-### 2. Connectivity SDK (WSS Runtime)
+The two planes, their auth precedence, and which one to use are covered in
+[03-management-sdk.md](03-management-sdk.md).
 
-Runtime components for handling live calls:
+### Connectivity runtime (WSS)
 
-- **AgentRunner** — long-lived process, persistent WSS to Unpod orchestrator, dispatches incoming calls to your entrypoint
-- **Session** — per-call object with hooks (observe) and controls (act)
-- **CallContext** — per-call metadata envelope wrapping Session
-- **DialogAdapter** — protocol for plugging any brain into Session's `dialog_machine` slot
+The runtime classes exported at top level (`src/unpod/__init__.py`, which
+also exports the auth classes): **`AgentRunner`** — the
+long-lived process that registers under your `agent_id` and receives calls;
+**`Session`** — the per-call object with hooks and controls; **`CallContext`**
+— the per-call metadata envelope handed to your entrypoint. Details in
+[04-connectivity-sdk.md](04-connectivity-sdk.md).
 
-### What It Does NOT Contain
+### Adapters
 
-- No STT / TTS / audio processing (that's Unpod infrastructure)
-- No dialog machine internals (that's `superdialog`, a separate package)
-- No orchestrator / worker internals (that's `supervoice`, the backend service)
-- No SIP / FreeSWITCH configuration
+Six adapters plug a brain into `Session.dialog_machine`, all implementing the
+`DialogAdapter` protocol (`adapters/__init__.py`):
+
+| Adapter | Wraps | Install |
+|---|---|---|
+| `SuperDialogAdapter` | a SuperDialog `DialogMachine` / `LLMAgent` | `unpod[dialog]` |
+| `LangChainAdapter` | any LangChain Runnable (`ainvoke`/`astream`) | `unpod[langchain]` |
+| `HTTPAdapter` | your HTTP endpoint (POST per turn) | core |
+| `MCPAdapter` | an MCP server (tools + LLM orchestration) | `unpod[mcp]` |
+| `OpenAIAdapter` | an `openai.AsyncOpenAI` client you construct | core (bring `openai`) |
+| `AnthropicAdapter` | an `anthropic.AsyncAnthropic` client you construct | core (bring `anthropic`) |
+
+On a live call the hot path is `stream()`, not `turn()` — see
+[05-adapters.md](05-adapters.md) before writing a custom adapter.
 
 ## Installation
 
 ```bash
-# Core SDK — management client + connectivity runtime
-pip install unpod
-
-# With superdialog integration (recommended)
-pip install unpod[dialog]
-
-# With LangChain adapter
-pip install unpod[langchain]
-
-# With MCP adapter
-pip install unpod[mcp]
-
-# superdialog standalone (no Unpod infra, text-only)
-pip install superdialog
+pip install unpod                # core: management client + connectivity runtime
+pip install "unpod[dialog]"      # + superdialog (recommended)
+pip install "unpod[langchain]"   # + LangChain adapter deps
+pip install "unpod[mcp]"         # + MCP adapter deps
+pip install "unpod[observability]"  # + Langfuse tracing (LANGFUSE_SECRET_KEY)
 ```
 
-## Relationship to Other Packages
+## Docs
 
-```
-┌─────────────────────────────────────────────────────┐
-│  Developer Process                                  │
-│                                                     │
-│  ┌──────────┐    ┌──────────────────────────────┐   │
-│  │superdialog│───▶│  unpod (this SDK)             │   │
-│  │(optional) │    │  ├── Management (REST)        │   │
-│  └──────────┘    │  ├── Connectivity (WSS)       │   │
-│                  │  └── Adapters                  │   │
-│  ┌──────────┐    │      ├── SuperDialogAdapter   │   │
-│  │langchain │───▶│      ├── LangChainAdapter     │   │
-│  │(optional) │    │      ├── HTTPAdapter          │   │
-│  └──────────┘    │      └── MCPAdapter           │   │
-│                  └──────────────┬─────────────────┘   │
-│                                │ WSS (text only)      │
-└────────────────────────────────┼─────────────────────┘
-                                 │
-┌────────────────────────────────┼─────────────────────┐
-│  Unpod Infrastructure          │                      │
-│                                ▼                      │
-│  ┌──────────────────────────────────────────────┐    │
-│  │  supervoice (backend service)                 │    │
-│  │  ├── Orchestrator (dispatch, sessions, rooms) │    │
-│  │  ├── Workers (PipeCat pipeline, STT/TTS)      │    │
-│  │  ├── Bridge (text routing)                    │    │
-│  │  └── Control Plane (numbers, profiles, auth)  │    │
-│  └──────────────────────────────────────────────┘    │
-└──────────────────────────────────────────────────────┘
-```
-
-## Target Experience
-
-- **Time to first call:** < 10 minutes
-- **Post-onboarding engineering effort:** < 2 hours/month
-- **Iteration cycle:** `git push` → next call uses new logic. No tickets.
-
-## Next Steps
-
-- [Architecture](01-architecture.md) — package structure, data flow, protocol details
-- [Management SDK](02-management-sdk.md) — REST client API reference
-- [Connectivity SDK](03-connectivity-sdk.md) — AgentRunner, Session, hooks, controls
-- [Adapters](04-adapters.md) — DialogAdapter protocol and bundled adapters
-- [Quickstart](05-quickstart.md) — 10 steps to your first call
+| Doc | Content |
+|---|---|
+| [01-quickstart.md](01-quickstart.md) | Install → Pipe → Agent Runner → number → first call, transcribed from a live verified run |
+| [02-run-your-agent.md](02-run-your-agent.md) | Local runner vs Publish, identity trio, reconnection and failover |
+| [03-management-sdk.md](03-management-sdk.md) | Both REST planes, auth precedence, which numbers API to use |
+| [04-connectivity-sdk.md](04-connectivity-sdk.md) | `AgentRunner`, `Session`, the hooks that actually fire |
+| [05-adapters.md](05-adapters.md) | `DialogAdapter` protocol, the six adapters, `stream()` as the hot path |
+| [06-deployment.md](06-deployment.md) | Three deployment mechanisms, each labeled Shipped or Roadmap |
+| [07-browser-quickstart.md](07-browser-quickstart.md) | Talk to your agent from a browser |
