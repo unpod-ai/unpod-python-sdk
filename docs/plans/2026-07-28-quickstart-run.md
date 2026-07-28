@@ -113,15 +113,18 @@ calls.create(agent_id=…)  FAILED: 404 …/platform/api/v2/platform/speech/v1/c
 calls.create(pipe_id=…)   FAILED: 404 …/platform/api/v2/platform/speech/v1/calls
 ```
 
-Root cause: `management/pipes.py::PipesResource` (and `calls.py`,
-`transcripts.py`, `recordings.py`) hardcode backend-core proxy paths
-(`/api/v2/platform/speech/v1/…`) while local supervoice serves the same
-resources at `/platform/v1/…` (`supervoice/src/supervoice/platform/main.py::
-create_platform_app` mounts every router under `/v1`, and the composition
-root mounts that app at `/platform`). No value of `UNPOD_SERVICE_BASE_URL`
-can make those meet — the direct-supervoice mode of the management client is
-currently unreachable. `tests/test_management.py` still asserts the old
-`/v1/pipes/…` paths, so the suite documents the pre-change contract.
+Root cause: `management/pipes.py::PipesResource` and `calls.py` hardcode
+backend-core proxy paths (`/api/v2/platform/speech/v1/…`) while local
+supervoice serves the same resources at `/platform/v1/…`
+(`supervoice/src/supervoice/platform/main.py::create_platform_app` mounts
+every router under `/v1`, and the composition root mounts that app at
+`/platform`). No value of `UNPOD_SERVICE_BASE_URL` can make those meet — the
+direct-supervoice mode of the management client is currently unreachable for
+pipes and calls. `transcripts.py` (`/v1/transcripts`, `/v1/sessions/{id}`)
+and `recordings.py` (`/v1/recordings`) still use plain `/v1/…` paths — they
+were neither rewritten nor probed in this run, so do not assume they share
+the 404. `tests/test_management.py` still asserts the old `/v1/pipes/…`
+paths, so the suite documents the pre-change contract.
 
 **Server-side contrast** (proves the platform itself works): the same
 operations via supervoice's native plane, same key, all succeeded live:
@@ -224,7 +227,7 @@ dispatch rejected session_id=%s reason=%s
 Three load-bearing observations:
 
 1. The inline fallback (`telephony/queue/call_activity.py::enqueue_call`)
-   dispatches immediately when Prefect is down — Tier C infra is not needed
+   dispatches immediately when Prefect is down — Tier C (Prefect) infra is not needed
    just to see dispatch behavior.
 2. **The brain pick chose the live SDK Agent Runner** — the `agent_id`
    rendezvous between a Pipe and an Agent Runner works end-to-end through
@@ -266,7 +269,7 @@ GET /platform/v1/calls          # native plane
 
 | # | Finding | Where |
 |---|---|---|
-| 1 | SDK management surface targets only backend-core proxy paths; direct-supervoice mode 404s on every call | `management/pipes.py`, `calls.py`, `voice_profiles.py` (changed in commit `d4333e8`) |
+| 1 | SDK management surface targets only backend-core proxy paths; direct-supervoice mode 404s on every call | `management/pipes.py`, `calls.py`, `voice_profiles.py` (commit `d4333e8` and follow-ups) |
 | 2 | `tests/test_management.py` still asserts the old `/v1/…` paths | `tests/test_management.py` |
 | 3 | Taskfile `create-api-key` bootstrap curl is rejected; on-behalf header path is the working bootstrap | `Taskfile.yml`, `supervoice/src/supervoice/platform/auth.py::get_auth_context` |
 | 4 | Outbound `calls.create` gated on a published Playbook for the pipe's `agent_id`; a registered Agent Runner alone is rejected (`playbook_not_published`) | `supervoice/src/supervoice/telephony/calls/service.py::create_call` |
