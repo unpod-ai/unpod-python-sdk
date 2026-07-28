@@ -4,8 +4,10 @@ From install to a dispatched outbound call with the SDK surface as it exists
 today. This doc is a transcription of a live verification run (2026-07-28)
 against a locally started Unpod platform — the full transcript, including every
 failure, is in [plans/2026-07-28-quickstart-run.md](plans/2026-07-28-quickstart-run.md).
-Terminology (Pipe, Agent Runner, Speech Worker, Playbook) is defined in
-[00-overview.md](00-overview.md).
+Terms used throughout: a **Pipe** binds a voice profile to an `agent_id`; your
+**Agent Runner** is the text-side process running your dialog logic; the
+**Speech Worker** is Unpod's voice-side worker (STT/TTS — audio never reaches
+your code); a **Playbook** is a SuperDialog artifact an Agent Runner executes.
 
 ## How this doc was verified
 
@@ -81,6 +83,12 @@ print(pipe.pipe_id)               # PIPE_...
 equivalent create body ran live against the platform's own API and returned
 201 with the `agent_id` bound; the `"Alloy"` name-to-profile-id resolution was
 live-verified on a pipe update in the same run (transcript, stage 3).*
+
+The signature has one more optional parameter, not shown: `agent_endpoint`, a
+static runner URL the platform falls back to when no live Agent Runner is
+registered under the pipe's `agent_id` (supervoice
+`telephony/inbound/handler.py::handle_inbound_join`). This quickstart does not
+need it.
 
 Notes, all observed live:
 
@@ -265,6 +273,6 @@ markers above exist because of them.
 
 ## Next
 
-- `00-overview.md` — terminology and what Unpod owns vs. what you own.
+- [00-overview.md](00-overview.md) — what Unpod owns vs. what you own.
 - The full verification transcript:
   [plans/2026-07-28-quickstart-run.md](plans/2026-07-28-quickstart-run.md).

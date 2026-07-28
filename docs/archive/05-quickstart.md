@@ -1,12 +1,14 @@
 # Quickstart — 10 Steps to Your First Call
 
+> **Archived 2026-07-28 — superseded by [../01-quickstart.md](../01-quickstart.md); contains known inaccuracies** (hot reload, `system_prompt` on `pipes.create`, and `numbers.sync()` returning a list — none exist in code).
+
 Target: under 10 minutes from install to a live voice call.
 
 ## Two Paths
 
 **Browser (fastest — no phone number needed)**
 Use the `auto_rl` dev server to test your agent in Chrome before going to production.
-→ Jump to [Browser Quickstart](06-browser-quickstart.md)
+→ Jump to [Browser Quickstart](../06-browser-quickstart.md)
 
 **Phone (production)**
 Sync numbers from a trunk, bind your Speech Pipe, call from any phone.
@@ -195,4 +197,4 @@ Edit your entrypoint or system prompt. With `dev_mode=True`, the runner hot-relo
 └──────────────────────────────────────────┘
 ```
 
-See [Management SDK](02-management-sdk.md) for the full API reference and [Connectivity SDK](03-connectivity-sdk.md) for hooks and live controls.
+See [Management SDK](../02-management-sdk.md) for the full API reference and [Connectivity SDK](../03-connectivity-sdk.md) for hooks and live controls.
