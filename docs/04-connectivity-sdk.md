@@ -386,7 +386,7 @@ one `session.run()` calls on every live turn; steering methods such as
 exist on `SuperDialogAdapter` and calling them on another adapter will fail.
 `session.run()` does check `is_complete` after each turn (duck-typed) and calls
 `await session.end("completed")` when it is true. The protocol, the bundled
-adapters and the hot-path rule are covered in [04-adapters.md](04-adapters.md).
+adapters and the hot-path rule are covered in [05-adapters.md](05-adapters.md).
 
 ### `session.run()`
 
@@ -425,7 +425,7 @@ Verified dead or broken surface, so you do not build on it.
 
 - [02-run-your-agent.md](02-run-your-agent.md) — registration, the identity
   trio, reconnection, failover, and the four `call_end` reasons in one table.
-- [04-adapters.md](04-adapters.md) — what goes in the `dialog_machine` slot.
+- [05-adapters.md](05-adapters.md) — what goes in the `dialog_machine` slot.
 - [03-management-sdk.md](03-management-sdk.md) — the REST side: Pipes, numbers,
   and the outbound `calls.create` that fills `ctx.data` and `ctx.instructions`.
 - [01-quickstart.md](01-quickstart.md) — a runner, a Pipe and a number in one

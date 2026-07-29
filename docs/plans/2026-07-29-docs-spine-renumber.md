@@ -1,32 +1,34 @@
 # Docs spine renumber — tracked step
 
 **Date:** 2026-07-29
-**Status:** Half done. Housekeeping only — no reader-facing content changes.
+**Status:** Done for the spine. Housekeeping only — no reader-facing content
+changes came from the renames themselves.
 
 Two docs shared the `03-` ordinal on disk. The approved spine
 (`supervoice/docs/plans/2026-07-28-docs-revamp-design.md` §4) files connectivity
-as `04-connectivity-sdk` and adapters as `05-adapters`. The connectivity half
-landed with that doc's rewrite, link inventory included; the adapters half is
-still pending. Until it lands, the filenames on disk are authoritative and
-every published link resolves.
+as `04-connectivity-sdk` and adapters as `05-adapters`. Both halves have now
+landed, each with its doc's rewrite and its link inventory. The filenames on
+disk are authoritative and every published link resolves.
 
 ## Renames
 
 | From | To | Status |
 |---|---|---|
 | `docs/03-connectivity-sdk.md` | `docs/04-connectivity-sdk.md` | Done — landed with the rewrite, all 9 inbound references repaired |
-| `docs/04-adapters.md` | `docs/05-adapters.md` | Pending. Deferred because the adapters doc is also awaiting a content revamp; renaming it now would collide with that rewrite. Until then the shared `04` ordinal is annotated in both reader-facing indexes (`docs/00-overview.md` § Docs and `README.md` § Documentation) so no reader hits it unwarned |
+| `docs/04-adapters.md` | `docs/05-adapters.md` | Done — landed with the rewrite, all 7 inbound references repaired |
 
 `05-architecture.md` and `06-browser-quickstart.md` are resolved separately —
-neither is in the spine.
+neither is in the spine. Until `05-architecture.md` gets its own disposition it
+shares the `05` ordinal with adapters, annotated in both reader-facing indexes
+(`docs/00-overview.md` § Docs and `README.md` § Documentation) so no reader hits
+it unwarned.
 
 ## Link inventory (regenerated 2026-07-29)
 
-References to renumber in the same commit as the rename. The
-`03-connectivity-sdk` column is settled; the `04-adapters` column is what the
-remaining half must repair.
+References renumbered in the same commit as each rename. Both columns are now
+settled.
 
-| File | `03-connectivity-sdk` (done) | `04-adapters` (pending) |
+| File | `03-connectivity-sdk` (done) | `04-adapters` (done) |
 |---|---|---|
 | `README.md` | 1 | 1 |
 | `docs/00-overview.md` | 3 | 2 |
@@ -36,7 +38,7 @@ remaining half must repair.
 | `docs/04-connectivity-sdk.md` | — | 2 |
 | `docs/archive/05-quickstart.md` | 1 | 0 |
 
-Regenerate before executing:
+Regenerate to confirm (expect no hits outside this file):
 
 ```bash
 grep -rc "03-connectivity-sdk\|04-adapters" --include="*.md" README.md docs/

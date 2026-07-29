@@ -298,6 +298,6 @@ Verified dead or incomplete surface, so you do not build on it:
 - [04-connectivity-sdk.md](04-connectivity-sdk.md) — the full `AgentRunner` and
   `Session` reference: every constructor parameter, the hooks that fire (and
   the four that never do), controls and transfers.
-- [04-adapters.md](04-adapters.md) — what the agent says once a call lands.
+- [05-adapters.md](05-adapters.md) — what the agent says once a call lands.
 - [00-overview.md](00-overview.md) — what Unpod owns vs. what you own, and the
   terminology canon.

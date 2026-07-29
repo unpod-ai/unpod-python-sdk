@@ -92,8 +92,8 @@ alone cannot reach them.
 | [Run your agent](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/02-run-your-agent.md) | Where the runner process lives (local vs Publish), the identity trio, reconnection and failover, the four `call_end` reasons |
 | [Management SDK](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/03-management-sdk.md) | REST client API reference |
 | [Connectivity SDK](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/04-connectivity-sdk.md) | AgentRunner, Session, hooks, controls |
-| [Adapters](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/04-adapters.md) | DialogAdapter protocol and bundled adapters — pending renumber to `05-adapters.md` |
-| [Architecture](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/05-architecture.md) | Package structure, data flow, protocol details — pending revamp |
+| [Adapters](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/05-adapters.md) | The `DialogAdapter` protocol led by the `stream()` hot path, the six bundled adapters, and how to write your own |
+| [Architecture](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/05-architecture.md) | Package structure, data flow, protocol details — pending revamp, and shares the `05` ordinal with Adapters until its disposition lands |
 
 Testing in a browser (no phone number): see
 [`examples/browser_playground/`](examples/browser_playground/README.md).

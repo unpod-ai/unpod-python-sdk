@@ -413,9 +413,9 @@ markers above exist because of them.
 - [04-connectivity-sdk.md](04-connectivity-sdk.md) — `AgentRunner` and the full
   `Session` surface beyond the `say`/`run` pair used in step 3: constructor
   parameters, hooks and live controls.
-- [04-adapters.md](04-adapters.md) — what the agent actually says: the
-  `DialogAdapter` slot behind `ctx.session.dialog_machine`, and the bundled
-  adapters.
+- [05-adapters.md](05-adapters.md) — what the agent actually says: the
+  `DialogAdapter` slot behind `ctx.session.dialog_machine`, the `stream()` hot
+  path, and the bundled adapters.
 - [03-management-sdk.md](03-management-sdk.md) — the rest of the REST surface
   (trunks, sessions, recordings, transcripts) behind steps 2, 4, 5 and 7.
 - The full verification transcript:

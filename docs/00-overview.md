@@ -174,10 +174,8 @@ implementing the `DialogAdapter` protocol (`adapters/__init__.py`):
 On a live call the hot path is `stream()`, not `turn()` — `adapters/base.py`
 says so outright ("`turn()` … not called during live calls";
 "`stream()` … THIS is the hot path called by `session.run()`").
-[04-adapters.md](04-adapters.md) has the protocol shape and the per-adapter
-options, but it predates this canon and leads with `turn()` as the contract:
-read it with that inversion in mind, and take `stream()` as the method to
-implement first in a custom adapter.
+[05-adapters.md](05-adapters.md) has the protocol shape, the per-adapter
+options and the custom-adapter authoring guide, all led by `stream()`.
 
 ## Installation
 
@@ -197,6 +195,6 @@ pip install "unpod[observability]"  # + Langfuse tracing (LANGFUSE_SECRET_KEY)
 | [02-run-your-agent.md](02-run-your-agent.md) | The narrative half of the runtime: local runner vs Publish (and what Publish does not expose yet), the identity trio (`agent_id` / `worker_id` / pool), what `dev_mode` actually changes, reconnection and failover, and the four `call_end` reasons in one table |
 | [03-management-sdk.md](03-management-sdk.md) | Resource-by-resource REST reference for both planes: the `client.telephony.numbers.attach` verdict and its platform-agent precondition, auth precedence (`UNPOD_PLATFORM_TOKEN` beats `UNPOD_API_KEY`), the base-URL split above carried as a known gap, the per-plane number-status vocabularies, and the three unrelated types named `Session` |
 | [04-connectivity-sdk.md](04-connectivity-sdk.md) | `AgentRunner` / `Session` reference: constructor parameters, runner stats, `CallContext`, the ten hooks that actually fire (including `state` and `error`) versus the four that never do, controls, transfers, and the broken surface (`set_filler`, `recording.*`, `metrics.live()`) called out as gaps |
-| [04-adapters.md](04-adapters.md) | **Pending revamp, and pending renumber to `05-adapters.md`** — it shares the `04` ordinal with connectivity until that rename lands. Predates this canon: `DialogAdapter` protocol reference; says the SDK ships four adapters (six are exported) and presents `turn()` as "the contract every adapter must satisfy", inverting the `stream()` hot path stated in `adapters/base.py` |
-| [05-architecture.md](05-architecture.md) | **Pending revamp — predates this canon.** Frame-level bridge/dispatch reference; says "brain" and "media worker", omits `telephony/` and the `openai.py`/`anthropic.py` adapters, still documents `serve`-mode frames |
+| [05-adapters.md](05-adapters.md) | The `dialog_machine` slot: the `DialogAdapter` protocol led by the `stream()` hot path (with `turn()` demoted to the non-live fallback it is), the optional duck-typed members (`register_llm_callback`, `mark_interrupted`, `is_complete`, `state`), all six bundled adapters, and a custom-adapter authoring guide plus checklist |
+| [05-architecture.md](05-architecture.md) | **Pending revamp — predates this canon**, and shares the `05` ordinal with adapters until its own disposition lands. Frame-level bridge/dispatch reference; says "brain" and "media worker", omits `telephony/` and the `openai.py`/`anthropic.py` adapters, still documents `serve`-mode frames |
 | [06-browser-quickstart.md](06-browser-quickstart.md) | **Archived 2026-07-29 — the bring-up steps do not run.** Kept for the frame-level browser story only; for a browser test today use [`examples/browser_playground/`](../examples/browser_playground/README.md) |
