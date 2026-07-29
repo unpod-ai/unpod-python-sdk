@@ -20,7 +20,13 @@ commitment: the wire between the two carries **text, never audio**.
 
 ## Terminology
 
-The same canon is used across all Unpod docs:
+The same canon is used across all Unpod docs. The **In code/logs** column names
+symbols and log prefixes inside Unpod's own services — `publish/`,
+`brain_resolver.py`, `playbook_pool/` and `contracts/dispatch_protocol.py` live
+in supervoice, not in this package. Publish in particular has no SDK surface
+yet: nothing under `src/unpod` mentions it, and the only place these docs touch
+it is the outbound publish gate in
+[01-quickstart.md § Known gaps](01-quickstart.md#known-gaps) (#2).
 
 | Canonical name | Meaning | In code/logs | Deprecated aliases |
 |---|---|---|---|
@@ -88,9 +94,12 @@ registers under an `agent_id` and receives the same text turns. See
 ### Management client (REST)
 
 `AsyncClient` / `Client` (`client.py`) expose two planes. `UNPOD_BASE_URL` is
-the single config knob both bases derive from (`_base_url.py`):
+the one knob both bases are *derived* from
+(`_base_url.py::service_base`, `_base_url.py::platform_base`):
 `https://<host>/platform` for the management plane,
-`https://<host>/api/v2/platform` for the telephony plane.
+`https://<host>/api/v2/platform` for the telephony plane. Derivation is all it
+does — setting it is not by itself enough to make every resource reachable
+(see the wrinkle below).
 
 | Namespace | Plane | What it does |
 |---|---|---|
@@ -103,11 +112,17 @@ when set, otherwise Bearer `UNPOD_API_KEY`. The telephony plane is
 `Org-Handle`-scoped and rejects a bare Bearer key, so the token form is the one
 most flows want.
 
-One wrinkle to know before your first call: `client.pipes`, `client.calls` and
-`client.numbers` spell the hosted proxy's full prefix inside their own request
-paths, so they need `UNPOD_SERVICE_BASE_URL` pointed at the bare host instead
-of the derived `/platform` base
-([01-quickstart.md § Known gaps](01-quickstart.md#known-gaps)). The two planes,
+One wrinkle to know before your first call: **no single base URL currently
+serves every management resource.** `client.pipes`, `client.calls` and
+`client.numbers` spell the hosted proxy's full prefix
+(`/api/v2/platform/speech/v1/...`) inside their own request paths, while
+`client.sessions`, `client.recordings`, `client.transcripts`, `client.api_keys`
+and `client.trunks` request bare `/v1/...` — and every one of them shares the
+same HTTP client (`client.py::AsyncClient.__init__`). Whichever value of
+`UNPOD_SERVICE_BASE_URL` you pick, one of the two halves breaks; against a
+locally started supervoice, neither half works.
+[01-quickstart.md § Known gaps](01-quickstart.md#known-gaps) records the
+workaround the verified run used and what a real fix requires. The two planes,
 their auth precedence (`UNPOD_PLATFORM_TOKEN` silently beats `UNPOD_API_KEY`),
 and which numbers API to use are covered in
 [02-management-sdk.md](02-management-sdk.md).
@@ -153,6 +168,7 @@ pip install "unpod[observability]"  # + Langfuse tracing (LANGFUSE_SECRET_KEY)
 | Doc | Content |
 |---|---|
 | [01-quickstart.md](01-quickstart.md) | Install → Pipe → Agent Runner → number → first call, transcribed from a live verified run |
+| [01-architecture.md](01-architecture.md) | **Pending revamp — predates this canon.** Frame-level bridge/dispatch reference; says "brain" and "media worker", omits `telephony/` and the `openai.py`/`anthropic.py` adapters, still documents `serve`-mode frames |
 | [02-management-sdk.md](02-management-sdk.md) | Both REST planes, auth precedence, which numbers API to use |
 | [03-connectivity-sdk.md](03-connectivity-sdk.md) | `AgentRunner`, `Session`, the hooks that actually fire |
 | [04-adapters.md](04-adapters.md) | `DialogAdapter` protocol, the six adapters, `stream()` as the hot path |
