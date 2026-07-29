@@ -67,13 +67,18 @@ flag never turns itself off. Publishing is a platform action, not an SDK call �
 **Where it runs.** The playbook pool's second front door, deployed as its own
 process/pod: handler `playbook_pool/openai_api.py::build_openai_app`, entrypoint
 `playbook_pool/openai_main.py::build_app`. It shares the pool's resolver,
-session store and `PlaybookMachine` with the voice door, so a session started on
-one transport can be resumed on the other.
+session store and `PlaybookMachine` with the voice door — but the two doors
+namespace session keys differently, so **sessions do not cross transports
+today**: the OpenAI door keys the store on `f"{org_id}:{sid}"` (a deliberate
+tenant-isolation namespace, `openai_api.py::build_openai_app`), while the voice
+door acquires on the bare session id (`entrypoint.py::parse_call_target` →
+`session_worker.acquire(target.session_id, …)`). No `user` / `X-Session-Id`
+value a caller can send makes those two keys equal.
 
 | Aspect | As shipped |
 |---|---|
 | Route | `POST /v1/chat/completions`, plus `GET /health` |
-| Auth | The caller's own Bearer JWT, resolved to a trusted `org_id` server-side (`playbook_pool/auth_me.py::resolve_org_id`). Fail-closed: no token, bad token, or any `auth/me` failure → 401. Not your `UNPOD_API_KEY` |
+| Auth | A Bearer token in either of two shapes, resolved to a trusted `org_id` server-side by `playbook_pool/openai_main.py::build_app`: a token starting with `sk_` is an API key → platform `GET /v1/api-keys/whoami` (`auth_me.py::resolve_org_id_from_api_key`); anything else is treated as a login JWT → Django `auth/me` (`auth_me.py::resolve_org_id`). Your `UNPOD_API_KEY` **is** an `sk_` key (`platform/routers/api_keys.py`, `_KEY_PREFIX = "sk_"`), so the credential from [01-quickstart.md](01-quickstart.md) works here unchanged. Fail-closed: no token, bad token, or any resolver failure → 401 |
 | `model` | The playbook id. Unknown or unpublished for the org → 404 `model_not_found` |
 | Statefulness | The `user` body field or the `X-Session-Id` header. Absent → a fresh `sess_<uuid4>` per request |
 | Turn semantics | Only the **last** `role:"user"` message drives the turn (`playbook_pool/openai_api.py::_last_user_text`); `system` is ignored — the Playbook is the system prompt |
@@ -220,10 +225,11 @@ is not there:
 
 ## Roadmap
 
-> **Status: roadmap — not built.** No code exists for any of the items below;
-> each was checked against `src/unpod`, supervoice `src/supervoice` and
-> superdialog `src/superdialog` before being listed here. Tracked in supervoice
-> [`docs/03-publish-and-runners.md` § Roadmap](../../supervoice/docs/03-publish-and-runners.md).
+> **Status: roadmap — not built.** The three items below were each checked
+> against `src/unpod`, supervoice `src/supervoice` and superdialog
+> `src/superdialog` and exist in none of them. Tracked in supervoice
+> [`docs/03-publish-and-runners.md` § Roadmap](../../supervoice/docs/03-publish-and-runners.md)
+> — *a sibling checkout of the supervoice repo, not a file in this package.*
 
 - **STS plugin for LiveKit / Pipecat.** A speech-to-speech runner plugin that
   bypasses the STT → LLM → TTS pipeline, droppable into a LiveKit or Pipecat
@@ -236,8 +242,15 @@ is not there:
   Today publish never builds an image.
 - **Export flow.** Download a published agent (Playbook plus runner scaffold) to
   self-host it.
-- **Editor agent.** An agent that edits Playbooks conversationally from inside
-  the product.
+
+**Not roadmap — shipped, but with no SDK surface:** the **editor agent**, which
+edits Playbooks conversationally from inside the product. It runs in the
+platform-owned harness (supervoice `playground/harness/editor_agent.py::EditorSession`
+and `default_editor_model_uri`, driven by `playground/harness/agent_stream.py`)
+and its LLM spend is a first-class billing source
+(`platform/models/billing.py::UsageSource.playground_editor`, ingested by
+`platform/routers/usage.py::ingest_editor_usage`). It is not something you
+deploy, and nothing in `unpod` calls it.
 
 ## Next
 
