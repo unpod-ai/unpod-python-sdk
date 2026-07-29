@@ -37,6 +37,14 @@ replacement and the claims that did not survive a code check.
 |---|---|
 | [archive/05-quickstart.md](archive/05-quickstart.md) | [01-quickstart.md](01-quickstart.md) |
 
+One exception to that convention: `docs/06-browser-quickstart.md` was **removed
+rather than archived** when
+[07-browser-quickstart.md](07-browser-quickstart.md) replaced it. It documented
+a `run.py` in `auto_rl` — an unrelated sibling project — a `.env.example` at
+the wrong path, and the speech app's port as the UI's, so no claim in it was
+worth preserving behind a banner. Links to `docs/06-browser-quickstart.md`
+404; point them at `docs/07-browser-quickstart.md`.
+
 ## Conventions
 
 - Code is cited by symbol (`module.py::Class.method`), never by line number.

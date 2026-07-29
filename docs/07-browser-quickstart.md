@@ -51,8 +51,28 @@ deprecated `serve` transport, and it is the reason for Step 3.
 
 | Side | Keys | Read by |
 |---|---|---|
-| Speech (supervoice) | `DEEPGRAM_API_KEY` for STT, plus `OPENAI_API_KEY` or `CARTESIA_API_KEY` for TTS | `supervoice/speech/api_keys.py::PROVIDER_API_KEYS`; with no platform configured the app falls back to `supervoice/platform/seed/voice_profiles.py::GLOBAL_PROFILES`, which pairs Deepgram STT with OpenAI or Cartesia TTS |
+| Speech (supervoice) | `DEEPGRAM_API_KEY` for STT **and** `CARTESIA_API_KEY` for TTS — both, not either | `supervoice/speech/api_keys.py::PROVIDER_API_KEYS` maps provider → env var; the profile is `supervoice/dev/app.py::_FALLBACK_PROFILE` |
 | Agent (this SDK) | `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` | `examples/browser_playground/agent.py::_pick_llm`; `run.py::_check_keys` exits with status 1 when neither is set |
+
+Cartesia is not one of two TTS options here. The browser path never sends a
+`voice_profile_id` — `pipe-ui/src/app.ts` calls `/connect?agent_id=…` and
+`run.py::connect` forwards only `agent_id` — so
+`supervoice/dev/app.py::_resolve_profile` returns
+`supervoice/dev/app.py::_FALLBACK_PROFILE`, whose chains are STT
+`soniox → deepgram` and TTS **`cartesia` alone**.
+`supervoice/speech/failover.py::resolve_tts_with_fallback` walks only that
+chain, and its `LAST_RESORT_TTS_PROVIDER` is `cartesia` too (appended only when
+`SUPERVOICE_LAST_RESORT_TTS_VOICE_ID` is set). With only `DEEPGRAM_API_KEY` and
+`OPENAI_API_KEY` set, every step below succeeds and the first call dies at
+`ProviderSetupError` with no audio.
+
+That fallback profile is also Hindi-tuned: `language="hi"` on both chains. The
+seed catalog `supervoice/platform/seed/voice_profiles.py::GLOBAL_PROFILES`
+holds eight profiles across OpenAI, Cartesia, Sarvam and Soniox, but it is
+keyed by `voice_profile_id` and nothing on this path passes one (see
+[Rough edges](#rough-edges)) — it is the source for the voice-profiles list,
+not the profile-less fallback. To change voice or language, edit
+`_FALLBACK_PROFILE` in your supervoice checkout.
 
 ## Step 1 — Start the dev speech app
 
@@ -192,7 +212,7 @@ dev server listens on `:5173` and proxies `/connect` and `/ws` straight to
 | What | Where | What it costs you |
 |---|---|---|
 | The example registers with `dial_out`; the dev registry only speaks `serve` | `agent.py::build_runner` vs `supervoice/dev/relay.py::workers_endpoint` | The runner exits at startup until you apply Step 3. Raised for the supervoice known-gaps backlog |
-| The UI hardcodes the agent id | `pipe-ui/src/app.ts` (`const AGENT_ID = "browser-playground"`) | Changing `AGENT_ID` in `.env` still works only because `supervoice/dev/relay.py::_resolve_worker` falls back to the sole registered worker |
+| The agent id never reaches the speech app | `examples/browser_playground/_urls.py::audio_ws_url` returns `<SUPERVOICE_URL>/ws/audio` with no query string, and `run.py::connect` overwrites the proxied `ws_url` with it — discarding the query `supervoice/dev/app.py::connect` had built | `supervoice/dev/app.py::audio_ws` provisions every call with `agent_id or "default"`, so routing survives only through `supervoice/dev/relay.py::_resolve_worker`'s sole-registered-worker fallback. Two runners registered under different `agent_id`s cannot be routed between on this path: `_resolve_worker` returns `None` and `_run_client_job` refuses the call. Un-hardcoding `const AGENT_ID` in `pipe-ui/src/app.ts` would change nothing, and the same rewrite is why `voice_profile_id` cannot be passed either |
 | `.env.example` defaults to the hosted platform, its README to localhost | `examples/browser_playground/.env.example` vs `examples/browser_playground/README.md` | The hosted platform serves no browser audio: the UI loads and **Connect** fails |
 | `agent.py` never loads `.env` | `run.py` loads it before importing `agent` | Two-process mode needs `uv run --env-file .env` or exported variables |
 | `POST /connect` is the legacy door | `supervoice/dev/app.py::connect` | It closes the moment `SUPERVOICE_SESSION_API_KEY` is set; the current ingress is `POST /v1/sessions` (see [00-overview.md](00-overview.md)) |
