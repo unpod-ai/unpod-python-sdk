@@ -9,6 +9,19 @@ the answer is `client.telephony.numbers.attach`. The runtime half of the SDK —
 `AgentRunner`, the per-call `Session`, hooks — is a different package and lives
 in [03-connectivity-sdk.md](03-connectivity-sdk.md).
 
+> **Numbering — two docs share the `03-` ordinal.** The approved spine files
+> connectivity as `04-connectivity-sdk`; on disk it is still
+> `03-connectivity-sdk.md`. Every link in this doc points at the filename that
+> exists today and resolves; read the spine order as *00 overview → 01
+> quickstart → 02 run-your-agent → 03 management (this doc) → connectivity →
+> adapters*. Tracked step, to land as one sweep because the ordinals cascade:
+> `03-connectivity-sdk.md` → `04-connectivity-sdk.md` and `04-adapters.md` →
+> `05-adapters.md` (`05-architecture.md` and `06-browser-quickstart.md` are
+> resolved separately — neither is in the spine), with a link sweep over every
+> reference to either filename: three in this doc, five in `00-overview.md`, two
+> each in `01-quickstart.md` and `02-run-your-agent.md`, one inside
+> `03-connectivity-sdk.md`, and two in the `README.md` doc index.
+
 ## The two planes
 
 Everything below hangs off `client.py::AsyncClient.__init__`, which builds three
@@ -117,7 +130,9 @@ Resolution order per client, all in `client.py::AsyncClient.__init__`:
 **Use `client.telephony.numbers.attach`.** Its module docstring
 (`telephony/__init__.py`) calls attaching a number to an agent "the PRIMARY
 flow"; it is the surface backed by live routes on both sides; and it is the one
-that takes an `agent_id`, the rendezvous key your Agent Runner registers under.
+that takes an `agent_id` — the same rendezvous key your Agent Runner registers
+under, though on the default termination the platform additionally demands a
+platform agent carrying that handle (the precondition below).
 
 | | `client.telephony.numbers` (plane B) | `client.numbers` (plane A) |
 |---|---|---|
@@ -140,14 +155,47 @@ r = result.numbers[0]
 print(r.ok, r.connection_state, r.error)
 ```
 
+> **Precondition: that example only works if a platform agent whose handle is
+> `my-voice-agent` is owned by your org.** With the default
+> `attach_type="agent"`, backend-core gates the whole request on agent ownership
+> *before it touches any number* —
+> `views_telephony.py::TelephonyNumbersViewSet.attach` runs
+> `Pilot.objects.filter(handle=agent_id, owner=org).exists()` and, on a miss,
+> answers HTTP 400 with a body of `{"agent_id": …, "numbers": [], "message":
+> "Agent not found for this organization."}`. It is an anti-IDOR gate: the agent
+> path resolves the Pilot by handle alone, and handles are not globally unique,
+> so an ungated attach could bind a number to — and mutate the telephony config
+> of — another org's agent. A `pipes.create(agent_id=…)` Pipe or a running Agent
+> Runner does **not** satisfy it: a Pilot is a platform-side record, created
+> through the dashboard/platform API, not by this SDK.
+
+**The escape hatch: `attach_type="pipeline"`.** That termination is deliberately
+exempt from the Pilot gate — the gate's own condition is `agent_id and
+attach_type != "pipeline"` — because the pipeline path never resolves a Pilot at
+all: `telephony/services/attach.py::_attach_pipeline` creates the LiveKit trunks,
+rebuilds the dispatch rule, and forwards `agent_id` to supervoice as an opaque
+string, matched there against your own project-scoped pipes. Gating it would
+force every supervoice agent to keep a Django twin. It costs one extra argument:
+`pipe_id` is required, and the serializer rejects the request up front without it
+(`serializers.py::AttachAgentToNumbersSerializer.validate`):
+
+```python
+result = await client.telephony.numbers.attach(
+    "+14155550101",
+    agent_id="my-voice-agent",       # opaque here — no Pilot row needed
+    attach_type="pipeline",
+    pipe_id=pipe.pipe_id,            # required on this path
+)
+```
+
 Full signature (`telephony/__init__.py::NumbersResource.attach`) — everything
 after `numbers` is keyword-only:
 
 | Parameter | Type | Meaning |
 |---|---|---|
 | `numbers` | `str \| Sequence[str]` | One E.164 number or several. A bare `str` counts as one number, never iterated character by character (`telephony/__init__.py::_as_number_list`) |
-| `agent_id` | `str \| None` | The agent the number routes to. Optional — omitting it wires the number for agent use without binding one yet |
-| `attach_type` | `"agent" \| "pipeline"` | Termination path. The SDK omits the key when unset and the platform defaults it to `"agent"` |
+| `agent_id` | `str \| None` | The agent the number routes to. Optional — omitting it wires the number for agent use without binding one yet, and skips the ownership gate entirely (the gate reads `if agent_id and attach_type != "pipeline"`). **When set on the default termination it must be the handle of a platform agent your org owns**, or the request 400s with `"Agent not found for this organization."` (precondition above) |
+| `attach_type` | `"agent" \| "pipeline"` | Termination path. The SDK omits the key when unset and the platform defaults it to `"agent"`. `"pipeline"` is the Pilot-gate-exempt path — `agent_id` travels to supervoice as an opaque string |
 | `pipe_id` | `str \| None` | **Required when `attach_type="pipeline"`** — the supervoice pipe the number routes to |
 | `bridge_slug` | `str \| None` | Advanced: target a specific voice bridge instead of the org's resolved one |
 | `region` | `str \| None` | Advanced: region for a newly created bridge |
@@ -232,9 +280,16 @@ backend-core's `/voice-profiles/` on `_platform_http`
   renderer wraps that again), which the resource unwraps twice for you.
 
 ```python
-profiles = await client.voice_profiles.list(language="hi")
+profiles = await client.voice_profiles.list()
 profile = await client.voice_profiles.get("VP_openai_alloy")
 ```
+
+`list(language="hi")` accepts and sends the parameter
+(`management/voice_profiles.py::VoiceProfilesResource.list` puts it in the query
+string), but **the server does not honor it today**: the backing view
+(`views.py::VoiceProfilesV2ViewSet.get`) reads no query params and returns every
+`status=active` profile. The filter silently no-ops, so filter by `language` on
+the client side.
 
 Only `list` and `get` exist; profiles are managed upstream. When creating a Pipe
 you may pass either `profile.name` or `profile.profile_id` — supervoice resolves
