@@ -93,11 +93,12 @@ alone cannot reach them.
 | [Management SDK](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/03-management-sdk.md) | REST client API reference |
 | [Connectivity SDK](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/04-connectivity-sdk.md) | AgentRunner, Session, hooks, controls |
 | [Adapters](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/05-adapters.md) | The `DialogAdapter` protocol led by the `stream()` hot path, the six bundled adapters, and how to write your own |
+| [Deployment](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/06-deployment.md) | The three shipped ways an agent reaches traffic — LLM endpoint, voice agent, phone number |
+| [Browser quickstart](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/07-browser-quickstart.md) | Testing an agent in the browser with no phone number, via `examples/browser_playground/` |
 | [Architecture](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/05-architecture.md) | Package structure, data flow, protocol details — pending revamp, and shares the `05` ordinal with Adapters until its disposition lands |
 
-Testing in a browser (no phone number): see
-[`examples/browser_playground/`](examples/browser_playground/README.md).
-`docs/06-browser-quickstart.md` is archived — its bring-up steps do not run.
+Full index, including the archive:
+[`docs/README.md`](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/README.md).
 
 Full platform documentation: [docs.unpod.ai](https://docs.unpod.ai)
 

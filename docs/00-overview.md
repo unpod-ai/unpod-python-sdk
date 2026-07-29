@@ -88,10 +88,10 @@ The two browser rows are the client-session ingress of the speech service
 uses. That ingress mints its connect URLs against its own host, so today the
 browser paths run against a speech service you start yourself rather than a
 hosted Unpod endpoint. Your side is identical either way: the Agent Runner
-registers under an `agent_id` and receives the same text turns. The working
-browser path is
+registers under an `agent_id` and receives the same text turns. The browser
+bring-up is [07-browser-quickstart.md](07-browser-quickstart.md), which walks
 [`examples/browser_playground/`](../examples/browser_playground/README.md) —
-`06-browser-quickstart.md` is archived and its bring-up steps do not run.
+the one browser path that is maintained.
 
 ## Package scope
 
@@ -198,4 +198,7 @@ pip install "unpod[observability]"  # + Langfuse tracing (LANGFUSE_SECRET_KEY)
 | [05-adapters.md](05-adapters.md) | The `dialog_machine` slot: the `DialogAdapter` protocol led by the `stream()` hot path (with `turn()` demoted to the non-live fallback it is), the optional duck-typed members (`register_llm_callback`, `mark_interrupted`, `is_complete`, `state`), all six bundled adapters, and a custom-adapter authoring guide plus checklist |
 | [05-architecture.md](05-architecture.md) | **Pending revamp — predates this canon**, and shares the `05` ordinal with adapters until its own disposition lands. Frame-level bridge/dispatch reference; says "brain" and "media worker", omits `telephony/` and the `openai.py`/`anthropic.py` adapters, still documents `serve`-mode frames |
 | [06-deployment.md](06-deployment.md) | How an agent reaches real traffic: the three shipped mechanisms — LLM endpoint (a published Playbook answering as an OpenAI chat model), voice agent (an Agent Runner on an `agent_id`), phone number (a PSTN number attached to that same `agent_id`) — which SDK call performs each, what must already be running, plus known gaps and a hard-labeled roadmap |
-| [06-browser-quickstart.md](06-browser-quickstart.md) | **Archived 2026-07-29 — the bring-up steps do not run**, and shares the `06` ordinal with deployment until its own disposition lands. Kept for the frame-level browser story only; for a browser test today use [`examples/browser_playground/`](../examples/browser_playground/README.md) |
+| [07-browser-quickstart.md](07-browser-quickstart.md) | Testing an agent in the browser with no phone number: the `examples/browser_playground/` bring-up against a self-started dev speech app, its environment table, the `serve`-transport edit the example still needs, and its rough edges |
+
+The index of the whole set, including the archive, is
+[README.md](README.md).

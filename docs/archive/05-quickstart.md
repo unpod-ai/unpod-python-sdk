@@ -21,8 +21,8 @@ Target: under 10 minutes from install to a live voice call.
 **Browser (fastest — no phone number needed)**
 Test your agent in Chrome before going to production. (This said "the `auto_rl`
 dev server" — wrong: that is an unrelated project. The maintained browser path
-is [`examples/browser_playground/`](../../examples/browser_playground/README.md);
-[../06-browser-quickstart.md](../06-browser-quickstart.md) is archived too.)
+is [`examples/browser_playground/`](../../examples/browser_playground/README.md),
+walked by [../07-browser-quickstart.md](../07-browser-quickstart.md).)
 
 **Phone (production)**
 Sync numbers from a trunk, bind your Speech Pipe, call from any phone.
