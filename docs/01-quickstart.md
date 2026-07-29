@@ -20,10 +20,12 @@ environment had no SIP trunk and no Speech Worker, so the final audio leg
 (the actual PSTN dial) is static-only; everything up to and including the
 orchestrator picking the Agent Runner ran live. The SDK's management wrappers
 (`pipes.*`, `calls.*`, `numbers.*`) carry markers because of known gap #1
-below — their request bodies were executed live against the platform's own API
-instead, and succeeded. The live run used `agent_id="docs-quickstart-run"`
-throughout; the blocks below rename it `my-voice-agent` and change nothing
-else, so verbatim outputs (worker JSON, ids) show the run's name.
+below — the `pipes` and `calls` request bodies were executed live against the
+platform's own API instead, and succeeded; `numbers.sync()` was not exercised
+in any form. The live run used `agent_id="docs-quickstart-run"`
+throughout; the blocks below rename it `my-voice-agent` and, where noted,
+differ as each step's own marker records, so verbatim outputs (worker JSON,
+ids) show the run's name.
 
 ## 0 — Install
 
@@ -82,11 +84,52 @@ Three consequences, all load-bearing:
   serves both halves today — known gap #1.
 - Against a **locally started supervoice**, with no backend-core proxy in front,
   neither value works for `pipes`/`calls`/`numbers`; the verification run drove
-  those resources against the platform's own API instead.
+  those resources against the platform's own API instead — the exact requests
+  are in the next subsection, so a local stack can still complete this
+  quickstart.
 
 Per-component overrides (`UNPOD_SERVICE_BASE_URL`, `UNPOD_ORCHESTRATOR_URL`,
 `UNPOD_PLATFORM_BASE_URL`) always win when set — the verification run used them
 to point every plane at `http://localhost:8000`.
+
+### On a local stack: steps 2, 5 and 7 by direct request
+
+Step 3 needs nothing special — the runner reads `UNPOD_ORCHESTRATOR_URL` and
+registers over WSS as it does anywhere. Step 4's primary flow is not completable
+locally: `client.telephony.*` targets backend-core's `/api/v2/platform` plane,
+which a bare supervoice does not serve (the run's `voice_profiles.list()` 404 on
+`/api/v2/platform/voice-profiles/` is the same wall). Its `numbers.sync()`
+sub-note does have a local route — `POST /platform/v1/numbers/sync`,
+`platform/routers/numbers.py::sync_numbers` — but it imports numbers from
+LiveKit SIP inbound trunks, and the run had none configured. For steps 2, 5
+and 7, address supervoice's own routes instead — the form the run used:
+
+```bash
+KEY="sk_..."   # Bearer api key; no platform token, no org handle needed
+
+# step 2 — create the Pipe
+curl -X POST http://localhost:8000/platform/v1/pipes \
+  -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+  -d '{"name":"my-voice-agent","agent_id":"my-voice-agent"}'
+
+# step 5 — dispatch the call (from_number required; see gate 1 in step 5)
+curl -X POST http://localhost:8000/platform/v1/calls \
+  -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+  -d '{"agent_id":"my-voice-agent","to_number":"+19995550001","from_number":"+14155550101"}'
+
+# step 7 — monitor
+curl http://localhost:8000/platform/v1/calls -H "Authorization: Bearer $KEY"
+```
+
+Those paths are the composition root's: supervoice mounts its platform sub-app
+at `/platform` with every router under `/v1` (`main.py::_build_app`,
+`platform/main.py::create_platform_app`, plus `telephony/api/calls.py`'s router
+included at the same prefix), and a Bearer api key authenticates them directly
+(`platform/auth.py::get_auth_context`). The bodies are the ones the SDK wrappers
+would have sent. Everything else in this quickstart — the runner, both step-5
+gates, the dispatch — behaves identically; only the transport of those three
+requests differs. On a hosted deployment behind the backend-core proxy the SDK
+wrappers are the right call and all seven steps read as written.
 
 > **Auth precedence.** `UNPOD_PLATFORM_TOKEN` beats `UNPOD_API_KEY` whenever
 > it is set: the client switches to token auth scoped by `UNPOD_ORG_HANDLE` and
@@ -249,9 +292,11 @@ call = await client.calls.create(
 print(call.call_id, call.status)  # SCL_...  pending
 ```
 
-*Verified against code, not yet run live via the SDK (known gap #1). Identical
-request bodies — both the `agent_id=` and the `pipe_id=` form — ran live
-against the platform's own API and returned 201 (transcript, stage 5).*
+*Verified against code, not yet run live via the SDK (known gap #1). The same
+body **plus `from_number=`** — in both the `agent_id=` and the `pipe_id=`
+form — ran live against the platform's own API and returned 201; the body
+identical to the snippet above returned `no_from_number` (transcript, stage 5;
+gate 1 below explains why).*
 
 `status` starts as `"pending"`: creation enqueues the call and returns
 immediately; dispatch happens asynchronously. Poll `calls.get(call_id)`.
@@ -276,9 +321,11 @@ Two gates were observed live before the 201, in order:
 
 ## 6 — What happens after the 201
 
-Steps 1-5 were observed live (with the platform's queue in inline-dispatch
-mode); the media leg was not — the run had no Speech Worker and no SIP trunk,
-so the last three arrows are the design, not the transcript:
+Step 3 ran live, and the request bodies behind steps 2 and 5 ran live against
+the platform's own API (with the platform's queue in inline-dispatch mode);
+step 4 did not run at all. Neither did the media leg — the run had no Speech
+Worker and no SIP trunk, so the last three arrows are the design, not the
+transcript:
 
 ```mermaid
 sequenceDiagram

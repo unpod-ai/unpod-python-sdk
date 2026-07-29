@@ -168,8 +168,8 @@ pip install "unpod[observability]"  # + Langfuse tracing (LANGFUSE_SECRET_KEY)
 | Doc | Content |
 |---|---|
 | [01-quickstart.md](01-quickstart.md) | Install → Pipe → Agent Runner → number → first call, transcribed from a live verified run |
-| [01-architecture.md](01-architecture.md) | **Pending revamp — predates this canon.** Frame-level bridge/dispatch reference; says "brain" and "media worker", omits `telephony/` and the `openai.py`/`anthropic.py` adapters, still documents `serve`-mode frames |
 | [02-management-sdk.md](02-management-sdk.md) | Both REST planes, auth precedence, which numbers API to use |
 | [03-connectivity-sdk.md](03-connectivity-sdk.md) | `AgentRunner`, `Session`, the hooks that actually fire |
 | [04-adapters.md](04-adapters.md) | `DialogAdapter` protocol, the six adapters, `stream()` as the hot path |
+| [05-architecture.md](05-architecture.md) | **Pending revamp — predates this canon.** Frame-level bridge/dispatch reference; says "brain" and "media worker", omits `telephony/` and the `openai.py`/`anthropic.py` adapters, still documents `serve`-mode frames |
 | [06-browser-quickstart.md](06-browser-quickstart.md) | Talk to your agent from a browser |

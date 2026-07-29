@@ -89,14 +89,10 @@ alone cannot reach them.
 |-------|----------------|
 | [Overview](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/00-overview.md) | What Unpod owns vs what you own, the three layers |
 | [Quickstart](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/01-quickstart.md) | Install to a dispatched call, transcribed from a live run |
-| [Architecture](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/01-architecture.md) | Package structure, data flow, protocol details |
 | [Management SDK](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/02-management-sdk.md) | REST client API reference |
 | [Connectivity SDK](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/03-connectivity-sdk.md) | AgentRunner, Session, hooks, controls |
 | [Adapters](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/04-adapters.md) | DialogAdapter protocol and bundled adapters |
-
-Numbering note: Quickstart and Architecture both sit at `01` while the docs
-spine is renumbered (`00-overview` → `06-deployment`). Read the table order, not
-the filename prefixes, until that lands.
+| [Architecture](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/05-architecture.md) | Package structure, data flow, protocol details — pending revamp |
 
 Testing in a browser (no phone number): see
 [`examples/browser_playground/`](examples/browser_playground/README.md).
