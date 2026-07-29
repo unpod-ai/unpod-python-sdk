@@ -3,8 +3,8 @@
 Unpod SDK (`pip install unpod`) is the Python package for putting your own
 dialog logic on a live voice call. Unpod runs the voice side — telephony,
 audio, speech-to-text, text-to-speech; you run the text side — a long-lived
-**Agent Runner** process hosting your brain. The one architectural commitment:
-the wire between the two carries **text, never audio**.
+**Agent Runner** process hosting your dialog logic. The one architectural
+commitment: the wire between the two carries **text, never audio**.
 
 ## What Unpod owns vs what you own
 
@@ -46,7 +46,7 @@ flowchart LR
     end
     subgraph yours["Your process — anywhere"]
         runner["Agent Runner"]
-        brain["Adapter → your brain"]
+        brain["Adapter → your dialog logic"]
     end
     mgmt["Your scripts<br/>(management client)"] -- REST --> plat
     caller -- audio --> sw
@@ -64,34 +64,52 @@ turns. The full sequence, as observed live, is in
 ## Media transports (as shipped)
 
 Every media path converges on the same Speech Worker runtime — your Agent
-Runner sees identical text turns regardless of how the audio arrives
-(supervoice `worker/pipeline/transports.py` registers exactly three kinds:
-`livekit`, `websocket`, `webrtc`).
+Runner sees identical text turns regardless of how the audio arrives (the
+speech service's transport registry, supervoice
+`worker/pipeline/transports.py`, holds exactly three kinds: `livekit`,
+`websocket`, `webrtc`).
 
 | Path | Status | How it connects |
 |---|---|---|
-| Phone (PSTN/SIP) | Shipped | Attach a number to your `agent_id` (`client.telephony.numbers.attach`); calls join a LiveKit room where the Speech Worker runs |
-| Browser WebSocket | Shipped | Speech service session ingress: `POST /v1/sessions` (API-key auth) returns a `wss_url`; audio streams over `WS /ws/audio` |
-| WebRTC | Shipped | Same ingress with `transport="webrtc"`: returns a `webrtc_offer_url`; SmallWebRTC signaling via `POST /webrtc/offer` |
+| Phone (PSTN/SIP) | Shipped, hosted | Attach a number to your `agent_id` (`client.telephony.numbers.attach`); calls join a LiveKit room where the Speech Worker runs |
+| Browser WebSocket | Shipped, self-hosted | Client-session ingress: `POST /v1/sessions` (Bearer session API key) returns a `wss_url`; audio streams over `WS /ws/audio` |
+| Browser WebRTC | Shipped, self-hosted | Same ingress with `transport="webrtc"`: returns a `webrtc_offer_url`; SmallWebRTC signaling over `POST /webrtc/offer` |
 
-The WebSocket and WebRTC rows are the client-session ingress of the speech
-service (supervoice `dev/app.py::create_dev_app`) — the same surface the
-browser playground uses. See
+The two browser rows are the client-session ingress of the speech service
+(supervoice `dev/app.py::create_dev_app`) — the surface the browser playground
+uses. That ingress mints its connect URLs against its own host, so today the
+browser paths run against a speech service you start yourself rather than a
+hosted Unpod endpoint. Your side is identical either way: the Agent Runner
+registers under an `agent_id` and receives the same text turns. See
 [06-browser-quickstart.md](06-browser-quickstart.md).
 
 ## Package scope
 
 ### Management client (REST)
 
-`AsyncClient` / `Client` (`client.py`) expose two planes, both derived from
-the single `UNPOD_BASE_URL` knob (`_base_url.py`):
+`AsyncClient` / `Client` (`client.py`) expose two planes. `UNPOD_BASE_URL` is
+the single config knob both bases derive from (`_base_url.py`):
+`https://<host>/platform` for the management plane,
+`https://<host>/api/v2/platform` for the telephony plane.
 
-| Namespace | Plane / auth | What it does |
+| Namespace | Plane | What it does |
 |---|---|---|
-| `client.pipes`, `client.calls`, `client.numbers`, `client.trunks`, `client.sessions`, `client.recordings`, `client.transcripts`, `client.api_keys` | Management plane, Bearer `UNPOD_API_KEY` | Pipes, outbound calls, LiveKit-trunk numbers, recordings, transcripts |
-| `client.telephony` (numbers, trunks BETA, `overview()`), `client.voice_profiles` | Telephony plane, org-scoped `UNPOD_PLATFORM_TOKEN` + `UNPOD_ORG_HANDLE` | The primary number-attach flow (`numbers.attach(..., agent_id=)`), voice-profile catalog |
+| `client.pipes`, `client.calls`, `client.numbers`, `client.trunks`, `client.sessions`, `client.recordings`, `client.transcripts`, `client.api_keys` | Management, `https://<host>/platform` | Pipes, outbound calls, numbers synced from LiveKit SIP trunks, sessions, recordings, transcripts, API keys |
+| `client.telephony` (numbers, trunks BETA, `overview()`), `client.voice_profiles` | Telephony, `https://<host>/api/v2/platform` | The primary number-attach flow (`numbers.attach(..., agent_id=)`), voice-profile catalog |
 
-The two planes, their auth precedence, and which one to use are covered in
+One auth strategy serves both planes, chosen for you in
+`client.py::AsyncClient.__init__`: `UNPOD_PLATFORM_TOKEN` (+ `UNPOD_ORG_HANDLE`)
+when set, otherwise Bearer `UNPOD_API_KEY`. The telephony plane is
+`Org-Handle`-scoped and rejects a bare Bearer key, so the token form is the one
+most flows want.
+
+One wrinkle to know before your first call: `client.pipes`, `client.calls` and
+`client.numbers` spell the hosted proxy's full prefix inside their own request
+paths, so they need `UNPOD_SERVICE_BASE_URL` pointed at the bare host instead
+of the derived `/platform` base
+([01-quickstart.md § Known gaps](01-quickstart.md#known-gaps)). The two planes,
+their auth precedence (`UNPOD_PLATFORM_TOKEN` silently beats `UNPOD_API_KEY`),
+and which numbers API to use are covered in
 [02-management-sdk.md](02-management-sdk.md).
 
 ### Connectivity runtime (WSS)
@@ -105,8 +123,8 @@ long-lived process that registers under your `agent_id` and receives calls;
 
 ### Adapters
 
-Six adapters plug a brain into `Session.dialog_machine`, all implementing the
-`DialogAdapter` protocol (`adapters/__init__.py`):
+Six adapters plug your dialog logic into `Session.dialog_machine`, all
+implementing the `DialogAdapter` protocol (`adapters/__init__.py`):
 
 | Adapter | Wraps | Install |
 |---|---|---|
