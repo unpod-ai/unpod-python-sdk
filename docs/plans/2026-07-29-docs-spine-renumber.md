@@ -15,7 +15,7 @@ every published link resolves.
 | From | To | Status |
 |---|---|---|
 | `docs/03-connectivity-sdk.md` | `docs/04-connectivity-sdk.md` | Done — landed with the rewrite, all 9 inbound references repaired |
-| `docs/04-adapters.md` | `docs/05-adapters.md` | Pending |
+| `docs/04-adapters.md` | `docs/05-adapters.md` | Pending. Deferred because the adapters doc is also awaiting a content revamp; renaming it now would collide with that rewrite. Until then the shared `04` ordinal is annotated in both reader-facing indexes (`docs/00-overview.md` § Docs and `README.md` § Documentation) so no reader hits it unwarned |
 
 `05-architecture.md` and `06-browser-quickstart.md` are resolved separately —
 neither is in the spine.

@@ -91,7 +91,7 @@ alone cannot reach them.
 | [Quickstart](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/01-quickstart.md) | Install to a dispatched call, transcribed from a live run |
 | [Management SDK](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/03-management-sdk.md) | REST client API reference |
 | [Connectivity SDK](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/04-connectivity-sdk.md) | AgentRunner, Session, hooks, controls |
-| [Adapters](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/04-adapters.md) | DialogAdapter protocol and bundled adapters |
+| [Adapters](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/04-adapters.md) | DialogAdapter protocol and bundled adapters — pending renumber to `05-adapters.md` |
 | [Architecture](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/05-architecture.md) | Package structure, data flow, protocol details — pending revamp |
 
 Testing in a browser (no phone number): see

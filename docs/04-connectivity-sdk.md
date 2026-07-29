@@ -218,18 +218,27 @@ enumerations come from the Speech Worker, which sends `severity` ∈ `warn`,
 `error`, `fatal` and `source` ∈ `stt`, `tts`, `transport`, `internal`
 (supervoice `worker/bridge/protocol.py::ErrorEvent`). `code` is a free-form
 string — `stt.processing_failed` and `<source>.pipeline_error` are the ones the
-worker emits today. **Any error frame ends the session loop**, including
-`severity="warn"`.
+worker emits today, and the second reaches you only as `stt.pipeline_error` or
+`tts.pipeline_error`: `worker/bridge/processor.py` derives the source from the
+failing processor's class name and falls back to `pipeline`, which its own
+`ErrorEvent.source` literal does not accept, so a failure in any other
+processor is dropped worker-side rather than delivered. **Any error frame ends
+the session loop**, including `severity="warn"`.
 
 ```python
-@session.on("error")
-async def _(code: str, message: str, severity: str, source: str) -> None:
-    log.error("bridge error", code=code, severity=severity, source=source,
-              message=message)
+async def entrypoint(ctx: CallContext) -> None:
+    session = ctx.session          # there is no module-level `session`
 
-@session.on("state")
-async def _(event) -> None:
-    log.debug("conversation state", state=event.state, turn=event.turn_id)
+    @session.on("error")
+    async def _(code: str, message: str, severity: str, source: str) -> None:
+        log.error("bridge error", code=code, severity=severity, source=source,
+                  message=message)
+
+    @session.on("state")
+    async def _(event) -> None:
+        log.debug("conversation state", state=event.state, turn=event.turn_id)
+
+    await session.run()            # registration must precede run()
 ```
 
 **`llm_call` and `turn_complete`** are fired with keyword arguments only, so
@@ -315,11 +324,34 @@ await session.transfer_to_agent("senior-bot", announcement="One moment.")
 
 `mode="warm"` is an **announced** transfer, not a private consult: the human is
 dialed into the same room, so the caller hears the ringing and the
-`announcement` too. The Speech Worker — not the SDK, and not your prompt —
-enforces a destination allowlist before dialing, because the target is
-LLM-chosen and therefore prompt-injectable (supervoice
-`worker/transfer_policy.py::transfer_destination_allowed`). On a successful
-transfer the agent's job ends.
+`announcement` too. On a successful transfer the agent's job ends.
+
+**Destination policy is the Speech Worker's, and it is opt-in.** The target is
+LLM-chosen and therefore prompt-injectable, so the check runs worker-side —
+never in the SDK and never in your prompt (supervoice
+`worker/agent_adapter.py::VoiceAgentAdapter._handle_transfer`). What it does
+*not* do is restrict destinations by default:
+
+| `transfer_type` | Always checked | Allowlist |
+|---|---|---|
+| `number` | E.164 shape (`worker/transfer_policy.py::is_valid_e164`) — a malformed number is refused outright | Applied **only** when `transfer_allowed_numbers` or `transfer_allowed_prefixes` is set in pipe config |
+| `human`, `agent` | — | Bypassed. `_handle_transfer` allows these unconditionally: the target is a queue or agent id resolved server-side, not a dialed number |
+
+For PSTN targets the allowlist has three states
+(`worker/transfer_policy.py::transfer_destination_allowed`): both keys unset —
+the default — is **unrestricted**, so any well-formed E.164 number passes;
+configured-but-empty is **deny-all**, the explicit lockdown; otherwise the
+target must be an exact member of `transfer_allowed_numbers` or carry one of
+`transfer_allowed_prefixes` (union, not intersection). If you dial out to
+numbers your caller supplies, set one of those keys — the shape check alone is
+not a toll-fraud gate.
+
+A refused target is not an error and does not end the call: the worker speaks
+`transfer_refusal_phrase` from pipe config (default *"I'm sorry, I can't
+transfer you to that number."*), leaves the handover flag clear, and the
+conversation continues. Your entrypoint sees no `error` frame and no
+`call_end` — only the caller hears the refusal, so log the attempt yourself if
+you need to know it happened.
 
 ### The `dialog_machine` slot
 
