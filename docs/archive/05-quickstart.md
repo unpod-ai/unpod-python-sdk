@@ -211,4 +211,4 @@ Edit your entrypoint or system prompt. With `dev_mode=True`, the runner hot-relo
 └──────────────────────────────────────────┘
 ```
 
-See [Management SDK](../02-management-sdk.md) for the full API reference and [Connectivity SDK](../03-connectivity-sdk.md) for hooks and live controls.
+See [Management SDK](../03-management-sdk.md) for the full API reference and [Connectivity SDK](../03-connectivity-sdk.md) for hooks and live controls.

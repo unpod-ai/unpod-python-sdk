@@ -9,23 +9,17 @@ the answer is `client.telephony.numbers.attach`. The runtime half of the SDK —
 `AgentRunner`, the per-call `Session`, hooks — is a different package and lives
 in [03-connectivity-sdk.md](03-connectivity-sdk.md).
 
-> **Numbering — two docs share the `03-` ordinal.** The approved spine files
-> connectivity as `04-connectivity-sdk`; on disk it is still
-> `03-connectivity-sdk.md`. Every link in this doc points at the filename that
-> exists today and resolves; read the spine order as *00 overview → 01
-> quickstart → 02 run-your-agent → 03 management (this doc) → connectivity →
-> adapters*. Tracked step, to land as one sweep because the ordinals cascade:
-> `03-connectivity-sdk.md` → `04-connectivity-sdk.md` and `04-adapters.md` →
-> `05-adapters.md` (`05-architecture.md` and `06-browser-quickstart.md` are
-> resolved separately — neither is in the spine), with a link sweep over every
-> reference to either filename: three in this doc, five in `00-overview.md`, two
-> each in `01-quickstart.md` and `02-run-your-agent.md`, one inside
-> `03-connectivity-sdk.md`, and two in the `README.md` doc index.
+Read the docs in the order *00 overview → 01 quickstart → 02 run-your-agent →
+03 management (this doc) → connectivity → adapters*; the filenames on disk are
+authoritative and every link here resolves.
 
-## The two planes
+## Planes and clients
 
 Everything below hangs off `client.py::AsyncClient.__init__`, which builds three
-HTTP clients and hands all of them the same `Auth` strategy.
+HTTP clients and hands all of them the same `Auth` strategy. Three clients, two
+planes: the orchestrator is a third *base URL* on the management plane, not a
+plane of its own — its base is the management base with a trailing `/platform`
+swapped for `/orchestrator`, and it carries the same auth.
 
 ```mermaid
 flowchart LR
@@ -45,7 +39,7 @@ flowchart LR
 | Namespace | HTTP client | Plane | Auth it accepts |
 |---|---|---|---|
 | `pipes`, `calls`, `numbers`, `trunks`, `sessions`, `recordings`, `transcripts`, `api_keys` | `_http` | Management (supervoice) | `Bearer` api key direct, or DRF token / JWT through the backend-core speech proxy |
-| `sessions.end` / `.transfer` / `.merge` | `_orch_http` | Orchestrator service | same strategy as above |
+| `sessions.end` / `.transfer` / `.merge` | `_orch_http` | Management (supervoice), orchestrator base | same strategy as above |
 | `telephony.*`, `voice_profiles` | `_platform_http` | Platform (backend-core) | DRF token or JWT only — **never** a Bearer api key |
 
 One `Auth` serves all three clients, so a single client object cannot be in

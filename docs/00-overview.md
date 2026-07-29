@@ -134,11 +134,10 @@ base from the rest of the table. Whichever value of
 locally started supervoice, neither half works.
 [01-quickstart.md § Known gaps](01-quickstart.md#known-gaps) records the
 workaround the verified run used and what a real fix requires.
-[02-management-sdk.md](02-management-sdk.md) is the resource-by-resource
-reference, but it predates this canon: it covers only the management plane
-(no `client.telephony`, no `UNPOD_PLATFORM_TOKEN`) and its examples still set
-the base URL this section calls broken — take the two planes, the auth
-precedence and the numbers split from here, not from there.
+[03-management-sdk.md](03-management-sdk.md) is the resource-by-resource
+reference for both planes: it repeats this wrinkle as a callout, spells out the
+`UNPOD_PLATFORM_TOKEN` auth precedence, and gives the verdict on the two number
+surfaces.
 
 ### Connectivity runtime (WSS)
 
@@ -191,7 +190,7 @@ pip install "unpod[observability]"  # + Langfuse tracing (LANGFUSE_SECRET_KEY)
 | Doc | Content |
 |---|---|
 | [01-quickstart.md](01-quickstart.md) | Install → Pipe → Agent Runner → number → first call, transcribed from a live verified run |
-| [02-management-sdk.md](02-management-sdk.md) | **Pending revamp — predates this canon.** Resource-by-resource management-plane reference; never mentions `client.telephony` or `UNPOD_PLATFORM_TOKEN`, and its setup examples still use `UNPOD_SERVICE_BASE_URL=http://localhost:8000/platform` — the value the wrinkle above and [01 § Known gaps](01-quickstart.md#known-gaps) (#1) call broken |
+| [03-management-sdk.md](03-management-sdk.md) | Resource-by-resource REST reference for both planes: the `client.telephony.numbers.attach` verdict and its platform-agent precondition, auth precedence (`UNPOD_PLATFORM_TOKEN` beats `UNPOD_API_KEY`), the base-URL split above carried as a known gap, the per-plane number-status vocabularies, and the three unrelated types named `Session` |
 | [03-connectivity-sdk.md](03-connectivity-sdk.md) | **Pending revamp — predates this canon.** `AgentRunner` / `Session` reference; documents `user_partial`, `silence`, `tool_call` and `tool_result` hooks that no `fire()` call in `connectivity/session.py` ever raises, plus `session.enable_partial_transcripts()` (zero occurrences in `src/`), and omits `state` and `error`, which do fire |
 | [04-adapters.md](04-adapters.md) | **Pending revamp — predates this canon.** `DialogAdapter` protocol reference; says the SDK ships four adapters (six are exported) and presents `turn()` as "the contract every adapter must satisfy", inverting the `stream()` hot path stated in `adapters/base.py` |
 | [05-architecture.md](05-architecture.md) | **Pending revamp — predates this canon.** Frame-level bridge/dispatch reference; says "brain" and "media worker", omits `telephony/` and the `openai.py`/`anthropic.py` adapters, still documents `serve`-mode frames |
