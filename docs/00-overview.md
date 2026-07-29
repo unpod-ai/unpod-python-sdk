@@ -31,8 +31,9 @@ The same canon is used across all Unpod docs:
 | **Publish** | Managed hosting of an Agent Runner on Unpod cloud. Today: playbook-pool processes; roadmap: Docker per agent. | `publish/` saga | deploy (reserved for the three deployment mechanisms) |
 | **Transport: `serve` / `dial_out`** | Who connects to whom on the text bus. `dial_out` (current): the Agent Runner dials the Speech Worker's bridge acceptor. `serve` (deprecated, teardown scheduled): the runner serves, the worker dials. | `contracts/dispatch_protocol.py::WorkerCapabilities.transport` | "the runner serves the bridge" (03's stale locked model) |
 
-The identity trio your runner registers with — `agent_id`, `worker_id`,
-`pool` — is defined in [02-run-your-agent.md](02-run-your-agent.md).
+Runner registration, `worker_id` reconnection, and pooling several runners
+under one `agent_id` are covered in
+[03-connectivity-sdk.md](03-connectivity-sdk.md).
 
 ## How a call reaches your code
 
@@ -76,7 +77,7 @@ Runner sees identical text turns regardless of how the audio arrives
 The WebSocket and WebRTC rows are the client-session ingress of the speech
 service (supervoice `dev/app.py::create_dev_app`) — the same surface the
 browser playground uses. See
-[07-browser-quickstart.md](07-browser-quickstart.md).
+[06-browser-quickstart.md](06-browser-quickstart.md).
 
 ## Package scope
 
@@ -91,7 +92,7 @@ the single `UNPOD_BASE_URL` knob (`_base_url.py`):
 | `client.telephony` (numbers, trunks BETA, `overview()`), `client.voice_profiles` | Telephony plane, org-scoped `UNPOD_PLATFORM_TOKEN` + `UNPOD_ORG_HANDLE` | The primary number-attach flow (`numbers.attach(..., agent_id=)`), voice-profile catalog |
 
 The two planes, their auth precedence, and which one to use are covered in
-[03-management-sdk.md](03-management-sdk.md).
+[02-management-sdk.md](02-management-sdk.md).
 
 ### Connectivity runtime (WSS)
 
@@ -100,7 +101,7 @@ also exports the auth classes): **`AgentRunner`** — the
 long-lived process that registers under your `agent_id` and receives calls;
 **`Session`** — the per-call object with hooks and controls; **`CallContext`**
 — the per-call metadata envelope handed to your entrypoint. Details in
-[04-connectivity-sdk.md](04-connectivity-sdk.md).
+[03-connectivity-sdk.md](03-connectivity-sdk.md).
 
 ### Adapters
 
@@ -117,7 +118,7 @@ Six adapters plug a brain into `Session.dialog_machine`, all implementing the
 | `AnthropicAdapter` | an `anthropic.AsyncAnthropic` client you construct | core (bring `anthropic`) |
 
 On a live call the hot path is `stream()`, not `turn()` — see
-[05-adapters.md](05-adapters.md) before writing a custom adapter.
+[04-adapters.md](04-adapters.md) before writing a custom adapter.
 
 ## Installation
 
@@ -134,9 +135,7 @@ pip install "unpod[observability]"  # + Langfuse tracing (LANGFUSE_SECRET_KEY)
 | Doc | Content |
 |---|---|
 | [01-quickstart.md](01-quickstart.md) | Install → Pipe → Agent Runner → number → first call, transcribed from a live verified run |
-| [02-run-your-agent.md](02-run-your-agent.md) | Local runner vs Publish, identity trio, reconnection and failover |
-| [03-management-sdk.md](03-management-sdk.md) | Both REST planes, auth precedence, which numbers API to use |
-| [04-connectivity-sdk.md](04-connectivity-sdk.md) | `AgentRunner`, `Session`, the hooks that actually fire |
-| [05-adapters.md](05-adapters.md) | `DialogAdapter` protocol, the six adapters, `stream()` as the hot path |
-| [06-deployment.md](06-deployment.md) | Three deployment mechanisms, each labeled Shipped or Roadmap |
-| [07-browser-quickstart.md](07-browser-quickstart.md) | Talk to your agent from a browser |
+| [02-management-sdk.md](02-management-sdk.md) | Both REST planes, auth precedence, which numbers API to use |
+| [03-connectivity-sdk.md](03-connectivity-sdk.md) | `AgentRunner`, `Session`, the hooks that actually fire |
+| [04-adapters.md](04-adapters.md) | `DialogAdapter` protocol, the six adapters, `stream()` as the hot path |
+| [06-browser-quickstart.md](06-browser-quickstart.md) | Talk to your agent from a browser |
