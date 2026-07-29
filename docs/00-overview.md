@@ -52,12 +52,12 @@ flowchart LR
     end
     subgraph yours["Your process — anywhere"]
         runner["Agent Runner"]
-        brain["Adapter → your dialog logic"]
+        logic["Adapter → your dialog logic"]
     end
     mgmt["Your scripts<br/>(management client)"] -- REST --> plat
     caller -- audio --> sw
     runner -- "text only (bridge WSS)" --> sw
-    runner --> brain
+    runner --> logic
 ```
 
 At call time the platform resolves the Pipe, the orchestrator picks a live
@@ -114,11 +114,12 @@ most flows want.
 
 One wrinkle to know before your first call: **no single base URL currently
 serves every management resource.** `client.pipes`, `client.calls` and
-`client.numbers` spell the hosted proxy's full prefix
-(`/api/v2/platform/speech/v1/...`) inside their own request paths, while
-`client.sessions`, `client.recordings`, `client.transcripts`, `client.api_keys`
-and `client.trunks` request bare `/v1/...` — and every one of them shares the
-same HTTP client (`client.py::AsyncClient.__init__`). Whichever value of
+`client.numbers` spell a hosted-proxy prefix inside their own request paths
+(`/api/v2/platform/speech/v1/...`, plus `/api/v2/platform/telephony/...` for
+`numbers.list`, `delete`, `release` and `attach`), while `client.sessions`,
+`client.recordings`, `client.transcripts`, `client.api_keys` and
+`client.trunks` request bare `/v1/...` — and every one of them shares the same
+HTTP client (`client.py::AsyncClient.__init__`). Whichever value of
 `UNPOD_SERVICE_BASE_URL` you pick, one of the two halves breaks; against a
 locally started supervoice, neither half works.
 [01-quickstart.md § Known gaps](01-quickstart.md#known-gaps) records the
