@@ -89,6 +89,7 @@ alone cannot reach them.
 |-------|----------------|
 | [Overview](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/00-overview.md) | What Unpod owns vs what you own, the three layers |
 | [Quickstart](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/01-quickstart.md) | Install to a dispatched call, transcribed from a live run |
+| [Run your agent](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/02-run-your-agent.md) | Where the runner process lives (local vs Publish), the identity trio, reconnection and failover, the four `call_end` reasons |
 | [Management SDK](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/03-management-sdk.md) | REST client API reference |
 | [Connectivity SDK](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/04-connectivity-sdk.md) | AgentRunner, Session, hooks, controls |
 | [Adapters](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/04-adapters.md) | DialogAdapter protocol and bundled adapters — pending renumber to `05-adapters.md` |

@@ -219,11 +219,23 @@ enumerations come from the Speech Worker, which sends `severity` ∈ `warn`,
 (supervoice `worker/bridge/protocol.py::ErrorEvent`). `code` is a free-form
 string — `stt.processing_failed` and `<source>.pipeline_error` are the ones the
 worker emits today, and the second reaches you only as `stt.pipeline_error` or
-`tts.pipeline_error`: `worker/bridge/processor.py` derives the source from the
-failing processor's class name and falls back to `pipeline`, which its own
-`ErrorEvent.source` literal does not accept, so a failure in any other
-processor is dropped worker-side rather than delivered. **Any error frame ends
-the session loop**, including `severity="warn"`.
+`tts.pipeline_error`. A failure in any *other* processor does not merely go
+undelivered — it breaks the worker:
+`worker/bridge/processor.py::AgentBridgeProcessor.process_frame` derives the
+source from the failing processor's class name and falls back to `pipeline`,
+then calls `emit_error(...)`, which builds `ErrorEvent(source="pipeline")`
+before the `try` that guards the send — and neither of its early returns saves
+you on a live call: the bridge client is attached, and `error` is always
+negotiated, because the SDK's hello advertises it (`connectivity/bridge.py`)
+and the worker's supported-event set contains it
+(`worker/bridge/client.py::negotiate_from_hello`). `ErrorEvent.source` is
+`Literal["stt", "tts", "transport", "internal"]`
+(`worker/bridge/protocol.py::ErrorEvent`), so pydantic raises `ValidationError`
+out of `emit_error` and out of `process_frame` — a live exception inside the
+Speech Worker's own frame pipeline, not a silent drop. You see no `error` hook
+either way; the difference is that the worker is now in trouble. Tracked in
+[Known gaps](#known-gaps) as a supervoice bug. **Any error frame ends the
+session loop**, including `severity="warn"`.
 
 ```python
 async def entrypoint(ctx: CallContext) -> None:
@@ -400,6 +412,7 @@ Verified dead or broken surface, so you do not build on it.
 |---|---|
 | `set_filler()` | Sends `agent.say` with the text `__filler:<text>`. No `__filler` handling exists in supervoice; `worker/bridge/processor.py::AgentBridgeProcessor._handle_agent_say` pushes the text verbatim to TTS, so the caller hears the sentinel spoken aloud. Do not call it |
 | `recording.pause()` / `recording.resume()` | Same mechanism: `agent.say` carrying `__recording_pause:<reason>` / `__recording_resume`, spoken verbatim for the same reason. There is no recording control on this wire (`connectivity/session.py::RecordingControl`) |
+| Non-STT/TTS pipeline errors (**supervoice bug**) | An `ErrorFrame` from any processor whose class name contains neither `stt` nor `tts` makes `AgentBridgeProcessor.process_frame` compute `source="pipeline"`, which `ErrorEvent.source` (`Literal["stt","tts","transport","internal"]`) rejects — pydantic raises `ValidationError` inside the Speech Worker's frame pipeline. Symptom: no `error` hook fires and the worker logs a `ValidationError` from `emit_error`, not a bridge send failure. Owner: supervoice (`worker/bridge/processor.py`); the fix is mapping the fallback onto `internal` |
 | `session.metrics.live()` | `MetricsTracker.record_turn` has no caller in `src/`, so `turns`, the p95s, `cost`, `tokens` and `active_llm` are always zero/empty; only `duration_s` is real |
 | `ctx.room` | Declared as media-room metadata but never assigned — `_context_from_call_started` does not set it, and the `room_id` that `call.started` carries is not surfaced. Always `{}` |
 | `RunnerStats.queued` | Hardcoded `0` in `AgentRunner.stats` |

@@ -406,9 +406,13 @@ markers above exist because of them.
 ## Next
 
 - [00-overview.md](00-overview.md) — what Unpod owns vs. what you own.
+- [02-run-your-agent.md](02-run-your-agent.md) — the runner process the step-3
+  script started, taken seriously: where it can run (your machine or Publish),
+  the identity trio behind `agent_id`, reconnection and failover, and what each
+  `call_end` reason means.
 - [04-connectivity-sdk.md](04-connectivity-sdk.md) — `AgentRunner` and the full
-  `Session` surface beyond the `say`/`run` pair used in step 3: hooks, live
-  controls, reconnection.
+  `Session` surface beyond the `say`/`run` pair used in step 3: constructor
+  parameters, hooks and live controls.
 - [04-adapters.md](04-adapters.md) — what the agent actually says: the
   `DialogAdapter` slot behind `ctx.session.dialog_machine`, and the bundled
   adapters.

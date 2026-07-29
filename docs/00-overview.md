@@ -38,8 +38,10 @@ it is the outbound publish gate in
 | **Transport: `serve` / `dial_out`** | Who connects to whom on the text bus. `dial_out` (current): the Agent Runner dials the Speech Worker's bridge acceptor. `serve` (deprecated, teardown scheduled): the runner serves, the worker dials. | `contracts/dispatch_protocol.py::WorkerCapabilities.transport` | "the runner serves the bridge" (03's stale locked model) |
 
 Runner registration, `worker_id` reconnection, and pooling several runners
-under one `agent_id` are covered in
-[04-connectivity-sdk.md](04-connectivity-sdk.md).
+under one `agent_id` are the narrative of
+[02-run-your-agent.md](02-run-your-agent.md);
+[04-connectivity-sdk.md](04-connectivity-sdk.md) is the matching
+`AgentRunner` / `Session` reference.
 
 ## How a call reaches your code
 
@@ -86,8 +88,10 @@ The two browser rows are the client-session ingress of the speech service
 uses. That ingress mints its connect URLs against its own host, so today the
 browser paths run against a speech service you start yourself rather than a
 hosted Unpod endpoint. Your side is identical either way: the Agent Runner
-registers under an `agent_id` and receives the same text turns. See
-[06-browser-quickstart.md](06-browser-quickstart.md).
+registers under an `agent_id` and receives the same text turns. The working
+browser path is
+[`examples/browser_playground/`](../examples/browser_playground/README.md) —
+`06-browser-quickstart.md` is archived and its bring-up steps do not run.
 
 ## Package scope
 
@@ -190,8 +194,9 @@ pip install "unpod[observability]"  # + Langfuse tracing (LANGFUSE_SECRET_KEY)
 | Doc | Content |
 |---|---|
 | [01-quickstart.md](01-quickstart.md) | Install → Pipe → Agent Runner → number → first call, transcribed from a live verified run |
+| [02-run-your-agent.md](02-run-your-agent.md) | The narrative half of the runtime: local runner vs Publish (and what Publish does not expose yet), the identity trio (`agent_id` / `worker_id` / pool), what `dev_mode` actually changes, reconnection and failover, and the four `call_end` reasons in one table |
 | [03-management-sdk.md](03-management-sdk.md) | Resource-by-resource REST reference for both planes: the `client.telephony.numbers.attach` verdict and its platform-agent precondition, auth precedence (`UNPOD_PLATFORM_TOKEN` beats `UNPOD_API_KEY`), the base-URL split above carried as a known gap, the per-plane number-status vocabularies, and the three unrelated types named `Session` |
 | [04-connectivity-sdk.md](04-connectivity-sdk.md) | `AgentRunner` / `Session` reference: constructor parameters, runner stats, `CallContext`, the ten hooks that actually fire (including `state` and `error`) versus the four that never do, controls, transfers, and the broken surface (`set_filler`, `recording.*`, `metrics.live()`) called out as gaps |
 | [04-adapters.md](04-adapters.md) | **Pending revamp, and pending renumber to `05-adapters.md`** — it shares the `04` ordinal with connectivity until that rename lands. Predates this canon: `DialogAdapter` protocol reference; says the SDK ships four adapters (six are exported) and presents `turn()` as "the contract every adapter must satisfy", inverting the `stream()` hot path stated in `adapters/base.py` |
 | [05-architecture.md](05-architecture.md) | **Pending revamp — predates this canon.** Frame-level bridge/dispatch reference; says "brain" and "media worker", omits `telephony/` and the `openai.py`/`anthropic.py` adapters, still documents `serve`-mode frames |
-| [06-browser-quickstart.md](06-browser-quickstart.md) | Talk to your agent from a browser |
+| [06-browser-quickstart.md](06-browser-quickstart.md) | **Archived 2026-07-29 — the bring-up steps do not run.** Kept for the frame-level browser story only; for a browser test today use [`examples/browser_playground/`](../examples/browser_playground/README.md) |
