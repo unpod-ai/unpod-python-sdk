@@ -2,7 +2,7 @@
 
 Developer SDK for [Unpod](https://unpod.ai) voice infrastructure — management, connectivity, and adapters for building voice agents that talk over real phone calls, browsers, and WebRTC.
 
-**Single architectural commitment:** the wire between Unpod infrastructure and your code carries **text, not audio**. You bring the brain; Unpod brings the voice.
+**Single architectural commitment:** the wire between Unpod infrastructure and your code carries **text, not audio**. You bring the Agent Runner; Unpod brings the voice.
 
 ## Installation
 
@@ -39,7 +39,7 @@ unpod
 
 - **Management SDK** — CRUD against the Unpod Control Plane: manage numbers (sync/attach/release), browse voice profiles, bind Speech Pipes, trigger and inspect calls.
 - **Connectivity SDK** — runtime for live calls: a long-lived `AgentRunner` receives plain-text turns over WSS and dispatches them to your agent, regardless of transport (phone, browser, WebRTC).
-- **Adapters** — plug any brain into a call: `superdialog` dialog machines, LangChain runnables, your own HTTP endpoint, or an MCP server.
+- **Adapters** — plug any dialog logic into a call: `superdialog` dialog machines, LangChain runnables, your own HTTP endpoint, or an MCP server.
 
 ## Quick Example
 

@@ -167,9 +167,19 @@ get no `llm_call` hook and **no LLM tokens on the ledger**, because the SDK
 half of it never sees them.
 
 Call the callback once per model call with an object carrying these
-attributes. `ObservabilityManager.record_llm_call` reads the first eight
-without guards, so they must exist; `UsageReporter.record_llm` reads the rest
-via `getattr` with defaults.
+attributes. `observability/__init__.py::ObservabilityManager.record_llm_call`
+reads nine of them without guards: it passes them straight into the `llm_call`
+hook fire, which has no `getattr` and no `try/except`, and which
+`Session.__init__` always arms with a `fire_hook`. Miss one and the first
+in-turn LLM call raises `AttributeError` — superdialog's
+`toolcall_adapter.py::ToolCallAdapter.generate_reply` awaits the callback
+unguarded, so it propagates into the turn.
+
+The two cache counters are the tolerant pair, and the tolerance does not live
+in `usage.py`: the `_llm_cb` closure inside the
+`connectivity/session.py::Session.dialog_machine` setter reads `cached`,
+`cache_write` and the token counts via `getattr` with defaults before passing
+them as plain keywords to `connectivity/usage.py::UsageReporter.record_llm`.
 
 | Attribute | Required | Used for |
 |---|---|---|
@@ -178,12 +188,20 @@ via `getattr` with defaults.
 | `model` | Yes | Span model, and the provider/model split for billing |
 | `prompt_messages`, `response_json` | Yes | Span input/output |
 | `tokens_in`, `tokens_out` | Yes | Span usage plus billable counters |
+| `edge_id` | Yes — the value may be `None`, the attribute may not be absent | Forwarded on the `llm_call` hook |
 | `cached`, `cache_write` | No (default `0`) | Prompt-cache read/write counters |
-| `edge_id` | No | Forwarded on the `llm_call` hook |
 
 That is superdialog's `machine/adapters/toolcall_adapter.py::LLMCallData`
-shape. Reuse it or mirror it. The callback is a no-op outside a turn —
-`record_llm_call` returns early when no turn span is open.
+shape, `edge_id: str | None` included — a field with no default, so the
+dataclass enforces the same rule. Reuse it or mirror it.
+
+Fire it inside a turn. `record_llm_call` returns early only while
+`_current_turn_id` is `None`, which is true just once: before the first
+`start_turn`. `ObservabilityManager.end_turn` clears `_current_span` but never
+`_current_turn_id`, so from turn 2 onward a callback fired between turns is
+recorded and attributed to the *previous* turn id. That early return also
+covers the observability half alone — `_llm_cb` calls `record_llm` after
+awaiting `record_llm_call`, so the tokens reach the usage ledger either way.
 
 ### `mark_interrupted` — keeping the transcript honest
 
@@ -212,13 +230,20 @@ async def entrypoint(ctx: CallContext) -> None:
     await ctx.session.run()
 ```
 
-The `Session.dialog_machine` setter does three things, in order:
+The `Session.dialog_machine` setter dispatches on what you assign, then wires
+the LLM callback if the adapter exposes one. The dispatch is a three-way
+branch:
 
 | Assigned value | Result |
 |---|---|
 | A `superdialog` `DialogMachine` or `LLMAgent` | Auto-wrapped in `SuperDialogAdapter` |
 | Anything passing `isinstance(x, DialogAdapter)` | Used as-is |
 | Anything else | `TypeError` |
+
+The second step is the `hasattr(adapter, "register_llm_callback")` probe
+described [above](#register_llm_callback--what-wires-observability-and-billing):
+whichever branch produced the adapter, this is where observability and billing
+get attached.
 
 Auto-wrap detection (`connectivity/session.py::_is_superdialog_type`) is by
 class module and name — the class must live under a `superdialog` module and
