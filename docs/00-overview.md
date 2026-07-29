@@ -99,7 +99,12 @@ the one knob both bases are *derived* from
 `https://<host>/platform` for the management plane,
 `https://<host>/api/v2/platform` for the telephony plane. Derivation is all it
 does — setting it is not by itself enough to make every resource reachable
-(see the wrinkle below).
+(see the wrinkle below). Per-component overrides still win over the derived
+value where they are set (`_base_url.py` module docstring): the one that
+matters here is **`UNPOD_SERVICE_BASE_URL`**, the management base, resolved
+`base_url=` arg → `UNPOD_SERVICE_BASE_URL` → derived from `UNPOD_BASE_URL` →
+`https://api.unpod.ai/platform` (`client.py::AsyncClient.__init__`). The Agent
+Runner has its own (`UNPOD_ORCHESTRATOR_URL`, `connectivity/runner.py`).
 
 | Namespace | Plane | What it does |
 |---|---|---|
@@ -118,15 +123,22 @@ serves every management resource.** `client.pipes`, `client.calls` and
 (`/api/v2/platform/speech/v1/...`, plus `/api/v2/platform/telephony/...` for
 `numbers.list`, `delete`, `release` and `attach`), while `client.sessions`,
 `client.recordings`, `client.transcripts`, `client.api_keys` and
-`client.trunks` request bare `/v1/...` — and every one of them shares the same
-HTTP client (`client.py::AsyncClient.__init__`). Whichever value of
+`client.trunks` request bare `/v1/...` — and they share the same HTTP client
+(`client.py::AsyncClient.__init__`); session lifecycle ops
+(`management/sessions.py::SessionsResource.end`, `.transfer`, `.merge`)
+additionally run on a second client whose base swaps a trailing `/platform`
+for `/orchestrator` and otherwise reuses the same value
+(`UNPOD_ORCHESTRATOR_BASE_URL` overrides it) — so a 404 there is a different
+base from the rest of the table. Whichever value of
 `UNPOD_SERVICE_BASE_URL` you pick, one of the two halves breaks; against a
 locally started supervoice, neither half works.
 [01-quickstart.md § Known gaps](01-quickstart.md#known-gaps) records the
-workaround the verified run used and what a real fix requires. The two planes,
-their auth precedence (`UNPOD_PLATFORM_TOKEN` silently beats `UNPOD_API_KEY`),
-and which numbers API to use are covered in
-[02-management-sdk.md](02-management-sdk.md).
+workaround the verified run used and what a real fix requires.
+[02-management-sdk.md](02-management-sdk.md) is the resource-by-resource
+reference, but it predates this canon: it covers only the management plane
+(no `client.telephony`, no `UNPOD_PLATFORM_TOKEN`) and its examples still set
+the base URL this section calls broken — take the two planes, the auth
+precedence and the numbers split from here, not from there.
 
 ### Connectivity runtime (WSS)
 
@@ -134,8 +146,13 @@ The runtime classes exported at top level (`src/unpod/__init__.py`, which
 also exports the auth classes): **`AgentRunner`** — the
 long-lived process that registers under your `agent_id` and receives calls;
 **`Session`** — the per-call object with hooks and controls; **`CallContext`**
-— the per-call metadata envelope handed to your entrypoint. Details in
-[03-connectivity-sdk.md](03-connectivity-sdk.md).
+— the per-call metadata envelope handed to your entrypoint.
+[03-connectivity-sdk.md](03-connectivity-sdk.md) covers all three, but it
+predates this canon on hooks and is not authoritative on which ones fire:
+`HookRegistry` accepts any name in `connectivity/hooks.py::VALID_EVENTS`, so
+registration succeeds for hooks nothing ever raises. Check the `fire()` calls
+in `connectivity/session.py` (and `observability/__init__.py`) before building
+on a hook.
 
 ### Adapters
 
@@ -151,8 +168,13 @@ implementing the `DialogAdapter` protocol (`adapters/__init__.py`):
 | `OpenAIAdapter` | an `openai.AsyncOpenAI` client you construct | core (bring `openai`) |
 | `AnthropicAdapter` | an `anthropic.AsyncAnthropic` client you construct | core (bring `anthropic`) |
 
-On a live call the hot path is `stream()`, not `turn()` — see
-[04-adapters.md](04-adapters.md) before writing a custom adapter.
+On a live call the hot path is `stream()`, not `turn()` — `adapters/base.py`
+says so outright ("`turn()` … not called during live calls";
+"`stream()` … THIS is the hot path called by `session.run()`").
+[04-adapters.md](04-adapters.md) has the protocol shape and the per-adapter
+options, but it predates this canon and leads with `turn()` as the contract:
+read it with that inversion in mind, and take `stream()` as the method to
+implement first in a custom adapter.
 
 ## Installation
 
@@ -169,8 +191,8 @@ pip install "unpod[observability]"  # + Langfuse tracing (LANGFUSE_SECRET_KEY)
 | Doc | Content |
 |---|---|
 | [01-quickstart.md](01-quickstart.md) | Install → Pipe → Agent Runner → number → first call, transcribed from a live verified run |
-| [02-management-sdk.md](02-management-sdk.md) | Both REST planes, auth precedence, which numbers API to use |
-| [03-connectivity-sdk.md](03-connectivity-sdk.md) | `AgentRunner`, `Session`, the hooks that actually fire |
-| [04-adapters.md](04-adapters.md) | `DialogAdapter` protocol, the six adapters, `stream()` as the hot path |
+| [02-management-sdk.md](02-management-sdk.md) | **Pending revamp — predates this canon.** Resource-by-resource management-plane reference; never mentions `client.telephony` or `UNPOD_PLATFORM_TOKEN`, and its setup examples still use `UNPOD_SERVICE_BASE_URL=http://localhost:8000/platform` — the value the wrinkle above and [01 § Known gaps](01-quickstart.md#known-gaps) (#1) call broken |
+| [03-connectivity-sdk.md](03-connectivity-sdk.md) | **Pending revamp — predates this canon.** `AgentRunner` / `Session` reference; documents `user_partial`, `silence`, `tool_call` and `tool_result` hooks that no `fire()` call in `connectivity/session.py` ever raises, plus `session.enable_partial_transcripts()` (zero occurrences in `src/`), and omits `state` and `error`, which do fire |
+| [04-adapters.md](04-adapters.md) | **Pending revamp — predates this canon.** `DialogAdapter` protocol reference; says the SDK ships four adapters (six are exported) and presents `turn()` as "the contract every adapter must satisfy", inverting the `stream()` hot path stated in `adapters/base.py` |
 | [05-architecture.md](05-architecture.md) | **Pending revamp — predates this canon.** Frame-level bridge/dispatch reference; says "brain" and "media worker", omits `telephony/` and the `openai.py`/`anthropic.py` adapters, still documents `serve`-mode frames |
 | [06-browser-quickstart.md](06-browser-quickstart.md) | Talk to your agent from a browser |
