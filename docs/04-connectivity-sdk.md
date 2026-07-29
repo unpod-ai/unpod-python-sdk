@@ -216,26 +216,36 @@ event.source` — note it does *not* match the field order of the event model.
 The SDK types all four as plain `str` (`unpod/_protocol.py::ErrorEvent`); the
 enumerations come from the Speech Worker, which sends `severity` ∈ `warn`,
 `error`, `fatal` and `source` ∈ `stt`, `tts`, `transport`, `internal`
-(supervoice `worker/bridge/protocol.py::ErrorEvent`). `code` is a free-form
-string — `stt.processing_failed` and `<source>.pipeline_error` are the ones the
-worker emits today, and the second reaches you only as `stt.pipeline_error` or
-`tts.pipeline_error`. A failure in any *other* processor does not merely go
-undelivered — it breaks the worker:
-`worker/bridge/processor.py::AgentBridgeProcessor.process_frame` derives the
-source from the failing processor's class name and falls back to `pipeline`,
-then calls `emit_error(...)`, which builds `ErrorEvent(source="pipeline")`
-before the `try` that guards the send — and neither of its early returns saves
-you on a live call: the bridge client is attached, and `error` is always
-negotiated, because the SDK's hello advertises it (`connectivity/bridge.py`)
-and the worker's supported-event set contains it
-(`worker/bridge/client.py::negotiate_from_hello`). `ErrorEvent.source` is
+(supervoice `worker/bridge/protocol.py::ErrorEvent`). `code` is free-form.
+The worker's emitters, and what each one sends:
+
+| Emitter | `code` | `severity` | `source` |
+|---|---|---|---|
+| `worker/bridge/processor.py::AgentBridgeProcessor._dispatch_turn` — the `user.text` send failed (same code from the echo-mode branch of `process_frame`) | `stt.processing_failed` | `error` | `stt` |
+| `AgentBridgeProcessor.process_frame` — a pipeline `ErrorFrame`, source derived from the failing processor's class name | `<source>.pipeline_error` | `error` when `frame.fatal`, else `warn` | `stt`, `tts`, or `pipeline` † |
+| `worker/agent_adapter.py::AgentAdapter._emit_bridge_error` — call teardown; three call sites | `transport.lost` / `transport.join_timeout` / `transport.participant_timeout` (from `_fail_transport`), or `pipeline.error` / `pipeline.service_error` (the pipeline task raising, and the `on_pipeline_error` handler) | `fatal` | `transport`, or `pipeline` † |
+
+That teardown row is the **only** path by which `severity="fatal"` or
+`source="transport"` ever reaches you — instrument for both.
+
+† `pipeline` is not a member of `ErrorEvent.source`, which is
 `Literal["stt", "tts", "transport", "internal"]`
-(`worker/bridge/protocol.py::ErrorEvent`), so pydantic raises `ValidationError`
-out of `emit_error` and out of `process_frame` — a live exception inside the
-Speech Worker's own frame pipeline, not a silent drop. You see no `error` hook
-either way; the difference is that the worker is now in trouble. Tracked in
-[Known gaps](#known-gaps) as a supervoice bug. **Any error frame ends the
-session loop**, including `severity="warn"`.
+(`worker/bridge/protocol.py::ErrorEvent`), so constructing the event raises
+`ValidationError` inside `emit_error` — before the `try` that guards the send,
+and past both of its early returns, neither of which saves you on a live call:
+the bridge client is attached, and `error` is always negotiated, because the
+SDK's hello advertises it
+(`connectivity/bridge_server.py::_SUPPORTED_EVENTS`) and the worker's
+supported-event set contains it
+(`worker/bridge/client.py::negotiate_from_hello`). No `error` hook fires either
+way; what differs is the blast radius. `_emit_bridge_error` wraps its call in
+`contextlib.suppress(Exception)`, so a `pipeline`-sourced teardown error is
+merely dropped on this wire — the same `JobError` still reaches the platform on
+the job's completion report. `process_frame` has no such guard: there the
+`ValidationError` propagates out of the Speech Worker's own frame pipeline,
+which is why the [Known gaps](#known-gaps) row calls that one a supervoice bug.
+
+**Any error frame ends the session loop**, including `severity="warn"`.
 
 ```python
 async def entrypoint(ctx: CallContext) -> None:
@@ -341,7 +351,7 @@ dialed into the same room, so the caller hears the ringing and the
 **Destination policy is the Speech Worker's, and it is opt-in.** The target is
 LLM-chosen and therefore prompt-injectable, so the check runs worker-side —
 never in the SDK and never in your prompt (supervoice
-`worker/agent_adapter.py::VoiceAgentAdapter._handle_transfer`). What it does
+`worker/agent_adapter.py::AgentAdapter._handle_transfer`). What it does
 *not* do is restrict destinations by default:
 
 | `transfer_type` | Always checked | Allowlist |
