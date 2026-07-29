@@ -1,6 +1,18 @@
 # Quickstart — 10 Steps to Your First Call
 
-> **Archived 2026-07-28 — superseded by [../01-quickstart.md](../01-quickstart.md); contains known inaccuracies** (hot reload, `system_prompt` on `pipes.create`, and `numbers.sync()` returning a list — none exist in code).
+> **Archived 2026-07-28 — superseded by [../01-quickstart.md](../01-quickstart.md);
+> the flow below does not run.** Three of its API claims are fictional: hot
+> reload on `dev_mode` (step 10 — `connectivity/runner.py::AgentRunner.__init__`
+> has no reload machinery), `system_prompt` / `first_message` / `first_speaker`
+> on `pipes.create` (step 6 — `management/pipes.py::PipesResource.create` takes
+> none of them), and `numbers.sync()` returning a list of numbers (step 3 — it
+> returns a summary dict). Two more steps fail against the code as it stands:
+> step 1's `UNPOD_SERVICE_BASE_URL="http://localhost:8000/platform"` 404s every
+> management call, because the resource paths now begin `/api/v2/platform/...`
+> and compose onto that base as a doubled prefix; and the step-5/step-6 pair
+> never rendezvous, because `dev_mode=True` puts the runner in pool
+> `agent_id@dev` (`connectivity/runner.py::AgentRunner.__init__`) while the Pipe
+> binds the plain `agent_id`.
 
 Target: under 10 minutes from install to a live voice call.
 

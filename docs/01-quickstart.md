@@ -11,16 +11,19 @@ your code); a **Playbook** is a SuperDialog artifact an Agent Runner executes.
 
 ## How this doc was verified
 
-Every code block below either ran in the live verification run, or carries an
-explicit *"verified against code, not yet run live"* marker. The run's
+Every code block below that calls the SDK either ran in the live verification
+run, or carries an explicit *"verified against code, not yet run live"* marker.
+The one exception is the step-1 configuration block: it shows the values a
+hosted deployment wants, not the ones the run used — the run pointed every
+plane at `http://localhost:8000` through the per-component overrides. The run's
 environment had no SIP trunk and no Speech Worker, so the final audio leg
 (the actual PSTN dial) is static-only; everything up to and including the
 orchestrator picking the Agent Runner ran live. The SDK's management wrappers
 (`pipes.*`, `calls.*`, `numbers.*`) carry markers because of known gap #1
 below — their request bodies were executed live against the platform's own API
-instead, and succeeded. The live run used `agent_id="docs-quickstart-run"` throughout; the
-blocks below rename it `my-voice-agent` and change nothing else, so verbatim
-outputs (worker JSON, ids) show the run's name.
+instead, and succeeded. The live run used `agent_id="docs-quickstart-run"`
+throughout; the blocks below rename it `my-voice-agent` and change nothing
+else, so verbatim outputs (worker JSON, ids) show the run's name.
 
 ## 0 — Install
 
@@ -320,10 +323,17 @@ Both were hit live in the verification run and are tracked for fixes; the
 markers above exist because of them.
 
 1. **SDK management paths vs. the derived base URL.** `management/pipes.py`,
-   `management/calls.py` and `management/numbers.py` carry the hosted proxy's
-   full prefix (`/api/v2/platform/speech/...`) inside every request path, while
+   `management/calls.py` and `management/numbers.py` carry an
+   `/api/v2/platform/...` prefix inside every request path, while
    `_base_url.py::service_base` derives `https://<host>/platform` — the two
-   compose into a doubled prefix no deployment serves. The step-1 workaround
+   compose into a doubled prefix no deployment serves. `numbers` additionally
+   straddles two planes: only `management/numbers.py::NumbersResource.sync` and
+   `::NumbersResource.detach` take the proxy's `/api/v2/platform/speech/v1/...`,
+   while `::list`, `::delete`, `::release` and `::attach` post backend-core's
+   telephony plane at `/api/v2/platform/telephony/numbers/...` — yet all six run
+   on `_http` (base `<host>/platform`) rather than the `_platform_http` client
+   that already derives `<host>/api/v2/platform`
+   (`client.py::AsyncClient.__init__`). The step-1 workaround
    (`UNPOD_SERVICE_BASE_URL=<bare host>` + platform-token auth) reaches the
    backend-core proxy, but it is a workaround, not a fix: it simultaneously
    breaks the resources still on the direct path scheme
@@ -332,9 +342,12 @@ markers above exist because of them.
    resources at `/platform/v1/...` with no proxy in front — no base URL value
    works at all. That is why the verification run drove pipes/calls against the
    platform's own API directly (the transcript shows the exact requests). Fix =
-   make `service_base()` and the resource paths agree; `tests/test_management.py`
-   still asserts the pre-migration `/v1/...` paths and fails, which is the same
-   drift seen from the other side. `management/voice_profiles.py` is a separate
+   make `service_base()` and the resource paths agree — which settles `pipes`
+   and `calls`, but not `numbers`: because that module spans both planes, no
+   single base makes it coherent until its telephony methods move to
+   `_platform_http`. `tests/test_management.py` still asserts the pre-migration
+   `/v1/...` paths and fails, which is the same drift seen from the other side.
+   `management/voice_profiles.py` is a separate
    case: its paths are correct for the plane it reads, and its only constraint
    is the org-scoped auth noted in step 2.
 2. **Outbound publish gate.** `calls.create` requires a Playbook published with
@@ -346,5 +359,13 @@ markers above exist because of them.
 ## Next
 
 - [00-overview.md](00-overview.md) — what Unpod owns vs. what you own.
+- [03-connectivity-sdk.md](03-connectivity-sdk.md) — `AgentRunner` and the full
+  `Session` surface beyond the `say`/`run` pair used in step 3: hooks, live
+  controls, reconnection.
+- [04-adapters.md](04-adapters.md) — what the agent actually says: the
+  `DialogAdapter` slot behind `ctx.session.dialog_machine`, and the bundled
+  adapters.
+- [02-management-sdk.md](02-management-sdk.md) — the rest of the REST surface
+  (trunks, sessions, recordings, transcripts) behind steps 2, 4, 5 and 7.
 - The full verification transcript:
   [plans/2026-07-28-quickstart-run.md](plans/2026-07-28-quickstart-run.md).
