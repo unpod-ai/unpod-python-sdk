@@ -20,7 +20,7 @@ behind NAT needs no port forward, no tunnel and no public URL.
 
 | | Local Agent Runner | Publish |
 |---|---|---|
-| Who starts the process | You: `AgentRunner(...).start()` | Unpod |
+| Who starts the process | You: `AgentRunner(...).start()` | Unpod — but the binding that makes this automatic is not wired yet (below) |
 | What it runs | Any Python — your entrypoint, any adapter, your own LLM keys | A published Playbook |
 | SDK surface | `unpod.AgentRunner` | None today: `publish` appears nowhere under `src/unpod` |
 | Where the code lives | Your machine or your server | Unpod's playbook-pool runners |
@@ -32,8 +32,26 @@ Publishing is a platform action, not an SDK call. `POST
 `platform/routers/playbooks.py::publish_playbook`) promotes the draft source,
 derives an `agent_id` from the playbook slug, stamps it on both the playbook
 and its Pipe, and — when a logged-in owner publishes — provisions the Pipe and
-claims a number. An Unpod-side Agent Runner then serves that `agent_id`. Note
-that `enable_endpoint=True` is a *separate* door (the OpenAI-compatible
+claims a number.
+
+That handle routes a call only if an Agent Runner is already registered under
+*exactly* that string — a slug-derived `agent_id` gets no playbook-pool
+fallback (supervoice `orchestrator/brain_resolver.py::pool_agent_chain`: only
+a `pool@…` handle expands to `[pool@{org}, unpod-playbook-pool]`). A pool
+process registers under whatever `POOL_AGENT_ID` it is started with
+(`playbook_pool/config.py`; supervoice's own `run-pool.sh` annotates the
+variable "must equal `pipe.agent_id`"), and the production convention is the
+pool form `pool@{org}` / `unpod-playbook-pool`
+(`publish/service.py::pool_agent_id`). Putting `pool@{org}` on the Pipe is the
+job of the publish saga (`publish/orchestrator.py::run_publish_saga`), which
+today has no caller outside `publish/` — no production route reaches it. So a
+publish produces the Pipe, the number and the handle, but *someone still has
+to run a process registered under that handle*: treat hosted operation as the
+intended end state, not as something publish alone delivers today. Supervoice
+`docs/03-publish-and-runners.md` draws the same contrast between its §1.1
+(route path, slug handle) and §1.2 (saga, `pool@{org}` handle).
+
+Note that `enable_endpoint=True` is a *separate* door (the OpenAI-compatible
 endpoint): a plain voice-agent publish never sets it, which is exactly the flag
 outbound `calls.create` gates on — see
 [01-quickstart.md § Known gaps](01-quickstart.md#known-gaps) (#2).
@@ -142,10 +160,17 @@ runner is registered under the `agent_id` — a single runner is a single point
 of failure.
 
 **Dialling the call.** Once accepted, the runner dials the Speech Worker's
-bridge with up to 3 attempts and a short backoff (0.2s, 0.4s), covering the
-pre-handshake window only — a transient network error, or a pairing the worker
-registers a beat after the ack (`AgentRunner._dial_for_job`). A `job.cancel`
-frame cancels the job task whether it is dialling or in-call.
+bridge with up to 3 attempts and a short backoff (0.2s, 0.4s)
+(`AgentRunner._dial_for_job`). The retry is *aimed* at the pre-handshake
+window — a transient network error, or a pairing the worker registers a beat
+after the ack — but it wraps the whole `dial_bridge(...)` call, and
+`connectivity/bridge_server.py::handle_bridge_connection` re-raises after
+stamping `final_state="failed"`. So a **mid-call** raise out of your entrypoint
+is retried too: the runner redials the same `bridge_url` and `call_token` (the
+worker-side pairing stays valid for the job lifetime), and your entrypoint can
+therefore run up to three times for one call. Write it to be safe to re-enter,
+or catch your own exceptions. A `job.cancel` frame cancels the job task
+whether it is dialling or in-call.
 
 **In-flight calls survive control drops.** Each call rides its own bridge
 socket, so losing the orchestrator connection does not end conversations
@@ -177,9 +202,11 @@ dials in (teardown scheduled); passing `serving_url` or `agent_secret` under
 `dial_out` raises a `DeprecationWarning` because the runner never listens
 (`AgentRunner.__init__`).
 
-**Shutdown.** `await runner.shutdown()` stops the heartbeat loop and waits
-`drain_timeout_s` (default 60) for in-flight calls — see Known gaps for what it
-does not yet do.
+**Shutdown.** `await runner.shutdown()` sets `_shutting_down` (which ends the
+heartbeat loop at the top of its next interval) and then sleeps the full
+`drain_timeout_s` (default 60) if any call is in flight — it does not poll for
+drain, so a 2-second call still blocks the caller for the whole 60s, and it
+does not cancel job tasks. See Known gaps for the rest.
 
 ## What `call_end` tells you
 
@@ -202,7 +229,10 @@ Three consequences worth internalising:
   `session.end("completed")` reports `"hangup"`.
 - **The runner pair is about your code, not the call.** `"failed"` means the
   entrypoint raised, which is why an entrypoint that swallows its own
-  exceptions will always report `"ended"`.
+  exceptions will always report `"ended"`. It also fires **once per entrypoint
+  run, not once per call**: because a raise triggers a redial (see *Dialling
+  the call*), one call whose entrypoint keeps raising fires `"failed"` up to
+  three times.
 - **Ordering.** The session hook fires inside `Session.run()`, the runner hook
   after the entrypoint returns — so a normal call reports `"hangup"` then
   `"ended"`. A session hook only fires at all if your entrypoint calls
@@ -233,7 +263,10 @@ table.*
 
 `runner.stats()` complements the hooks with a live snapshot — `in_flight`,
 `completed_last_hour`, `failed_last_hour`, `capacity`,
-`mean_call_duration_s` — accumulated by the same `_track_call_end`.
+`mean_call_duration_s` — accumulated by the same `_track_call_end`. Read the
+counters with the redial caveat above in mind: `mean_call_duration_s` sums the
+connected duration of *every* call, failed ones included, but divides by
+`completed_last_hour` only, so retried failures pull it upward.
 
 ## Known gaps
 
@@ -243,7 +276,8 @@ Verified dead or incomplete surface, so you do not build on it:
 |---|---|
 | `permits_per_minute` | Constructor parameter stored on `self._permits_per_minute` and never read. Not a rate limit; sets nothing |
 | `RunnerStats.queued` | Hardcoded `0` in `AgentRunner.stats`. Never reflects queued work |
-| `shutdown()` | Ends the heartbeat loop and drains in-flight calls, but does not close the legacy `serve`-mode listening socket — its own `TODO` |
+| `shutdown()` | Sets `_shutting_down`, then sleeps the whole `drain_timeout_s` if any call is in flight: no drain polling, no job-task cancellation, and `_control_recv_loop` stays blocked in `ws.recv()`. It also does not close the legacy `serve`-mode listening socket — its own `TODO` |
+| Retry-inflated counters | A raising entrypoint is redialled up to 3× for one call, so `call_end("failed")` and `failed_last_hour` count entrypoint failures, not calls, and `mean_call_duration_s` divides every call's duration by the *completed* count alone (`AgentRunner._track_call_end`, `AgentRunner.stats`) |
 | Mid-call redial | A dropped bridge mid-call is not redialled. `Session.run` swallows a transport drop as a normal end, so the dialer cannot tell a drop from a hangup; the worker-side pairing stays valid for the job lifetime so a future redial can work (`AgentRunner._dial_for_job` docstring) |
 
 ## Roadmap
