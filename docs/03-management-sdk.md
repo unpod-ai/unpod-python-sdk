@@ -7,7 +7,7 @@ recordings, transcripts, API keys. The surface spans **two independent planes**
 one decision that matters most is which of the **two number surfaces** you use:
 the answer is `client.telephony.numbers.attach`. The runtime half of the SDK —
 `AgentRunner`, the per-call `Session`, hooks — is a different package and lives
-in [03-connectivity-sdk.md](03-connectivity-sdk.md).
+in [04-connectivity-sdk.md](04-connectivity-sdk.md).
 
 Read the docs in the order *00 overview → 01 quickstart → 02 run-your-agent →
 03 management (this doc) → connectivity → adapters*; the filenames on disk are
@@ -349,7 +349,7 @@ live object.
 
 | Type | Import | What it is |
 |---|---|---|
-| `Session` (runtime) | `from unpod import Session` → `connectivity/session.py::Session` | The per-call object your entrypoint drives: `say`, `run`, `transfer`, hooks, `dialog_machine`. Documented in [03-connectivity-sdk.md](03-connectivity-sdk.md) |
+| `Session` (runtime) | `from unpod import Session` → `connectivity/session.py::Session` | The per-call object your entrypoint drives: `say`, `run`, `transfer`, hooks, `dialog_machine`. Documented in [04-connectivity-sdk.md](04-connectivity-sdk.md) |
 | `Session` (REST DTO) | `from unpod.models import Session` → `models/session.py::Session` | What `sessions.list` / `.get`, `recordings.list` and `transcripts.list` / `.get` return: `session_id`, `status`, `transcript`, `recording_url`, timings |
 | `OrchestratorSession` | `from unpod.models import OrchestratorSession` → `models/orchestrator_session.py::OrchestratorSession` | The orchestrator's own session shape (`tenant_id`, `state`, `participants`). Modelled and exported, but no resource method returns it today |
 
@@ -566,7 +566,7 @@ connectivity runtime (`connectivity/metrics.py::MetricsTracker.live`,
   resources appear in, plus the two known gaps referenced above.
 - [02-run-your-agent.md](02-run-your-agent.md) — the `agent_id` you attach
   numbers to, and the process that registers it.
-- [03-connectivity-sdk.md](03-connectivity-sdk.md) — the runtime `Session`, not
+- [04-connectivity-sdk.md](04-connectivity-sdk.md) — the runtime `Session`, not
   the REST one.
 - [00-overview.md](00-overview.md) — the planes, the terminology canon, and what
   Unpod owns versus what you own.

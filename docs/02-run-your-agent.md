@@ -295,10 +295,9 @@ Verified dead or incomplete surface, so you do not build on it:
 
 - [01-quickstart.md](01-quickstart.md) — the runner in context: Pipe, number,
   first call.
-- [03-connectivity-sdk.md](03-connectivity-sdk.md) — the full `AgentRunner` and
-  `Session` surface. **Pending revamp:** it documents hooks nothing fires; take
-  hook behaviour from this doc and from the `fire()` calls in
-  `connectivity/session.py`.
+- [04-connectivity-sdk.md](04-connectivity-sdk.md) — the full `AgentRunner` and
+  `Session` reference: every constructor parameter, the hooks that fire (and
+  the four that never do), controls and transfers.
 - [04-adapters.md](04-adapters.md) — what the agent says once a call lands.
 - [00-overview.md](00-overview.md) — what Unpod owns vs. what you own, and the
   terminology canon.

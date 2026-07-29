@@ -406,7 +406,7 @@ markers above exist because of them.
 ## Next
 
 - [00-overview.md](00-overview.md) — what Unpod owns vs. what you own.
-- [03-connectivity-sdk.md](03-connectivity-sdk.md) — `AgentRunner` and the full
+- [04-connectivity-sdk.md](04-connectivity-sdk.md) — `AgentRunner` and the full
   `Session` surface beyond the `say`/`run` pair used in step 3: hooks, live
   controls, reconnection.
 - [04-adapters.md](04-adapters.md) — what the agent actually says: the

@@ -39,7 +39,7 @@ it is the outbound publish gate in
 
 Runner registration, `worker_id` reconnection, and pooling several runners
 under one `agent_id` are covered in
-[03-connectivity-sdk.md](03-connectivity-sdk.md).
+[04-connectivity-sdk.md](04-connectivity-sdk.md).
 
 ## How a call reaches your code
 
@@ -146,12 +146,12 @@ also exports the auth classes): **`AgentRunner`** — the
 long-lived process that registers under your `agent_id` and receives calls;
 **`Session`** — the per-call object with hooks and controls; **`CallContext`**
 — the per-call metadata envelope handed to your entrypoint.
-[03-connectivity-sdk.md](03-connectivity-sdk.md) covers all three, but it
-predates this canon on hooks and is not authoritative on which ones fire:
-`HookRegistry` accepts any name in `connectivity/hooks.py::VALID_EVENTS`, so
-registration succeeds for hooks nothing ever raises. Check the `fire()` calls
-in `connectivity/session.py` (and `observability/__init__.py`) before building
-on a hook.
+[04-connectivity-sdk.md](04-connectivity-sdk.md) covers all three, including
+the one trap worth knowing up front: `HookRegistry` accepts any name in
+`connectivity/hooks.py::VALID_EVENTS`, so registration succeeds for four hooks
+that nothing ever raises. That doc splits the hooks that fire from the ones
+that do not, against the `fire()` calls in `connectivity/session.py` and
+`observability/__init__.py`.
 
 ### Adapters
 
@@ -191,7 +191,7 @@ pip install "unpod[observability]"  # + Langfuse tracing (LANGFUSE_SECRET_KEY)
 |---|---|
 | [01-quickstart.md](01-quickstart.md) | Install → Pipe → Agent Runner → number → first call, transcribed from a live verified run |
 | [03-management-sdk.md](03-management-sdk.md) | Resource-by-resource REST reference for both planes: the `client.telephony.numbers.attach` verdict and its platform-agent precondition, auth precedence (`UNPOD_PLATFORM_TOKEN` beats `UNPOD_API_KEY`), the base-URL split above carried as a known gap, the per-plane number-status vocabularies, and the three unrelated types named `Session` |
-| [03-connectivity-sdk.md](03-connectivity-sdk.md) | **Pending revamp — predates this canon.** `AgentRunner` / `Session` reference; documents `user_partial`, `silence`, `tool_call` and `tool_result` hooks that no `fire()` call in `connectivity/session.py` ever raises, plus `session.enable_partial_transcripts()` (zero occurrences in `src/`), and omits `state` and `error`, which do fire |
+| [04-connectivity-sdk.md](04-connectivity-sdk.md) | `AgentRunner` / `Session` reference: constructor parameters, runner stats, `CallContext`, the ten hooks that actually fire (including `state` and `error`) versus the four that never do, controls, transfers, and the broken surface (`set_filler`, `recording.*`, `metrics.live()`) called out as gaps |
 | [04-adapters.md](04-adapters.md) | **Pending revamp — predates this canon.** `DialogAdapter` protocol reference; says the SDK ships four adapters (six are exported) and presents `turn()` as "the contract every adapter must satisfy", inverting the `stream()` hot path stated in `adapters/base.py` |
 | [05-architecture.md](05-architecture.md) | **Pending revamp — predates this canon.** Frame-level bridge/dispatch reference; says "brain" and "media worker", omits `telephony/` and the `openai.py`/`anthropic.py` adapters, still documents `serve`-mode frames |
 | [06-browser-quickstart.md](06-browser-quickstart.md) | Talk to your agent from a browser |
