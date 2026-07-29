@@ -1,5 +1,25 @@
 # Browser Quickstart — Test Your Agent in Chrome
 
+> **Archived 2026-07-29 — the bring-up below does not run.** Step 3 points at
+> `auto_rl`, an unrelated project with no `run.py`; step 2's `.env.example`
+> lives at `examples/browser_playground/.env.example`, not the repo root; and
+> the UI is served on `:9100`, not `:9000` (`:9000` is the supervoice dev
+> speech app's `/connect` + `/ws/audio`). The steps are also not repairable in
+> isolation: the dev speech app registers runners through
+> `supervoice/dev/relay.py::workers_endpoint`, which acknowledges registration
+> without a `transport_ack`, and a default (`dial_out`) runner rejects that
+> handshake — `connectivity/runner.py::AgentRunner._control_session` raises
+> "orchestrator did not acknowledge dial_out transport". Fixing that is a code
+> change, not a doc change.
+>
+> **The maintained browser path** is the in-repo example
+> [`examples/browser_playground/`](../examples/browser_playground/README.md):
+> `task playground` serves the UI on `:9100` and runs the agent, against a
+> supervoice dev speech app started separately with
+> `uv run uvicorn supervoice.dev.app:create_dev_app --factory --port 9000`.
+> Its README is the current source of truth; this page is kept only for the
+> links that still point at it.
+
 The fastest way to test a voice agent: no phone number, no telephony setup.
 The browser connects via WebSocket audio directly to `supervoice`, which routes
 speech to your `AgentRunner` over the bridge protocol.
@@ -101,7 +121,7 @@ POST /connect?agent_id=X      → supervoice.dev — returns { ws_url }
 WS   /ws/audio                → supervoice.dev — audio pipeline (STT/TTS)
 WS   /v1/internal/workers     → supervoice.dev — AgentRunner registers here (persistent)
 WS   /bridge/agent            → supervoice.dev — per-call bridge (SDK side)
-WS   /bridge/voice            → supervoice.dev — per-call bridge (pipecat side)
+WS   /bridge/voice            → supervoice.dev — per-call bridge (Speech Worker side)
 ```
 
 Your code only touches `WS /v1/internal/workers`. Everything else is internal.

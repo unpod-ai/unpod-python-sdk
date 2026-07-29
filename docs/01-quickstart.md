@@ -105,7 +105,7 @@ from unpod import AsyncClient
 client = AsyncClient()
 pipe = await client.pipes.create(
     name="my-voice-agent",
-    voice_profile="Alloy",        # optional; a catalog *name*, resolved server-side
+    voice_profile="Alloy",        # optional; catalog name or profile_id
     agent_id="my-voice-agent",    # must match your AgentRunner's agent_id
     recording=False,
     max_call_duration_s=600,
@@ -131,8 +131,12 @@ Notes, all observed live:
 - There is **no** `system_prompt`, `first_message`, or `first_speaker`
   parameter. What the agent says lives in your entrypoint code (step 3), not
   in the Pipe.
-- `voice_profile` is optional at create time and validated **by name** against
-  the catalog; an unknown name fails with `voice_profile_not_found`.
+- `voice_profile` is optional at create time and accepts **either a catalog
+  name or a `profile_id`**: supervoice
+  `platform/routers/pipes.py::_resolve_voice_profile` tries `profile_id` first,
+  then a case-insensitive `name` match, then imports the name from the Django
+  voice catalog. Only a value none of those three resolve fails, with
+  `voice_profile_not_found`.
 - `client.voice_profiles.list(language="en")` reads the telephony plane, which
   is org-scoped: it needs `UNPOD_PLATFORM_TOKEN` auth and is unreachable with
   only a Bearer `UNPOD_API_KEY`.
@@ -168,8 +172,14 @@ platform returned:
 ```json
 {"worker_id": "docs-quickstart-run#d4d4d4fd", "pool": "docs-quickstart-run",
  "max_concurrent": 1, "active_jobs": 0, "has_capacity": true,
- "agent_id": "docs-quickstart-run", "transport": "dial_out"}
+ "agent_id": "docs-quickstart-run", "transport": "dial_out", "…": "…"}
 ```
+
+Two always-present fields are elided from that block: `voice_profiles` — `[]`
+for an SDK runner, which sends an empty list
+(`connectivity/runner.py::AgentRunner._build_register`) — and
+`last_heartbeat_age_s`, a per-request float. The complete response shape is
+supervoice `orchestrator/api/workers.py::WorkerView`.
 
 (The entrypoint body itself did not execute in the run — no call reached the
 runner because the media leg was rejected, see step 6. Its surface —
@@ -247,12 +257,19 @@ Two gates were observed live before the 201, in order:
 
 1. `no_from_number` — the Pipe had no attached number and no `from_number=`
    was passed. The run cleared it by passing `from_number=` explicitly.
-2. `playbook_not_published` — outbound dispatch currently requires a
-   **published Playbook** whose `agent_id` matches the Pipe's
-   (supervoice `telephony/calls/service.py::create_call`). A live Agent
-   Runner registered under that `agent_id` does not satisfy the gate on its
-   own. Publish a Playbook whose slug equals your `agent_id`, then create the
-   call. Known gap #2.
+2. `playbook_not_published` — outbound dispatch currently requires a Playbook
+   published **as an endpoint**. The lookup in supervoice
+   `telephony/calls/service.py::create_call` matches on three conditions at
+   once: `agent_id` equal to the Pipe's, `endpoint_enabled: True`, and a
+   non-empty `source`. Two things therefore do *not* satisfy it — a live Agent
+   Runner registered under that `agent_id`, and a plain voice-agent publish:
+   `platform/routers/playbooks.py::publish_playbook` writes `endpoint_enabled`
+   only when the publish request carries `enable_endpoint=true`
+   (Deploy-as-Endpoint), and never sets the key otherwise. So: publish a
+   Playbook whose slug equals your `agent_id`, **with `enable_endpoint=true`**,
+   then create the call. (The slug→`agent_id` link is automatic —
+   `publish_playbook` slugifies the playbook's `slug` and stamps the result on
+   both the playbook and its pipe.) Known gap #2.
 
 ## 6 — What happens after the 201
 
@@ -320,9 +337,11 @@ markers above exist because of them.
    drift seen from the other side. `management/voice_profiles.py` is a separate
    case: its paths are correct for the plane it reads, and its only constraint
    is the org-scoped auth noted in step 2.
-2. **Outbound publish gate.** `calls.create` requires a published Playbook for
-   the target `agent_id`; a registered Agent Runner alone is rejected with
-   `playbook_not_published`.
+2. **Outbound publish gate.** `calls.create` requires a Playbook published with
+   `enable_endpoint=true` for the target `agent_id` — the query wants
+   `endpoint_enabled: True` *and* a non-empty `source`. A registered Agent
+   Runner alone, or a Playbook published as a plain voice agent (which never
+   sets `endpoint_enabled`), is rejected with `playbook_not_published`.
 
 ## Next
 

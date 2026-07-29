@@ -43,21 +43,29 @@ unpod
 
 ## Quick Example
 
+Configure once — the [Quickstart](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/01-quickstart.md)
+explains why the REST base is the **bare host** (`pipes`/`calls`/`numbers` spell
+the full `/api/v2/platform/speech/...` prefix inside their own request paths, so
+the derived `https://<host>/platform` base would double it):
+
+```bash
+export UNPOD_BASE_URL="https://api.unpod.ai"          # one knob for the rest
+export UNPOD_SERVICE_BASE_URL="https://api.unpod.ai"  # bare host: pipes/calls/numbers
+export UNPOD_PLATFORM_TOKEN="..."                     # org-scoped REST auth
+export UNPOD_ORG_HANDLE="your-org"
+export UNPOD_API_KEY="sk_..."                         # AgentRunner (Bearer)
+```
+
 ```python
 from unpod import AsyncClient, AgentRunner, CallContext
 
-client = AsyncClient()  # direct → supervoice; reads UNPOD_API_KEY from env
-
-# Or go through the unpod backend-core proxy (platform JWT + org), same calls:
-#   from unpod import JWTAuth
-#   client = AsyncClient(base_url="https://app.unpod.ai/api/v2/platform/speech",
-#                        auth=JWTAuth(token="<jwt>", org_handle="acme"))
+client = AsyncClient()  # picks up the env above; token auth wins over UNPOD_API_KEY
 
 # Management: pick a voice, bind a Speech Pipe to your agent
 profiles = await client.voice_profiles.list(language="en")
 pipe = await client.pipes.create(
     name="support-line",
-    voice_profile=profiles[0].id,
+    voice_profile=profiles[0].id,   # a catalog name works too
     agent_id="my-voice-agent",
 )
 
@@ -71,6 +79,10 @@ async def entrypoint(ctx: CallContext) -> None:
 AgentRunner(entrypoint=entrypoint, agent_id="my-voice-agent").start()
 ```
 
+`voice_profiles` and `client.telephony.*` read the org-scoped platform plane, so
+they need `UNPOD_PLATFORM_TOKEN` + `UNPOD_ORG_HANDLE` — a Bearer `UNPOD_API_KEY`
+alone cannot reach them.
+
 ## Documentation
 
 | Guide | What it covers |
@@ -81,7 +93,14 @@ AgentRunner(entrypoint=entrypoint, agent_id="my-voice-agent").start()
 | [Management SDK](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/02-management-sdk.md) | REST client API reference |
 | [Connectivity SDK](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/03-connectivity-sdk.md) | AgentRunner, Session, hooks, controls |
 | [Adapters](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/04-adapters.md) | DialogAdapter protocol and bundled adapters |
-| [Browser Quickstart](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/06-browser-quickstart.md) | Test in Chrome, no phone number needed |
+
+Numbering note: Quickstart and Architecture both sit at `01` while the docs
+spine is renumbered (`00-overview` → `06-deployment`). Read the table order, not
+the filename prefixes, until that lands.
+
+Testing in a browser (no phone number): see
+[`examples/browser_playground/`](examples/browser_playground/README.md).
+`docs/06-browser-quickstart.md` is archived — its bring-up steps do not run.
 
 Full platform documentation: [docs.unpod.ai](https://docs.unpod.ai)
 
