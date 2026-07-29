@@ -87,8 +87,10 @@ live-verified on a pipe update in the same run (transcript, stage 3).*
 The signature has one more optional parameter, not shown: `agent_endpoint`, a
 static runner URL the platform falls back to when no live Agent Runner is
 registered under the pipe's `agent_id` (supervoice
-`telephony/inbound/handler.py::handle_inbound_join`). This quickstart does not
-need it.
+`telephony/inbound/handler.py::handle_inbound_join`). That fallback takes the
+legacy `serve` transport — the platform connects *to* your URL — so it needs a
+publicly reachable server and is not a stand-in for the `dial_out` runner of
+step 3. This quickstart does not need it.
 
 Notes, all observed live:
 
