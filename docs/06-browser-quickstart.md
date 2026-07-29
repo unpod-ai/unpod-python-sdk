@@ -116,4 +116,4 @@ When you're happy with the agent behaviour, move to production:
 2. Replace `api_key="dev-key"` with your real `UNPOD_API_KEY`
 3. Purchase a number and bind the Speech Pipe via the Management SDK
 
-See [Quickstart](05-quickstart.md) for the full telephony path.
+See [Quickstart](01-quickstart.md) for the full telephony path.

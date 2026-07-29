@@ -76,11 +76,11 @@ AgentRunner(entrypoint=entrypoint, agent_id="my-voice-agent").start()
 | Guide | What it covers |
 |-------|----------------|
 | [Overview](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/00-overview.md) | What Unpod owns vs what you own, the three layers |
+| [Quickstart](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/01-quickstart.md) | Install to a dispatched call, transcribed from a live run |
 | [Architecture](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/01-architecture.md) | Package structure, data flow, protocol details |
 | [Management SDK](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/02-management-sdk.md) | REST client API reference |
 | [Connectivity SDK](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/03-connectivity-sdk.md) | AgentRunner, Session, hooks, controls |
 | [Adapters](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/04-adapters.md) | DialogAdapter protocol and bundled adapters |
-| [Quickstart](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/05-quickstart.md) | 10 steps to your first phone call |
 | [Browser Quickstart](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/06-browser-quickstart.md) | Test in Chrome, no phone number needed |
 
 Full platform documentation: [docs.unpod.ai](https://docs.unpod.ai)

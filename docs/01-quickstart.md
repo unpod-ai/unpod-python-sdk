@@ -16,9 +16,9 @@ explicit *"verified against code, not yet run live"* marker. The run's
 environment had no SIP trunk and no Speech Worker, so the final audio leg
 (the actual PSTN dial) is static-only; everything up to and including the
 orchestrator picking the Agent Runner ran live. The SDK's management wrappers
-(`pipes.*`, `calls.*`) carry markers because of known gap #1 below — their
-request bodies were executed live against the platform's own API instead, and
-succeeded. The live run used `agent_id="docs-quickstart-run"` throughout; the
+(`pipes.*`, `calls.*`, `numbers.*`) carry markers because of known gap #1
+below — their request bodies were executed live against the platform's own API
+instead, and succeeded. The live run used `agent_id="docs-quickstart-run"` throughout; the
 blocks below rename it `my-voice-agent` and change nothing else, so verbatim
 outputs (worker JSON, ids) show the run's name.
 
@@ -37,27 +37,61 @@ verification run used an editable install.*
 ```bash
 export UNPOD_BASE_URL="https://api.unpod.ai"   # or your deployment's host
 export UNPOD_API_KEY="sk_..."
+
+# Bare host: what pipes/calls/numbers need instead of the derived base URL.
+export UNPOD_SERVICE_BASE_URL="https://api.unpod.ai"   # no path segment
+# Org-scoped auth for the REST planes. (The AgentRunner in step 3 is the one
+# thing that still wants UNPOD_API_KEY: it sends it as a Bearer token.)
+export UNPOD_PLATFORM_TOKEN="..."                      # DRF token
+export UNPOD_ORG_HANDLE="your-org"
 ```
 
-`UNPOD_BASE_URL` is the single configuration knob: every endpoint the SDK
-touches is derived from it in `_base_url.py` —
+`UNPOD_BASE_URL` is the single configuration knob for three of the four
+surfaces; every endpoint the SDK touches is derived from it in `_base_url.py` —
 
-| Surface | Derived from `UNPOD_BASE_URL` |
-|---|---|
-| Management REST (`client.pipes`, `client.calls`, …) | `https://<host>/platform` |
-| Orchestrator WebSocket (`AgentRunner`) | `wss://<host>` |
-| Telephony / voice-profile plane (`client.telephony`, `client.voice_profiles`) | `https://<host>/api/v2/platform` |
+| Surface | Derived from `UNPOD_BASE_URL` | Usable as derived? |
+|---|---|---|
+| Orchestrator WebSocket (`AgentRunner`) | `wss://<host>` | yes |
+| Telephony / voice-profile plane (`client.telephony`, `client.voice_profiles`) | `https://<host>/api/v2/platform` | yes |
+| Management REST, direct-supervoice paths (`client.sessions`, `client.transcripts`, `client.recordings`, `client.api_keys`, `client.trunks`) | `https://<host>/platform` | yes |
+| Management REST, proxy paths (`client.pipes`, `client.calls`, `client.numbers`) | `https://<host>/platform` | **no** — override with the bare host |
+
+The last row is the one this quickstart leans on hardest. `pipes`, `calls` and
+`numbers` spell the hosted proxy's full prefix inside their own request paths —
+`management/pipes.py::PipesResource.create` posts
+`/api/v2/platform/speech/v1/pipes` — and httpx appends that to the base, so the
+derived `https://<host>/platform` yields
+`https://<host>/platform/api/v2/platform/speech/v1/pipes`, a doubled prefix no
+deployment serves. Setting `UNPOD_SERVICE_BASE_URL` to the bare host (the shape
+the SDK's own fixture uses in `tests/test_management.py`) makes those paths land
+on the real route: unpod backend-core mounts `api/v2/platform/speech/` at host
+root (`config/urls.py`) and its `v1/pipes`, `v1/calls`, `v1/numbers/sync` routes
+forward verbatim to supervoice `/platform/v1/...` (`unpod/speech/urls.py`).
+
+Three consequences, all load-bearing:
+
+- That proxy authenticates with a DRF token or a platform JWT and resolves your
+  org from `Org-Handle` (`unpod/speech/views.py::PipesViewSet`), so
+  `UNPOD_PLATFORM_TOKEN` + `UNPOD_ORG_HANDLE` is what reaches it. A Bearer
+  `UNPOD_API_KEY` is rejected there.
+- The bare-host override breaks the third row in the other direction: those
+  resources post `/v1/...` and need the `/platform` base. No single base URL
+  serves both halves today — known gap #1.
+- Against a **locally started supervoice**, with no backend-core proxy in front,
+  neither value works for `pipes`/`calls`/`numbers`; the verification run drove
+  those resources against the platform's own API instead.
 
 Per-component overrides (`UNPOD_SERVICE_BASE_URL`, `UNPOD_ORCHESTRATOR_URL`,
-`UNPOD_PLATFORM_BASE_URL`) still win when set — the verification run used them
+`UNPOD_PLATFORM_BASE_URL`) always win when set — the verification run used them
 to point every plane at `http://localhost:8000`.
 
-> **Auth precedence warning.** If `UNPOD_PLATFORM_TOKEN` is set anywhere in
-> your environment, it silently beats `UNPOD_API_KEY`: the client switches to
-> token auth scoped by `UNPOD_ORG_HANDLE` and never sends your Bearer api key
-> (`client.py::AsyncClient.__init__`). Seeing 401s with a valid api key?
-> Check for a stray `UNPOD_PLATFORM_TOKEN` first. Note the SDK also calls
-> `load_dotenv()` on import, so a `.env` file in your working directory counts.
+> **Auth precedence.** `UNPOD_PLATFORM_TOKEN` beats `UNPOD_API_KEY` whenever
+> it is set: the client switches to token auth scoped by `UNPOD_ORG_HANDLE` and
+> never sends your Bearer api key (`client.py::AsyncClient.__init__`). That is
+> the auth this quickstart wants — but it is silent, so if you *meant* to hit
+> supervoice directly in Bearer mode and see org-scoped 401s, check for an
+> inherited `UNPOD_PLATFORM_TOKEN` first. The SDK also calls `load_dotenv()` on
+> import, so a `.env` file in your working directory counts as "set".
 
 ## 2 — Create a Pipe
 
@@ -183,7 +217,11 @@ summary = await client.numbers.sync()
 print(summary)                    # {"synced": 12, "new": 2}
 ```
 
-*Verified against code, not yet run live.*
+*Verified against code, not yet run live via the SDK (known gap #1).
+`management/numbers.py::NumbersResource.sync` posts
+`/api/v2/platform/speech/v1/numbers/sync` — the same proxy path scheme as
+`pipes`/`calls`, so it needs the bare-host base of step 1 and 404s on the
+derived one.*
 
 ## 5 — Make an outbound call
 
@@ -218,7 +256,9 @@ Two gates were observed live before the 201, in order:
 
 ## 6 — What happens after the 201
 
-Observed live (with the platform's queue in inline-dispatch mode):
+Steps 1-5 were observed live (with the platform's queue in inline-dispatch
+mode); the media leg was not — the run had no Speech Worker and no SIP trunk,
+so the last three arrows are the design, not the transcript:
 
 ```mermaid
 sequenceDiagram
@@ -227,11 +267,12 @@ sequenceDiagram
     participant O as Orchestrator
     participant R as Your Agent Runner
     participant W as Speech Worker
-    S->>P: POST calls (agent_id or pipe_id)
-    P->>P: resolve Pipe, from_number + publish gates
-    P-->>S: 201 status=pending
-    P->>O: dispatch
-    O->>R: picks your Agent Runner by agent_id (dial_out)
+    S->>P: 1. POST calls (agent_id or pipe_id)
+    P->>P: 2. resolve Pipe, from_number + publish gates
+    P-->>S: 3. 201 status=pending
+    P->>O: 4. dispatch
+    O->>R: 5. picks your Agent Runner by agent_id (dial_out)
+    Note over O,W: below this line - not observed in the run
     O->>W: picks a Speech Worker (STT/TTS, joins the room)
     R->>W: runner dials the worker's bridge - text only
     W->>W: audio <-> PSTN via SIP trunk
@@ -261,14 +302,24 @@ run with terminal status (transcript, stage 6).*
 Both were hit live in the verification run and are tracked for fixes; the
 markers above exist because of them.
 
-1. **SDK management paths vs. a directly served platform.** The management
-   wrappers (`management/pipes.py`, `management/calls.py`,
-   `management/voice_profiles.py`) target the hosted proxy's path scheme
-   (`/api/v2/platform/...`). Against a locally started platform, which serves
-   the same resources under `/platform/v1/...`, every pipes/calls/voice-profiles
-   call 404s regardless of base URL. Until fixed, exercise those resources
-   against the platform's own API when running locally (the transcript shows
-   the exact requests).
+1. **SDK management paths vs. the derived base URL.** `management/pipes.py`,
+   `management/calls.py` and `management/numbers.py` carry the hosted proxy's
+   full prefix (`/api/v2/platform/speech/...`) inside every request path, while
+   `_base_url.py::service_base` derives `https://<host>/platform` — the two
+   compose into a doubled prefix no deployment serves. The step-1 workaround
+   (`UNPOD_SERVICE_BASE_URL=<bare host>` + platform-token auth) reaches the
+   backend-core proxy, but it is a workaround, not a fix: it simultaneously
+   breaks the resources still on the direct path scheme
+   (`sessions`, `transcripts`, `recordings`, `api_keys`, `trunks` post
+   `/v1/...`), and against a locally started supervoice — which serves these
+   resources at `/platform/v1/...` with no proxy in front — no base URL value
+   works at all. That is why the verification run drove pipes/calls against the
+   platform's own API directly (the transcript shows the exact requests). Fix =
+   make `service_base()` and the resource paths agree; `tests/test_management.py`
+   still asserts the pre-migration `/v1/...` paths and fails, which is the same
+   drift seen from the other side. `management/voice_profiles.py` is a separate
+   case: its paths are correct for the plane it reads, and its only constraint
+   is the org-scoped auth noted in step 2.
 2. **Outbound publish gate.** `calls.create` requires a published Playbook for
    the target `agent_id`; a registered Agent Runner alone is rejected with
    `playbook_not_published`.
