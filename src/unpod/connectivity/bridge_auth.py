@@ -27,6 +27,10 @@ import time
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from unpod._logging import get_logger
+
+logger = get_logger("bridge.auth")
+
 # Default replay window: a signed URL is valid for +/- this many ms.
 _DEFAULT_MAX_SKEW_MS = 30_000
 
@@ -82,19 +86,45 @@ def verify_signed_url(
     """
     # Replay-by-nonce: reject before doing any crypto.
     if nonce in seen_nonces:
+        logger.warning(
+            "bridge auth: REPLAY rejected session_id=%s job_id=%s "
+            "(nonce already used on this runner)",
+            session_id,
+            job_id,
+        )
         return False
 
     # Freshness: reject timestamps outside the skew window.
     current_ms = now_ms if now_ms is not None else int(time.time() * 1000)
     if abs(current_ms - ts) > max_skew_ms:
+        logger.warning(
+            "bridge auth: STALE rejected session_id=%s job_id=%s — timestamp "
+            "is %dms off (window ±%dms); check clock sync between the worker "
+            "and this runner",
+            session_id,
+            job_id,
+            current_ms - ts,
+            max_skew_ms,
+        )
         return False
 
     # Authenticity: constant-time compare against the recomputed HMAC.
     expected = _expected_signature(secret, session_id, job_id, nonce, ts)
     if not hmac.compare_digest(expected, signature):
+        # Never log either signature — only the fact that they differ.
+        logger.warning(
+            "bridge auth: BAD SIGNATURE rejected session_id=%s job_id=%s — "
+            "the agent secret differs between the worker and this runner "
+            "(UNPOD_AGENT_SECRET)",
+            session_id,
+            job_id,
+        )
         return False
 
     seen_nonces.add(nonce)
+    logger.debug(
+        "bridge auth: accepted session_id=%s job_id=%s", session_id, job_id
+    )
     return True
 
 
@@ -129,15 +159,24 @@ def verify_connection(
     """
     query = parse_qs(urlparse(_connection_path(ws)).query)
     values: dict[str, str] = {}
+    missing = [k for k in _REQUIRED_PARAMS if not query.get(k)]
+    if missing:
+        logger.warning(
+            "bridge auth: rejected — connect URL is missing %s. An unsigned "
+            "dial reaching a runner that HAS an agent secret configured looks "
+            "like this (a proxy dropping the query string does too)",
+            ", ".join(missing),
+        )
+        return False
     for key in _REQUIRED_PARAMS:
-        got = query.get(key)
-        if not got:
-            return False
-        values[key] = got[0]
+        values[key] = query[key][0]
 
     try:
         ts = int(values["ts"])
     except ValueError:
+        logger.warning(
+            "bridge auth: rejected — 'ts' is not an integer (%r)", values["ts"]
+        )
         return False
 
     return verify_signed_url(

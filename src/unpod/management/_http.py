@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 import httpx
 
+from unpod._logging import get_logger
 from unpod.management._auth import Auth
+
+logger = get_logger("http")
 
 
 def unwrap_data(resp: dict | list) -> dict | list:
@@ -62,16 +66,51 @@ class AsyncHTTPClient:
     async def _ensure_client(self) -> httpx.AsyncClient:
         """Lazily create the underlying httpx client."""
         if self._client is None:
+            logger.debug(
+                "http client created base_url=%s timeout=%s",
+                self._base_url,
+                self._timeout,
+            )
             self._client = httpx.AsyncClient(
                 base_url=self._base_url,
                 timeout=self._timeout,
             )
         return self._client
 
+    @staticmethod
+    def _log_response(resp: Any) -> None:
+        """Log one HTTP exchange before ``raise_for_status`` fires.
+
+        Errors log the response body (truncated): the API puts the actual
+        reason there, and ``httpx.HTTPStatusError`` alone only says "404 Not
+        Found for url …", which is rarely enough to act on. Never raises —
+        a logging failure must not mask the real HTTP error.
+        """
+        try:
+            status = getattr(resp, "status_code", 0)
+            request = getattr(resp, "request", None)
+            method = getattr(request, "method", "?")
+            url = getattr(request, "url", "?")
+            if not isinstance(status, int):
+                return  # a test double, not a real response
+            if status < 400:
+                logger.debug("http %s %s -> %s", method, url, status)
+                return
+            body = ""
+            try:
+                body = (resp.text or "")[:300]
+            except Exception:  # noqa: BLE001
+                body = "<unreadable body>"
+            log = logger.warning if status < 500 else logger.error
+            log("http %s %s -> %s %s", method, url, status, body)
+        except Exception:  # noqa: BLE001 — never mask the HTTP error
+            pass
+
     async def get(self, path: str, params: dict[str, str] | None = None) -> dict | list:
         """Send a GET request and return parsed JSON response."""
         client = await self._ensure_client()
         resp = await client.get(path, headers=self._headers(), params=params)
+        self._log_response(resp)
         resp.raise_for_status()
         return resp.json()  # type: ignore[no-any-return]
 
@@ -79,6 +118,7 @@ class AsyncHTTPClient:
         """Send a POST request and return parsed JSON response."""
         client = await self._ensure_client()
         resp = await client.post(path, headers=self._headers(), json=json)
+        self._log_response(resp)
         resp.raise_for_status()
         return resp.json()  # type: ignore[no-any-return]
 
@@ -86,6 +126,7 @@ class AsyncHTTPClient:
         """Send a PUT request and return parsed JSON response."""
         client = await self._ensure_client()
         resp = await client.put(path, headers=self._headers(), json=json)
+        self._log_response(resp)
         resp.raise_for_status()
         return resp.json()  # type: ignore[no-any-return]
 
@@ -93,6 +134,7 @@ class AsyncHTTPClient:
         """Send a PATCH request and return parsed JSON response."""
         client = await self._ensure_client()
         resp = await client.patch(path, headers=self._headers(), json=json)
+        self._log_response(resp)
         resp.raise_for_status()
         return resp.json()  # type: ignore[no-any-return]
 
@@ -100,12 +142,14 @@ class AsyncHTTPClient:
         """Send a DELETE request (no response body)."""
         client = await self._ensure_client()
         resp = await client.delete(path, headers=self._headers())
+        self._log_response(resp)
         resp.raise_for_status()
 
     async def delete_with_response(self, path: str) -> dict:
         """Send a DELETE request and return parsed JSON response."""
         client = await self._ensure_client()
         resp = await client.delete(path, headers=self._headers())
+        self._log_response(resp)
         resp.raise_for_status()
         return resp.json()  # type: ignore[no-any-return]
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Callable, Coroutine
 
+from unpod._logging import get_logger
 from unpod._protocol import (
     AgentEndCallVerb,
     AgentSayVerb,
@@ -20,6 +21,8 @@ from unpod.observability import ObservabilityManager
 
 if TYPE_CHECKING:
     from unpod.connectivity.bridge import BridgeClient
+
+logger = get_logger("session")
 
 
 class RecordingControl:
@@ -124,10 +127,12 @@ class Session:
 
     async def say(self, text: str) -> None:
         """Speak text immediately via the bridge."""
+        logger.info("verb agent.say: %r", text[:120])
         await self._bridge.send_verb(AgentSayVerb(text=text))
 
     async def interrupt(self) -> None:
         """Interrupt the current agent utterance."""
+        logger.info("verb agent.interrupt")
         await self._bridge.send_verb(AgentTextEndEvent())
 
     async def set_filler(self, text: str) -> None:
@@ -150,6 +155,14 @@ class Session:
         REFER when the trunk supports it). The worker enforces a destination
         allowlist before dialing; on success the agent's job ends.
         """
+        logger.info(
+            "verb agent.transfer type=%s mode=%s target=%s%s "
+            "(the worker enforces the destination allowlist)",
+            transfer_type,
+            mode,
+            target,
+            " with announcement" if announcement else "",
+        )
         await self._bridge.send_verb(
             AgentTransferVerb(
                 transfer_type=transfer_type,
@@ -177,6 +190,7 @@ class Session:
 
     async def end(self, reason: str = "completed") -> None:
         """End the call with the given reason."""
+        logger.info("verb agent.end_call reason=%s", reason)
         await self._bridge.send_verb(AgentEndCallVerb(reason=reason))
 
     async def _handle_passive_event(self, event: Any) -> bool:
@@ -268,6 +282,10 @@ class Session:
         )
 
         await self._hooks.fire("call_start")
+        logger.info(
+            "session loop start (dialog_adapter=%s)",
+            type(self._dialog_adapter).__name__ if self._dialog_adapter else "none",
+        )
         _ended_by_error: bool = False
         pending: deque[Any] = deque()  # dialog events deferred during a stream
         carried: asyncio.Task[Any] | None = None  # in-flight recv, never cancelled
@@ -277,6 +295,7 @@ class Session:
                 if pending:
                     event = pending.popleft()
                 elif recv_failed:
+                    logger.info("session loop exiting: bridge recv failed mid-turn")
                     break
                 else:
                     try:
@@ -285,7 +304,18 @@ class Session:
                             carried = None
                         else:
                             event = await self._bridge.recv_event()
-                    except Exception:
+                    except Exception as e:
+                        # This is the normal end of EVERY call (the worker
+                        # closes the socket at hangup), so it is INFO, not an
+                        # error — but it must not be invisible: an early exit
+                        # here is also what a mid-call bridge drop looks like.
+                        logger.info(
+                            "session loop exiting: bridge closed (%s: %s) "
+                            "after %d turn(s)",
+                            type(e).__name__,
+                            e,
+                            self._turn_counter,
+                        )
                         break
 
                 if await self._handle_passive_event(event):
@@ -296,6 +326,19 @@ class Session:
                     language = (getattr(event, "extra", None) or {}).get("language")
                     await self._hooks.fire("user_turn", text)
                     self._turn_counter += 1
+                    logger.info(
+                        "turn %d user: %r%s",
+                        self._turn_counter,
+                        text[:120],
+                        f" (lang={language})" if language else "",
+                    )
+                    if self._dialog_adapter is None:
+                        logger.warning(
+                            "turn %d: no dialog adapter attached — the user "
+                            "said something and nothing will reply "
+                            "(set session.dialog_machine or handle user_turn)",
+                            self._turn_counter,
+                        )
                     if self._dialog_adapter is not None:
                         turn_id = self._turn_counter
                         self._obs.start_turn(turn_id, text)
@@ -367,7 +410,19 @@ class Session:
                             # turn gate on text.end).
                             await self._bridge.send_verb(AgentTextEndEvent())
                             if full_text:
+                                logger.info(
+                                    "turn %d agent: %r", turn_id, full_text[:120]
+                                )
                                 await self._hooks.fire("agent_turn", full_text)
+                            else:
+                                # An empty turn is a silent bot from the
+                                # caller's perspective — always worth a line.
+                                logger.warning(
+                                    "turn %d agent produced NO text "
+                                    "(interrupted, or the dialog adapter "
+                                    "yielded nothing)",
+                                    turn_id,
+                                )
                         finally:
                             # Never leak the chunk task / generator on an
                             # exceptional exit (e.g. send_verb failing
@@ -422,6 +477,14 @@ class Session:
 
                 elif isinstance(event, ErrorEvent):
                     _ended_by_error = True
+                    logger.error(
+                        "worker reported error code=%s severity=%s source=%s: %s "
+                        "— ending the session",
+                        event.code,
+                        event.severity,
+                        event.source,
+                        event.message,
+                    )
                     await self._hooks.fire(
                         "error",
                         event.code,
@@ -438,7 +501,11 @@ class Session:
                 carried.cancel()
                 with contextlib.suppress(BaseException):
                     await carried
-            await self._hooks.fire("call_end", "error" if _ended_by_error else "hangup")
+            outcome = "error" if _ended_by_error else "hangup"
+            logger.info(
+                "session loop ended outcome=%s turns=%d", outcome, self._turn_counter
+            )
+            await self._hooks.fire("call_end", outcome)
             # Flush the session's accumulated LLM usage to the cloud ledger
             # (best-effort; no-op unless configured).
             await self._usage.flush()

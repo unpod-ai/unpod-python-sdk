@@ -17,8 +17,11 @@ from __future__ import annotations
 from typing import Awaitable, Callable
 from urllib.parse import urlencode, urlparse, urlunparse
 
+from unpod._logging import get_logger, redact_url
 from unpod.connectivity.bridge_server import handle_bridge_connection
 from unpod.connectivity.call_context import CallContext
+
+logger = get_logger("bridge.dialer")
 
 
 def _with_token(bridge_url: str, call_token: str) -> str:
@@ -48,13 +51,21 @@ async def dial_bridge(
     """Dial the worker's bridge and drive one call to completion."""
     import websockets
 
+    safe_url = redact_url(bridge_url)
+    logger.debug(
+        "connecting to %s (open_timeout=%.1fs)", safe_url, connect_timeout_s
+    )
     async with websockets.connect(
         _with_token(bridge_url, call_token), open_timeout=connect_timeout_s
     ) as ws:
-        await handle_bridge_connection(
-            ws,
-            entrypoint=entrypoint,
-            agent_id=agent_id,
-            on_call_start=on_call_start,
-            on_call_end=on_call_end,
-        )
+        logger.info("bridge socket open %s", safe_url)
+        try:
+            await handle_bridge_connection(
+                ws,
+                entrypoint=entrypoint,
+                agent_id=agent_id,
+                on_call_start=on_call_start,
+                on_call_end=on_call_end,
+            )
+        finally:
+            logger.debug("bridge socket closing %s", safe_url)

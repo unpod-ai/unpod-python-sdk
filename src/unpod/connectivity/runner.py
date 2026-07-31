@@ -15,6 +15,7 @@ from typing import Any, Awaitable, Callable
 from urllib.parse import urlparse
 
 from unpod._base_url import ws_base
+from unpod._logging import close_code_of, get_logger, redact_url
 from unpod._protocol import (
     Heartbeat,
     JobAck,
@@ -29,6 +30,30 @@ from unpod.connectivity.bridge_server import handle_bridge_connection
 from unpod.connectivity.call_context import CallContext
 from unpod.connectivity.hooks import HookRegistry
 from unpod.models.session import RunnerStats
+
+
+logger = get_logger("runner")
+
+# Control-socket close codes that mean "do not bother retrying": the
+# orchestrator rejected the credential (4001) or applied a policy (1008). A
+# silent reconnect loop on a bad API key is indistinguishable from a network
+# outage, which is exactly the debugging dead end this avoids.
+_FATAL_CLOSE_CODES = frozenset({1008, 4001})
+
+
+class RunnerAuthError(ConnectionError):
+    """The orchestrator refused this runner's credential. Not retriable."""
+
+
+# Worker-side bridge acceptor close codes, translated into the action to take.
+# Without these a failed dial reads as a bare "connection closed".
+_DIAL_CLOSE_HINTS = {
+    4003: (
+        "worker rejected the pairing: unknown call_id, expired pairing "
+        "(the dial arrived >20s after dispatch), or bad call_token"
+    ),
+    4009: "worker already has a live bridge socket for this call",
+}
 
 
 def _is_ip_literal(host: str) -> bool:
@@ -111,6 +136,12 @@ class AgentRunner:
         self._jobs: dict[str, asyncio.Task] = {}
         self._backoff_initial_s = 1.0
         self._backoff_max_s = 30.0
+        if transport == "serve" and not self._serving_url:
+            raise ValueError(
+                "transport='serve' requires serving_url (or UNPOD_RUNNER_URL): "
+                "the orchestrator has no way to reach this runner without it "
+                "and refuses the registration"
+            )
         if transport == "dial_out" and (serving_url or agent_secret):
             warnings.warn(
                 "serving_url/agent_secret are ignored with the dial_out "
@@ -198,9 +229,24 @@ class AgentRunner:
             await self._run_legacy_serve()
             return
 
+        logger.info(
+            "runner starting worker_id=%s agent_id=%s pool=%s transport=%s "
+            "max_concurrent=%d orchestrator=%s",
+            self._worker_id,
+            self._agent_id,
+            self._pool,
+            self._transport,
+            self._max_concurrent,
+            self._orchestrator_url,
+        )
         attempt = 0
         while not self._shutting_down:
             try:
+                logger.info(
+                    "control: connecting to %s (attempt %d)",
+                    self._orchestrator_url,
+                    attempt + 1,
+                )
                 async with websockets.connect(
                     self._orchestrator_url,
                     additional_headers={
@@ -208,15 +254,47 @@ class AgentRunner:
                     },
                 ) as ws:
                     attempt = 0  # connected: reset the backoff ladder
+                    logger.info("control: connected worker_id=%s", self._worker_id)
                     await self._control_session(ws)
+                    logger.warning(
+                        "control: session ended worker_id=%s (will reconnect); "
+                        "in-flight calls: %d",
+                        self._worker_id,
+                        len(self._active_calls),
+                    )
             except _TransportRejected:
+                logger.error(
+                    "control: orchestrator rejected transport=%s — not retriable",
+                    self._transport,
+                )
                 raise
-            except Exception:  # noqa: BLE001 — network errors: retry
-                pass
+            except Exception as e:  # noqa: BLE001 — network errors: retry
+                code = close_code_of(e)
+                if code in _FATAL_CLOSE_CODES:
+                    # Retrying cannot fix a refused credential; surface it
+                    # instead of looping forever with nothing in the log.
+                    logger.error(
+                        "control: orchestrator refused the connection "
+                        "(close %d) — check UNPOD_API_KEY; not retrying",
+                        code,
+                    )
+                    raise RunnerAuthError(
+                        f"orchestrator refused the runner credential (close {code})"
+                    ) from e
+                logger.warning(
+                    "control: link failed (%s: %s%s)",
+                    type(e).__name__,
+                    e,
+                    f", close={code}" if code is not None else "",
+                )
             if self._shutting_down:
                 return
             attempt += 1
-            await asyncio.sleep(self._next_backoff(attempt))
+            delay = self._next_backoff(attempt)
+            logger.info(
+                "control: reconnecting in %.1fs (attempt %d)", delay, attempt + 1
+            )
+            await asyncio.sleep(delay)
 
     async def _run_legacy_serve(self) -> None:
         """Legacy server model (transport="serve") — pre-v2 body, verbatim.
@@ -243,6 +321,7 @@ class AgentRunner:
                         "max_concurrent": self._max_concurrent,
                         "agent_id": self._agent_id,
                         "serving_url": self._serving_url,
+                        "kind": "brain",
                     },
                 )
                 await ws.send(register.model_dump_json())
@@ -274,6 +353,11 @@ class AgentRunner:
                 "max_concurrent": self._max_concurrent,
                 "agent_id": self._agent_id,
                 "transport": self._transport,
+                # Role discriminator: this process is a BRAIN (agent runner),
+                # never a media/speech worker. The orchestrator infers the same
+                # from agent_id when absent, but declaring it makes a
+                # mis-advertisement fail at Register instead of at dispatch.
+                "kind": "brain",
             },
         )
 
@@ -286,12 +370,31 @@ class AgentRunner:
 
     async def _control_session(self, ws: Any) -> None:
         """One connected control session: register, then heartbeat + recv."""
-        await ws.send(self._build_register().model_dump_json())
+        register = self._build_register()
+        logger.info(
+            "control: register worker_id=%s pool=%s agent_id=%s transport=%s",
+            register.worker_id,
+            register.pool,
+            self._agent_id,
+            self._transport,
+        )
+        await ws.send(register.model_dump_json())
         frame = parse_dispatch_frame(await ws.recv())
         if not isinstance(frame, Registered):
+            logger.error(
+                "control: expected 'registered', got %r — orchestrator refused "
+                "the register frame (check pool/agent_id and capabilities)",
+                getattr(frame, "type", type(frame).__name__),
+            )
             raise ConnectionError(
                 f"Expected Registered, got {type(frame).__name__}"
             )
+        logger.info(
+            "control: registered worker_id=%s heartbeat=%ds transport_ack=%s",
+            self._worker_id,
+            frame.heartbeat_interval_s,
+            frame.transport_ack,
+        )
         if frame.transport_ack != "dial_out":
             raise _TransportRejected(
                 "orchestrator did not acknowledge dial_out transport — "
@@ -314,6 +417,11 @@ class AgentRunner:
                 await self._handle_assign(ws, frame)
             elif isinstance(frame, JobCancel):
                 task = self._jobs.pop(frame.job_id, None)
+                logger.info(
+                    "job.cancel job_id=%s (%s)",
+                    frame.job_id,
+                    "cancelling live job" if task is not None else "unknown job",
+                )
                 if task is not None:
                     task.cancel()
 
@@ -325,6 +433,18 @@ class AgentRunner:
             # _jobs covers accepted-but-still-dialing AND in-call jobs;
             # _active_calls alone would undercount during a dial burst.
             reason = "at_capacity"
+        logger.info(
+            "job.assign job_id=%s call_id=%s agent_id=%s bridge=%s -> %s%s "
+            "(jobs %d/%d)",
+            assign.job_id,
+            assign.call_id,
+            assign.agent_id,
+            redact_url(assign.bridge_url),
+            "accepted" if reason is None else "rejected",
+            f" ({reason})" if reason else "",
+            len(self._jobs),
+            self._max_concurrent,
+        )
         ack = JobAck(
             job_id=assign.job_id,
             assign_id=assign.assign_id,
@@ -354,8 +474,16 @@ class AgentRunner:
         """
         from unpod.connectivity.bridge_dialer import dial_bridge
 
+        url = redact_url(assign.bridge_url)
         for attempt in range(1, 4):
+            started = time.monotonic()
             try:
+                logger.info(
+                    "bridge: dialing job_id=%s %s (attempt %d/3)",
+                    assign.job_id,
+                    url,
+                    attempt,
+                )
                 await dial_bridge(
                     assign.bridge_url,
                     call_token=assign.call_token,
@@ -364,11 +492,41 @@ class AgentRunner:
                     on_call_start=self._track_call_start,
                     on_call_end=self._track_call_end,
                 )
+                # Reached only when the bridge socket closed. The dialer does
+                # NOT redial mid-call, so from here the worker is talking to
+                # nobody until the call is torn down — say so explicitly.
+                logger.info(
+                    "bridge: closed job_id=%s after %.1fs — no redial "
+                    "(mid-call reconnect is not implemented; the worker will "
+                    "see 'bridge not connected' until the call ends)",
+                    assign.job_id,
+                    time.monotonic() - started,
+                )
                 return
             except asyncio.CancelledError:
+                logger.info("bridge: dial cancelled job_id=%s", assign.job_id)
                 raise  # job.cancel
-            except Exception:  # noqa: BLE001 — a bad call never kills the runner
+            except Exception as e:  # noqa: BLE001 — a bad call never kills the runner
+                code = close_code_of(e)
+                hint = _DIAL_CLOSE_HINTS.get(code or 0, "")
+                logger.warning(
+                    "bridge: dial failed job_id=%s attempt %d/3 after %.1fs "
+                    "(%s: %s%s)%s",
+                    assign.job_id,
+                    attempt,
+                    time.monotonic() - started,
+                    type(e).__name__,
+                    e,
+                    f", close={code}" if code is not None else "",
+                    f" — {hint}" if hint else "",
+                )
                 if attempt == 3 or self._shutting_down:
+                    logger.error(
+                        "bridge: giving up job_id=%s %s — the call has no "
+                        "agent attached",
+                        assign.job_id,
+                        "(shutting down)" if self._shutting_down else "after 3 attempts",
+                    )
                     return
                 await asyncio.sleep(0.2 * (2 ** (attempt - 1)))
 
@@ -409,6 +567,13 @@ class AgentRunner:
         """
         self._active_calls[ctx.session_id] = ctx
         self._call_start_times[ctx.session_id] = time.monotonic()
+        logger.info(
+            "call start session_id=%s job_id=%s (active %d/%d)",
+            ctx.session_id,
+            getattr(ctx, "job_id", ""),
+            len(self._active_calls),
+            self._max_concurrent,
+        )
         await self._hooks.fire("call_start", ctx)
 
     async def _track_call_end(self, ctx: CallContext, final_state: str) -> None:
@@ -421,12 +586,24 @@ class AgentRunner:
         """
         self._active_calls.pop(ctx.session_id, None)
         started_at = self._call_start_times.pop(ctx.session_id, None)
+        duration = time.monotonic() - started_at if started_at is not None else 0.0
         if started_at is not None:
-            self._total_duration += time.monotonic() - started_at
+            self._total_duration += duration
         if final_state == "failed":
             self._failed_count += 1
         else:
             self._completed_count += 1
+        log = logger.error if final_state == "failed" else logger.info
+        log(
+            "call end session_id=%s state=%s after %.1fs "
+            "(completed=%d failed=%d active=%d)",
+            ctx.session_id,
+            final_state,
+            duration,
+            self._completed_count,
+            self._failed_count,
+            len(self._active_calls),
+        )
         await self._hooks.fire("call_end", ctx, final_state)
 
     async def _bridge_handler(self, ws: Any) -> None:
@@ -472,6 +649,11 @@ class AgentRunner:
                 active_jobs=len(self._active_calls),
                 worker_id=self._worker_id if self._transport == "dial_out" else None,
             )
+            logger.debug(
+                "heartbeat worker_id=%s active_jobs=%d",
+                self._worker_id,
+                hb.active_jobs,
+            )
             await ws.send(hb.model_dump_json())
             await asyncio.sleep(interval_s)
 
@@ -484,5 +666,20 @@ class AgentRunner:
         are accepted is future work.
         """
         self._shutting_down = True
+        logger.info(
+            "shutdown requested worker_id=%s draining %d active call(s) "
+            "(timeout %ds)",
+            self._worker_id,
+            len(self._active_calls),
+            self._drain_timeout_s,
+        )
         if self._active_calls:
             await asyncio.sleep(self._drain_timeout_s)
+            if self._active_calls:
+                logger.warning(
+                    "shutdown: %d call(s) still active after the %ds drain: %s",
+                    len(self._active_calls),
+                    self._drain_timeout_s,
+                    ", ".join(sorted(self._active_calls)),
+                )
+        logger.info("shutdown complete worker_id=%s", self._worker_id)

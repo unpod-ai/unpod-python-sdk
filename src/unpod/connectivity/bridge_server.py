@@ -17,6 +17,7 @@ import asyncio
 from typing import Any, Awaitable, Callable
 
 from pydantic import BaseModel
+from unpod._logging import get_logger
 from unpod._protocol import (
     BridgeEvent,
     CallStartedEvent,
@@ -32,6 +33,8 @@ from unpod.connectivity.session import Session
 # connects but never finishes the handshake from tying up the connection
 # (and a tracked slot) forever.
 _HANDSHAKE_TIMEOUT_S = 10.0
+
+logger = get_logger("bridge.server")
 
 
 class BridgeHandshakeError(Exception):
@@ -182,6 +185,10 @@ async def handle_bridge_connection(
     final_state = "ended"
     try:
         if verify is not None and not verify(ws):
+            logger.warning(
+                "bridge connection rejected: signature/nonce verification "
+                "failed (check UNPOD_AGENT_SECRET on both sides, and clock skew)"
+            )
             return
 
         # Advertise capabilities.
@@ -191,6 +198,12 @@ async def handle_bridge_connection(
             supported_verbs=list(_SUPPORTED_VERBS),
         )
         await ws.send(hello.model_dump_json())
+        logger.debug(
+            "handshake: sent hello v%d (%d events, %d verbs)",
+            _PROTOCOL_VERSION,
+            len(_SUPPORTED_EVENTS),
+            len(_SUPPORTED_VERBS),
+        )
 
         # Bound the handshake: a client that connects but never completes
         # it must not tie up the connection (or a tracked slot) forever.
@@ -202,6 +215,12 @@ async def handle_bridge_connection(
                     raise BridgeHandshakeError(
                         f"expected hello.ack, got {type(ack).__name__}"
                     )
+                logger.debug(
+                    "handshake: hello.ack v%s (%d events, %d verbs negotiated)",
+                    getattr(ack, "protocol_version", "?"),
+                    len(getattr(ack, "negotiated_events", []) or []),
+                    len(getattr(ack, "negotiated_verbs", []) or []),
+                )
 
                 # Expect call.started carrying call metadata.
                 started = parse_bridge_event(await ws.recv())
@@ -210,17 +229,50 @@ async def handle_bridge_connection(
                         f"expected call.started, got {type(started).__name__}"
                     )
         except TimeoutError as exc:
+            logger.error(
+                "handshake: timed out after %.1fs waiting for "
+                "hello.ack + call.started",
+                handshake_timeout_s,
+            )
             raise BridgeHandshakeError("handshake timed out") from exc
+        except BridgeHandshakeError as exc:
+            logger.error("handshake: %s", exc)
+            raise
 
         transport = _ServerTransport(ws)
         session = Session(bridge=transport)
         ctx = _context_from_call_started(started, agent_id=agent_id, session=session)
+        logger.info(
+            "handshake complete session_id=%s job_id=%s room=%s — "
+            "running entrypoint",
+            getattr(ctx, "session_id", ""),
+            getattr(ctx, "job_id", ""),
+            getattr(ctx, "room_id", ""),
+        )
         if on_call_start is not None:
             await on_call_start(ctx)
         try:
             await entrypoint(ctx)
+            logger.info(
+                "entrypoint returned session_id=%s — ending the call",
+                getattr(ctx, "session_id", ""),
+            )
+        except asyncio.CancelledError:
+            final_state = "failed"
+            logger.warning(
+                "entrypoint cancelled session_id=%s",
+                getattr(ctx, "session_id", ""),
+            )
+            raise
         except Exception:
             final_state = "failed"
+            # exception() so the traceback lands in the log: an entrypoint
+            # raising is the single most common cause of a call going silent.
+            logger.exception(
+                "entrypoint raised session_id=%s — the call is lost "
+                "(the worker keeps the media leg until its watchdog fires)",
+                getattr(ctx, "session_id", ""),
+            )
             raise
     finally:
         if ctx is not None and on_call_end is not None:

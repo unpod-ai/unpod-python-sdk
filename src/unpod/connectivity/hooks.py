@@ -5,6 +5,10 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any, Callable, Coroutine
 
+from unpod._logging import get_logger
+
+logger = get_logger("hooks")
+
 VALID_EVENTS: frozenset[str] = frozenset(
     {
         "call_start",
@@ -52,6 +56,20 @@ class HookRegistry:
         return decorator
 
     async def fire(self, event: str, *args: Any, **kwargs: Any) -> None:
-        """Fire all registered handlers for an event."""
+        """Fire all registered handlers for an event.
+
+        A raising handler still propagates (unchanged behavior — the SDK does
+        not decide that your hook's failure is survivable), but it is logged
+        with the handler's name first: an exception surfacing from deep in the
+        session loop is otherwise very hard to attribute to a hook.
+        """
         for handler in self._handlers.get(event, []):
-            await handler(*args, **kwargs)
+            try:
+                await handler(*args, **kwargs)
+            except Exception:
+                logger.exception(
+                    "hook %r registered for %r raised",
+                    getattr(handler, "__qualname__", repr(handler)),
+                    event,
+                )
+                raise

@@ -67,7 +67,21 @@ def _runner(**kw) -> AgentRunner:
 
 def test_default_transport_is_dial_out() -> None:
     assert _runner()._transport == "dial_out"
-    assert _runner(transport="serve")._transport == "serve"
+    # serve mode needs a serving_url — the orchestrator refuses a brain it
+    # cannot reach, so construction rejects it too (see the test below).
+    assert _runner(transport="serve", serving_url="ws://runner:8765")._transport == (
+        "serve"
+    )
+
+
+def test_serve_transport_without_serving_url_rejected() -> None:
+    with pytest.raises(ValueError, match="requires serving_url"):
+        _runner(transport="serve")
+
+
+def test_register_frame_declares_brain_kind() -> None:
+    """Role discriminator: a runner is a brain, never a media worker."""
+    assert _runner()._build_register().capabilities["kind"] == "brain"
 
 
 def test_register_frame_advertises_dial_out_and_no_serving_url() -> None:
