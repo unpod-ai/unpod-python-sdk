@@ -1,12 +1,28 @@
 # Quickstart — 10 Steps to Your First Call
 
+> **Archived 2026-07-28 — superseded by [../01-quickstart.md](../01-quickstart.md);
+> the flow below does not run.** Three of its API claims are fictional: hot
+> reload on `dev_mode` (step 10 — `connectivity/runner.py::AgentRunner.__init__`
+> has no reload machinery), `system_prompt` / `first_message` / `first_speaker`
+> on `pipes.create` (step 6 — `management/pipes.py::PipesResource.create` takes
+> none of them), and `numbers.sync()` returning a list of numbers (step 3 — it
+> returns a summary dict). Two more steps fail against the code as it stands:
+> step 1's `UNPOD_SERVICE_BASE_URL="http://localhost:8000/platform"` 404s every
+> management call, because the resource paths now begin `/api/v2/platform/...`
+> and compose onto that base as a doubled prefix; and the step-5/step-6 pair
+> never rendezvous, because `dev_mode=True` puts the runner in pool
+> `agent_id@dev` (`connectivity/runner.py::AgentRunner.__init__`) while the Pipe
+> binds the plain `agent_id`.
+
 Target: under 10 minutes from install to a live voice call.
 
 ## Two Paths
 
 **Browser (fastest — no phone number needed)**
-Use the `auto_rl` dev server to test your agent in Chrome before going to production.
-→ Jump to [Browser Quickstart](06-browser-quickstart.md)
+Test your agent in Chrome before going to production. (This said "the `auto_rl`
+dev server" — wrong: that is an unrelated project. The maintained browser path
+is [`examples/browser_playground/`](../../examples/browser_playground/README.md),
+walked by [../07-browser-quickstart.md](../07-browser-quickstart.md).)
 
 **Phone (production)**
 Sync numbers from a trunk, bind your Speech Pipe, call from any phone.
@@ -195,4 +211,4 @@ Edit your entrypoint or system prompt. With `dev_mode=True`, the runner hot-relo
 └──────────────────────────────────────────┘
 ```
 
-See [Management SDK](02-management-sdk.md) for the full API reference and [Connectivity SDK](03-connectivity-sdk.md) for hooks and live controls.
+See [Management SDK](../03-management-sdk.md) for the full API reference and [Connectivity SDK](../04-connectivity-sdk.md) for hooks and live controls.

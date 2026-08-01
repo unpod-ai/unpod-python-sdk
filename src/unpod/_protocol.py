@@ -278,9 +278,11 @@ class AgentTransferVerb(BaseModel):
     """Command: transfer the call.
 
     ``announcement`` is spoken (in-room) before the agent leaves on a warm
-    transfer; ignored for cold. The worker validates ``target`` against a
-    destination allowlist before dialing (the brain chooses it, so it is
-    prompt-injectable and must not self-police).
+    transfer; ignored for cold. The worker validates ``target`` before
+    dialing (the brain chooses it, so it is prompt-injectable and must not
+    self-police), but the destination allowlist is opt-in: it applies to
+    ``number`` targets only, and only when the pipe config sets
+    ``transfer_allowed_numbers`` or ``transfer_allowed_prefixes``.
     """
 
     event: Literal["agent.transfer"] = "agent.transfer"
