@@ -196,9 +196,13 @@ pip install "unpod[observability]"  # + Langfuse tracing (LANGFUSE_SECRET_KEY)
 | [03-management-sdk.md](03-management-sdk.md) | Resource-by-resource REST reference for both planes: the `client.telephony.numbers.attach` verdict and its platform-agent precondition, auth precedence (`UNPOD_PLATFORM_TOKEN` beats `UNPOD_API_KEY`), the base-URL split above carried as a known gap, the per-plane number-status vocabularies, and the three unrelated types named `Session` |
 | [04-connectivity-sdk.md](04-connectivity-sdk.md) | `AgentRunner` / `Session` reference: constructor parameters, runner stats, `CallContext`, the ten hooks that actually fire (including `state` and `error`) versus the four that never do, controls, transfers, and the broken surface (`set_filler`, `recording.*`, `metrics.live()`) called out as gaps |
 | [05-adapters.md](05-adapters.md) | The `dialog_machine` slot: the `DialogAdapter` protocol led by the `stream()` hot path (with `turn()` demoted to the non-live fallback it is), the optional duck-typed members (`register_llm_callback`, `mark_interrupted`, `is_complete`, `state`), all six bundled adapters, and a custom-adapter authoring guide plus checklist |
-| [05-architecture.md](05-architecture.md) | **Pending revamp — predates this canon**, and shares the `05` ordinal with adapters until its own disposition lands. Frame-level bridge/dispatch reference; says "brain" and "media worker", omits `telephony/` and the `openai.py`/`anthropic.py` adapters, still documents `serve`-mode frames |
 | [06-deployment.md](06-deployment.md) | How an agent reaches real traffic: the three shipped mechanisms — LLM endpoint (a published Playbook answering as an OpenAI chat model), voice agent (an Agent Runner on an `agent_id`), phone number (a PSTN number attached to that same `agent_id`) — which SDK call performs each, what must already be running, plus known gaps and a hard-labeled roadmap |
 | [07-browser-quickstart.md](07-browser-quickstart.md) | Testing an agent in the browser with no phone number: the `examples/browser_playground/` bring-up against a self-started dev speech app, its environment table, the `serve`-transport edit the example still needs, and its rough edges |
 
 The index of the whole set, including the archive, is
-[README.md](README.md).
+[README.md](README.md). The old `05-architecture.md` was archived on
+2026-07-30: its package tree, data flow and multi-replica sections are covered
+above and in `02-run-your-agent.md` / `04-connectivity-sdk.md`, and its
+frame-level bridge and dispatch tables belong to supervoice
+`docs/api/bridge-protocol-v2.md`. It is kept, bannered, at
+[archive/05-architecture.md](archive/05-architecture.md).

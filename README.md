@@ -95,7 +95,12 @@ alone cannot reach them.
 | [Adapters](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/05-adapters.md) | The `DialogAdapter` protocol led by the `stream()` hot path, the six bundled adapters, and how to write your own |
 | [Deployment](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/06-deployment.md) | The three shipped ways an agent reaches traffic — LLM endpoint, voice agent, phone number |
 | [Browser quickstart](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/07-browser-quickstart.md) | Testing an agent in the browser with no phone number, via `examples/browser_playground/` |
-| [Architecture](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/05-architecture.md) | Package structure, data flow, protocol details — pending revamp, and shares the `05` ordinal with Adapters until its disposition lands |
+
+The old Architecture guide was archived on 2026-07-30 — package structure and
+data flow are now in Overview, concurrency and multi-replica in Run your agent
+and Connectivity SDK. It is kept, with a banner listing what did not survive a
+code check, at
+[docs/archive/05-architecture.md](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/archive/05-architecture.md).
 
 Full index, including the archive:
 [`docs/README.md`](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/README.md).

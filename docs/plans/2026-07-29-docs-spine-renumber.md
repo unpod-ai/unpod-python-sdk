@@ -17,11 +17,29 @@ disk are authoritative and every published link resolves.
 | `docs/03-connectivity-sdk.md` | `docs/04-connectivity-sdk.md` | Done — landed with the rewrite, all 9 inbound references repaired |
 | `docs/04-adapters.md` | `docs/05-adapters.md` | Done — landed with the rewrite, all 7 inbound references repaired |
 
-`05-architecture.md` and `06-browser-quickstart.md` are resolved separately —
-neither is in the spine. Until `05-architecture.md` gets its own disposition it
-shares the `05` ordinal with adapters, annotated in both reader-facing indexes
-(`docs/00-overview.md` § Docs and `README.md` § Documentation) so no reader hits
-it unwarned.
+`05-architecture.md` and `06-browser-quickstart.md` were resolved separately —
+neither was in the spine.
+
+**`05-architecture.md`: archived 2026-07-30, not renumbered.** It was the
+original `01-architecture.md` from the v0.1.0a1 release, renumbered into the
+`05` collision by this plan's predecessor commit. Every section of it now has
+a more accurate home: package structure and design principles in
+`00-overview.md` § Package scope, data flow in § How a call reaches your code
+plus the live-verified `01-quickstart.md`, concurrency and multi-replica in
+`04-connectivity-sdk.md` and `02-run-your-agent.md`, and the supervoice
+relationship table in § What Unpod owns vs what you own. Its one genuinely
+unique half — the frame-level dispatch and bridge tables — is supervoice's to
+own (`docs/api/bridge-protocol-v2.md` is a fuller spec of the same wire
+format, and per the revamp design §5 `docs/04-connectivity.md` is the
+canonical cross-repo story the SDK links to rather than retells). Renumbering
+it to `08-` would have committed the SDK spine to maintaining a second copy of
+an internal protocol that had already drifted five ways. It lives at
+`docs/archive/05-architecture.md` under a banner naming those five.
+
+The spine is now contiguous with no collisions: `00-overview`,
+`01-quickstart`, `02-run-your-agent`, `03-management-sdk`,
+`04-connectivity-sdk`, `05-adapters`, `06-deployment`,
+`07-browser-quickstart`.
 
 ## Link inventory (regenerated 2026-07-29)
 

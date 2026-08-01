@@ -24,7 +24,6 @@ their replacement.
 
 | Doc | Status |
 |---|---|
-| [05-architecture.md](05-architecture.md) | Pending revamp — predates the current canon and shares the `05` ordinal with adapters until its disposition lands. Frame-level bridge and dispatch reference; still documents `serve`-mode frames, omits `telephony/` and the OpenAI/Anthropic adapters |
 | [plans/](plans/) | Design and implementation plans, including the record of the spine renumber ([plans/2026-07-29-docs-spine-renumber.md](plans/2026-07-29-docs-spine-renumber.md)) |
 
 ## Archive
@@ -36,6 +35,7 @@ replacement and the claims that did not survive a code check.
 | Archived doc | Replaced by |
 |---|---|
 | [archive/05-quickstart.md](archive/05-quickstart.md) | [01-quickstart.md](01-quickstart.md) |
+| [archive/05-architecture.md](archive/05-architecture.md) | [00-overview.md](00-overview.md) (package scope, data flow, what Unpod owns), [02-run-your-agent.md](02-run-your-agent.md) and [04-connectivity-sdk.md](04-connectivity-sdk.md) (concurrency, multi-replica); its frame-level protocol tables belong to supervoice `docs/api/bridge-protocol-v2.md` |
 
 One exception to that convention: `docs/06-browser-quickstart.md` was **removed
 rather than archived** when
