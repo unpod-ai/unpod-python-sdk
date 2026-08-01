@@ -287,7 +287,11 @@ the client side.
 
 Only `list` and `get` exist; profiles are managed upstream. When creating a Pipe
 you may pass either `profile.name` or `profile.profile_id` — supervoice resolves
-both (`platform/routers/pipes.py::_resolve_voice_profile`).
+both (`platform/routers/pipes.py::_resolve_voice_profile`). Prefer the
+`profile_id`: names are editable, and the seeded catalog has already renamed one
+(`VP_openai_alloy` is `"Ankit"` in
+`platform/seed/voice_profiles.py::GLOBAL_PROFILES`, not `"Alloy"`), which turns
+a hard-coded name into a 422 `voice_profile_not_found`.
 
 ## Pipes
 
@@ -297,7 +301,7 @@ A Pipe binds a voice profile to an `agent_id`. The real signature
 ```python
 pipe = await client.pipes.create(
     name="my-voice-agent",
-    voice_profile="Alloy",          # optional; catalog name or profile_id
+    voice_profile="VP_openai_alloy",  # optional; profile_id or catalog name
     agent_id="my-voice-agent",      # must match your AgentRunner's agent_id
     agent_endpoint=None,            # optional static fallback URL (legacy serve transport)
     recording=False,

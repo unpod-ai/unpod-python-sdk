@@ -151,18 +151,23 @@ from unpod import AsyncClient
 client = AsyncClient()
 pipe = await client.pipes.create(
     name="my-voice-agent",
-    voice_profile="Alloy",        # optional; catalog name or profile_id
-    agent_id="my-voice-agent",    # must match your AgentRunner's agent_id
+    voice_profile="VP_openai_alloy",  # optional; profile_id or catalog name
+    agent_id="my-voice-agent",        # must match your AgentRunner's agent_id
     recording=False,
     max_call_duration_s=600,
 )
-print(pipe.pipe_id)               # PIPE_...
+print(pipe.pipe_id)                   # PIPE_...
 ```
 
 *Verified against code, not yet run live via the SDK (known gap #1). The
 equivalent create body ran live against the platform's own API and returned
-201 with the `agent_id` bound; the `"Alloy"` name-to-profile-id resolution was
-live-verified on a pipe update in the same run (transcript, stage 3).*
+201 with the `agent_id` bound; name→`profile_id` resolution was live-verified
+on a pipe update in the same run (transcript, stage 3) — but with the name
+`"Alloy"`, which no longer resolves on a freshly seeded stack. The seed
+(`platform/seed/voice_profiles.py::GLOBAL_PROFILES`) names `VP_openai_alloy`
+**"Ankit"**, and `::upsert_global_profiles` writes with `$setOnInsert`, so the
+run's older database kept the pre-rename name. Passing the `profile_id`, as
+above, is immune to that.*
 
 The signature has one more optional parameter, not shown: `agent_endpoint`, a
 static runner URL the platform falls back to when no live Agent Runner is
@@ -182,7 +187,10 @@ Notes, all observed live:
   `platform/routers/pipes.py::_resolve_voice_profile` tries `profile_id` first,
   then a case-insensitive `name` match, then imports the name from the Django
   voice catalog. Only a value none of those three resolve fails, with
-  `voice_profile_not_found`.
+  `voice_profile_not_found` (HTTP 422). The eight seeded global names are
+  Ankit, Echo, Nova, Shimmer, Sophie, Riya, Anika and Anika (Marathi) —
+  `GLOBAL_PROFILES`; a `profile_id` is the safer key, since a rename of a name
+  you hard-coded turns into a 422.
 - `client.voice_profiles.list(language="en")` reads the telephony plane, which
   is org-scoped: it needs `UNPOD_PLATFORM_TOKEN` auth and is unreachable with
   only a Bearer `UNPOD_API_KEY`.
@@ -212,8 +220,13 @@ AgentRunner(
 ).start()
 ```
 
-**Ran live.** Registration observed on both sides; `GET /v1/workers` on the
-orchestrator API (root-mounted, not under `/platform`) returned:
+**Ran live.** Registration observed on both sides. An Agent Runner is a *brain*
+worker, so its row is served by `GET /v1/runners` on the orchestrator API
+(root-mounted, not under `/platform`) —
+`orchestrator/api/workers.py::list_runners`. `GET /v1/workers` is the **media**
+(speech-worker) view: its `kind` query parameter defaults to `"media"` and
+`::_list_by_kind` drops every row whose `kind` differs, so a runner shows up
+there only with `?kind=brain` or `?kind=all`. The row:
 
 ```json
 {"worker_id": "docs-quickstart-run#d4d4d4fd", "pool": "docs-quickstart-run",
@@ -221,11 +234,18 @@ orchestrator API (root-mounted, not under `/platform`) returned:
  "agent_id": "docs-quickstart-run", "transport": "dial_out", "…": "…"}
 ```
 
-Two always-present fields are elided from that block: `voice_profiles` — `[]`
-for an SDK runner, which sends an empty list
-(`connectivity/runner.py::AgentRunner._build_register`) — and
-`last_heartbeat_age_s`, a per-request float. The complete response shape is
-supervoice `orchestrator/api/workers.py::WorkerView`.
+That block is trimmed; supervoice `orchestrator/api/workers.py::WorkerView`
+always serializes four more fields, all filled by `::_to_view`:
+
+- `voice_profiles` — `[]` for an SDK runner, which sends an empty list
+  (`connectivity/runner.py::AgentRunner._build_register`);
+- `last_heartbeat_age_s` — a per-request float;
+- `kind` — `"brain"`, which is exactly what routes the row to `/v1/runners`.
+  The runner declares it in `_build_register`, and
+  `contracts/dispatch_protocol.py::WorkerCapabilities._discriminate_role`
+  infers the same from a set `agent_id` when an older peer omits it;
+- `bridge_base` — `null` here. It is a media worker's acceptor URL, and
+  `_discriminate_role` rejects a brain that advertises one.
 
 (The entrypoint body itself did not execute in the run — no call reached the
 runner because the media leg was rejected, see step 6. Its surface —
