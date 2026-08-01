@@ -48,8 +48,10 @@ today has no caller outside `publish/` — no production route reaches it. So a
 publish produces the Pipe, the number and the handle, but *someone still has
 to run a process registered under that handle*: treat hosted operation as the
 intended end state, not as something publish alone delivers today. Supervoice
-`docs/03-publish-and-runners.md` draws the same contrast between its §1.1
-(route path, slug handle) and §1.2 (saga, `pool@{org}` handle).
+[`docs/03-publish-and-runners.md`](../../supervoice/docs/03-publish-and-runners.md)
+draws the same contrast between its §1.1 (route path, slug handle) and §1.2
+(saga, `pool@{org}` handle) — *a sibling checkout of the supervoice repo, not a
+file in this package.*
 
 Note that `enable_endpoint=True` is a *separate* door (the OpenAI-compatible
 endpoint): a plain voice-agent publish never sets it, which is exactly the flag
@@ -58,7 +60,11 @@ outbound `calls.create` gates on — see
 
 Either way the binding is the same and nothing references anything else
 directly: a Pipe carries an `agent_id`, a number attaches to an `agent_id`, and
-a runner registers under an `agent_id`. They rendezvous at call time.
+a runner registers under an `agent_id`. They rendezvous at call time. That
+invariant, the Redis registry entry your runner's registration writes, and what
+dispatch does when no runner is found are the platform side of this doc:
+supervoice
+[`docs/04-connectivity.md`](../../supervoice/docs/04-connectivity.md).
 
 ## The identity trio
 
@@ -301,3 +307,16 @@ Verified dead or incomplete surface, so you do not build on it:
 - [05-adapters.md](05-adapters.md) — what the agent says once a call lands.
 - [00-overview.md](00-overview.md) — what Unpod owns vs. what you own, and the
   terminology canon.
+- [06-deployment.md](06-deployment.md) — the three ways an agent reaches real
+  traffic; this doc is the runner half of mechanism 2.
+
+**Across the repos** (sibling checkouts, not files in this package):
+
+- supervoice
+  [`docs/04-connectivity.md`](../../supervoice/docs/04-connectivity.md) — the
+  canonical `agent_id` rendezvous story: registration lifecycle, what dispatch
+  sees, and the three connectivity modes.
+- superdialog
+  [`docs/08-integrations.md`](../../superdialog/docs/08-integrations.md) — the
+  seams for running a Playbook as the brain behind your runner, or serving one
+  as an OpenAI-compatible model instead.
