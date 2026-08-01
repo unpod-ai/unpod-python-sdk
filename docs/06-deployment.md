@@ -17,8 +17,7 @@ neighbouring ideas are still roadmap.
 | 3 | Phone number | **Shipped** | `client.telephony.numbers.attach(..., agent_id=)` | Mechanism 2, live under the same `agent_id` |
 
 The same three mechanisms seen from the platform side are the three
-*connectivity modes* of supervoice
-[`docs/04-connectivity.md`](../../supervoice/docs/04-connectivity.md) §4 —
+*connectivity modes* of supervoice `docs/04-connectivity.md` §4 —
 mechanisms 2 and 3 are its Mode A (a runner in the registry, reached by a
 call), mechanism 1 is its Mode B (the OpenAI door, which registers nothing).
 Its Mode C, embedding superdialog directly in your own process, has no
@@ -93,10 +92,8 @@ value a caller can send makes those two keys equal.
 | Streaming | `stream: true` → SSE `chat.completion.chunk` frames terminated by `data: [DONE]` |
 
 The full contract — every error code, the session table, the deployment env — is
-supervoice
-[`docs/api/playbook-openai-endpoint.md`](../../supervoice/docs/api/playbook-openai-endpoint.md);
-the publish side and the pool it runs on are
-[`docs/03-publish-and-runners.md`](../../supervoice/docs/03-publish-and-runners.md).
+supervoice `docs/api/playbook-openai-endpoint.md`; the publish side and the
+pool it runs on are `docs/03-publish-and-runners.md`.
 *(Both paths are sibling checkouts of the supervoice repo, not files in this
 package.)*
 
@@ -125,8 +122,7 @@ superdialog eval serve --playbook my_agent.simple.yaml --port 8000
 
 `cli/main.py` wires the subcommand to `eval/cli.py::cmd_serve`, which builds
 `eval/server/openai_server.py::build_app`. The two doors are compared side by
-side in superdialog
-[`docs/08-integrations.md`](../../superdialog/docs/08-integrations.md) §2 —
+side in superdialog `docs/08-integrations.md` §2 —
 Door A (`eval serve`, dev) versus Door B (the supervoice playbook pool,
 production).
 
@@ -157,9 +153,7 @@ playbook-pool fallback, so *someone still has to run a process registered under
 exactly that string*. The full step-by-step, with a verification checklist per
 step, is
 [02-run-your-agent.md § Local runner vs Publish](02-run-your-agent.md) here and
-supervoice
-[`docs/03-publish-and-runners.md`](../../supervoice/docs/03-publish-and-runners.md)
-on the platform side.
+supervoice `docs/03-publish-and-runners.md` on the platform side.
 
 Scaling and failover are a property of this mechanism, not a separate one: start
 N runners with the same `agent_id` and the orchestrator picks among them per
@@ -236,8 +230,8 @@ is not there:
 > **Status: roadmap — not built.** The three items below were each checked
 > against `src/unpod`, supervoice `src/supervoice` and superdialog
 > `src/superdialog` and exist in none of them. Tracked in supervoice
-> [`docs/03-publish-and-runners.md` § Roadmap](../../supervoice/docs/03-publish-and-runners.md)
-> — *a sibling checkout of the supervoice repo, not a file in this package.*
+> `docs/03-publish-and-runners.md` § Roadmap — *a sibling checkout of the
+> supervoice repo, not a file in this package.*
 
 - **STS plugin for LiveKit / Pipecat.** A speech-to-speech runner plugin that
   bypasses the STT → LLM → TTS pipeline, droppable into a LiveKit or Pipecat
@@ -273,14 +267,11 @@ deploy, and nothing in `unpod` calls it.
 
 **Across the repos** (sibling checkouts, not files in this package):
 
-- supervoice
-  [`docs/04-connectivity.md`](../../supervoice/docs/04-connectivity.md) — the
-  three connectivity modes these mechanisms map onto, and the `agent_id`
-  rendezvous that makes mechanism 3 route to mechanism 2.
-- supervoice
-  [`docs/03-publish-and-runners.md`](../../supervoice/docs/03-publish-and-runners.md)
-  — the publish saga and playbook-pool operations behind the hosted half of
-  mechanism 2 and all of mechanism 1.
-- superdialog
-  [`docs/08-integrations.md`](../../superdialog/docs/08-integrations.md) — §2
-  compares mechanism 1's production door against the local `eval serve` one.
+- supervoice `docs/04-connectivity.md` — the three connectivity modes these
+  mechanisms map onto, and the `agent_id` rendezvous that makes mechanism 3
+  route to mechanism 2.
+- supervoice `docs/03-publish-and-runners.md` — the publish saga and
+  playbook-pool operations behind the hosted half of mechanism 2 and all of
+  mechanism 1.
+- superdialog `docs/08-integrations.md` — §2 compares mechanism 1's production
+  door against the local `eval serve` one.

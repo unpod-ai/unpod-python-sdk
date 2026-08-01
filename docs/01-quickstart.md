@@ -213,7 +213,7 @@ AgentRunner(
 ```
 
 **Ran live.** Registration observed on both sides; `GET /v1/workers` on the
-platform returned:
+orchestrator API (root-mounted, not under `/platform`) returned:
 
 ```json
 {"worker_id": "docs-quickstart-run#d4d4d4fd", "pool": "docs-quickstart-run",

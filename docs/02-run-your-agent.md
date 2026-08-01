@@ -48,10 +48,9 @@ today has no caller outside `publish/` — no production route reaches it. So a
 publish produces the Pipe, the number and the handle, but *someone still has
 to run a process registered under that handle*: treat hosted operation as the
 intended end state, not as something publish alone delivers today. Supervoice
-[`docs/03-publish-and-runners.md`](../../supervoice/docs/03-publish-and-runners.md)
-draws the same contrast between its §1.1 (route path, slug handle) and §1.2
-(saga, `pool@{org}` handle) — *a sibling checkout of the supervoice repo, not a
-file in this package.*
+`docs/03-publish-and-runners.md` draws the same contrast between its §1.1
+(route path, slug handle) and §1.2 (saga, `pool@{org}` handle) — *a sibling
+checkout of the supervoice repo, not a file in this package.*
 
 Note that `enable_endpoint=True` is a *separate* door (the OpenAI-compatible
 endpoint): a plain voice-agent publish never sets it, which is exactly the flag
@@ -63,8 +62,7 @@ directly: a Pipe carries an `agent_id`, a number attaches to an `agent_id`, and
 a runner registers under an `agent_id`. They rendezvous at call time. That
 invariant, the Redis registry entry your runner's registration writes, and what
 dispatch does when no runner is found are the platform side of this doc:
-supervoice
-[`docs/04-connectivity.md`](../../supervoice/docs/04-connectivity.md).
+supervoice `docs/04-connectivity.md`.
 
 ## The identity trio
 
@@ -205,7 +203,7 @@ disappears from routing on its own.
 **Transport.** `dial_out` is the default and the model above. `transport="serve"`
 is the deprecated legacy model where the runner listens and the Speech Worker
 dials in (teardown scheduled); passing `serving_url` or `agent_secret` under
-`dial_out` raises a `DeprecationWarning` because the runner never listens
+`dial_out` emits a `DeprecationWarning` because the runner never listens
 (`AgentRunner.__init__`).
 
 **Shutdown.** `await runner.shutdown()` sets `_shutting_down` (which ends the
@@ -312,11 +310,9 @@ Verified dead or incomplete surface, so you do not build on it:
 
 **Across the repos** (sibling checkouts, not files in this package):
 
-- supervoice
-  [`docs/04-connectivity.md`](../../supervoice/docs/04-connectivity.md) — the
-  canonical `agent_id` rendezvous story: registration lifecycle, what dispatch
-  sees, and the three connectivity modes.
-- superdialog
-  [`docs/08-integrations.md`](../../superdialog/docs/08-integrations.md) — the
-  seams for running a Playbook as the brain behind your runner, or serving one
-  as an OpenAI-compatible model instead.
+- supervoice `docs/04-connectivity.md` — the canonical `agent_id` rendezvous
+  story: registration lifecycle, what dispatch sees, and the three
+  connectivity modes.
+- superdialog `docs/08-integrations.md` — the seams for running a Playbook as
+  the brain behind your runner, or serving one as an OpenAI-compatible model
+  instead.

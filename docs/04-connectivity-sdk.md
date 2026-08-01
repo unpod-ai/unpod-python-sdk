@@ -59,9 +59,10 @@ That is the shape `examples/full_agent_setup.py` runs.
 Verified against `connectivity/runner.py::AgentRunner.__init__`.
 
 **`serving_url` and `agent_secret` are deprecated.** Under the default
-`dial_out` transport the runner never listens, so passing either raises a
-`DeprecationWarning` and neither value is used: `serving_url` is read only by
-`AgentRunner._serving_host_port` (the legacy bridge server's bind address) and
+`dial_out` transport the runner never listens, so passing either emits a
+`DeprecationWarning` (a `warnings.warn`, not a raise) and neither value is used:
+`serving_url` is read only by `AgentRunner._serving_host_port` (the legacy
+bridge server's bind address) and
 `agent_secret` only builds the `verify` callback that `AgentRunner._bridge_handler`
 passes to the legacy server. Drop them, or pass `transport="serve"` if you are
 still on the legacy model.
@@ -279,10 +280,14 @@ measured timings, and the session's own turn teardown).
 `MetricEvent` and `StateEvent` live in the private `unpod._protocol` module.
 Read their attributes; do not import the classes.
 
-**Hook failures are not isolated.** `HookRegistry.fire` awaits each handler
-with no `try`, and `Session.run` has no `except`, so an exception raised in a
-handler propagates out of `run()` and out of your entrypoint — which the runner
-counts as `final_state="failed"` and then redials. Catch inside your handlers.
+**Hook failures are not isolated.** `HookRegistry.fire` does wrap every handler
+in a `try`, but only to name it: it logs `hook '<handler.__qualname__>'
+registered for '<event>' raised` on the `unpod.hooks` logger and then re-raises.
+`Session.run` catches only around its bridge read (the "session loop exiting:
+bridge closed" guard); its outer `try` has just a `finally`. So an exception
+raised in a handler propagates out of `run()` and out of your entrypoint — which
+the runner counts as `final_state="failed"` and then redials. Catch inside your
+handlers; when one escapes, that log line is what tells you which one.
 
 ### Hooks that never fire
 

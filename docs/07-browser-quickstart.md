@@ -68,8 +68,9 @@ chain, and its `LAST_RESORT_TTS_PROVIDER` is `cartesia` too (appended only when
 
 That fallback profile is also Hindi-tuned: `language="hi"` on both chains. The
 seed catalog `supervoice/platform/seed/voice_profiles.py::GLOBAL_PROFILES`
-holds eight profiles across OpenAI, Cartesia, Sarvam and Soniox, but it is
-keyed by `voice_profile_id` and nothing on this path passes one (see
+holds eight profiles across Deepgram (the `stt_provider` on five of them),
+OpenAI, Cartesia, Sarvam and Soniox, but it is keyed by `voice_profile_id`
+and nothing on this path passes one (see
 [Rough edges](#rough-edges)) — it is the source for the voice-profiles list,
 not the profile-less fallback. To change voice or language, edit
 `_FALLBACK_PROFILE` in your supervoice checkout.
