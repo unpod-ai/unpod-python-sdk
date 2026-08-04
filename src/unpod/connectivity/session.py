@@ -152,8 +152,12 @@ class Session:
         ``mode="warm"`` is an ANNOUNCED transfer, not a private consult: the
         human is dialed into the same room, so the caller hears the ringing
         and the ``announcement`` too. ``cold`` hands off immediately (SIP
-        REFER when the trunk supports it). The worker enforces a destination
-        allowlist before dialing; on success the agent's job ends.
+        REFER when the trunk supports it). The worker checks the destination
+        before dialing, but the allowlist is opt-in: number targets are
+        always shape-checked (E.164) and only allowlisted when
+        ``transfer_allowed_numbers`` / ``transfer_allowed_prefixes`` is set
+        in pipe config, while ``human`` / ``agent`` targets bypass it. On
+        success the agent's job ends.
         """
         logger.info(
             "verb agent.transfer type=%s mode=%s target=%s%s "

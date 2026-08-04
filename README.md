@@ -2,7 +2,7 @@
 
 Developer SDK for [Unpod](https://unpod.ai) voice infrastructure — management, connectivity, and adapters for building voice agents that talk over real phone calls, browsers, and WebRTC.
 
-**Single architectural commitment:** the wire between Unpod infrastructure and your code carries **text, not audio**. You bring the brain; Unpod brings the voice.
+**Single architectural commitment:** the wire between Unpod infrastructure and your code carries **text, not audio**. You bring the Agent Runner; Unpod brings the voice.
 
 ## Installation
 
@@ -39,25 +39,33 @@ unpod
 
 - **Management SDK** — CRUD against the Unpod Control Plane: manage numbers (sync/attach/release), browse voice profiles, bind Speech Pipes, trigger and inspect calls.
 - **Connectivity SDK** — runtime for live calls: a long-lived `AgentRunner` receives plain-text turns over WSS and dispatches them to your agent, regardless of transport (phone, browser, WebRTC).
-- **Adapters** — plug any brain into a call: `superdialog` dialog machines, LangChain runnables, your own HTTP endpoint, or an MCP server.
+- **Adapters** — plug any dialog logic into a call: `superdialog` dialog machines, LangChain runnables, your own HTTP endpoint, or an MCP server.
 
 ## Quick Example
+
+Configure once — the [Quickstart](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/01-quickstart.md)
+explains why the REST base is the **bare host** (`pipes`/`calls`/`numbers` spell
+the full `/api/v2/platform/speech/...` prefix inside their own request paths, so
+the derived `https://<host>/platform` base would double it):
+
+```bash
+export UNPOD_BASE_URL="https://api.unpod.ai"          # one knob for the rest
+export UNPOD_SERVICE_BASE_URL="https://api.unpod.ai"  # bare host: pipes/calls/numbers
+export UNPOD_PLATFORM_TOKEN="..."                     # org-scoped REST auth
+export UNPOD_ORG_HANDLE="your-org"
+export UNPOD_API_KEY="sk_..."                         # AgentRunner (Bearer)
+```
 
 ```python
 from unpod import AsyncClient, AgentRunner, CallContext
 
-client = AsyncClient()  # direct → supervoice; reads UNPOD_API_KEY from env
-
-# Or go through the unpod backend-core proxy (platform JWT + org), same calls:
-#   from unpod import JWTAuth
-#   client = AsyncClient(base_url="https://app.unpod.ai/api/v2/platform/speech",
-#                        auth=JWTAuth(token="<jwt>", org_handle="acme"))
+client = AsyncClient()  # picks up the env above; token auth wins over UNPOD_API_KEY
 
 # Management: pick a voice, bind a Speech Pipe to your agent
 profiles = await client.voice_profiles.list(language="en")
 pipe = await client.pipes.create(
     name="support-line",
-    voice_profile=profiles[0].id,
+    voice_profile=profiles[0].id,   # a catalog name works too
     agent_id="my-voice-agent",
 )
 
@@ -71,17 +79,31 @@ async def entrypoint(ctx: CallContext) -> None:
 AgentRunner(entrypoint=entrypoint, agent_id="my-voice-agent").start()
 ```
 
+`voice_profiles` and `client.telephony.*` read the org-scoped platform plane, so
+they need `UNPOD_PLATFORM_TOKEN` + `UNPOD_ORG_HANDLE` — a Bearer `UNPOD_API_KEY`
+alone cannot reach them.
+
 ## Documentation
 
 | Guide | What it covers |
 |-------|----------------|
 | [Overview](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/00-overview.md) | What Unpod owns vs what you own, the three layers |
-| [Architecture](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/01-architecture.md) | Package structure, data flow, protocol details |
-| [Management SDK](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/02-management-sdk.md) | REST client API reference |
-| [Connectivity SDK](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/03-connectivity-sdk.md) | AgentRunner, Session, hooks, controls |
-| [Adapters](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/04-adapters.md) | DialogAdapter protocol and bundled adapters |
-| [Quickstart](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/05-quickstart.md) | 10 steps to your first phone call |
-| [Browser Quickstart](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/06-browser-quickstart.md) | Test in Chrome, no phone number needed |
+| [Quickstart](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/01-quickstart.md) | Install to a dispatched call, transcribed from a live run |
+| [Run your agent](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/02-run-your-agent.md) | Where the runner process lives (local vs Publish), the identity trio, reconnection and failover, the four `call_end` reasons |
+| [Management SDK](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/03-management-sdk.md) | REST client API reference |
+| [Connectivity SDK](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/04-connectivity-sdk.md) | AgentRunner, Session, hooks, controls |
+| [Adapters](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/05-adapters.md) | The `DialogAdapter` protocol led by the `stream()` hot path, the six bundled adapters, and how to write your own |
+| [Deployment](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/06-deployment.md) | The three shipped ways an agent reaches traffic — LLM endpoint, voice agent, phone number |
+| [Browser quickstart](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/07-browser-quickstart.md) | Testing an agent in the browser with no phone number, via `examples/browser_playground/` |
+
+The old Architecture guide was archived on 2026-07-30 — package structure and
+data flow are now in Overview, concurrency and multi-replica in Run your agent
+and Connectivity SDK. It is kept, with a banner listing what did not survive a
+code check, at
+[docs/archive/05-architecture.md](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/archive/05-architecture.md).
+
+Full index, including the archive:
+[`docs/README.md`](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/README.md).
 
 Full platform documentation: [docs.unpod.ai](https://docs.unpod.ai)
 

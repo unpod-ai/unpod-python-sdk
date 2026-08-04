@@ -1,5 +1,46 @@
 # Architecture
 
+> **Archived 2026-07-30 — every section is now covered accurately elsewhere,
+> and what is left here is stale.** Originally `docs/01-architecture.md`,
+> renumbered to `05-architecture.md` where it collided with
+> [`../05-adapters.md`](../05-adapters.md). Replacements, section by section:
+> Package Structure and Design Principles →
+> [`../00-overview.md` § Package scope](../00-overview.md#package-scope);
+> Data Flow → [`../00-overview.md` § How a call reaches your code](../00-overview.md#how-a-call-reaches-your-code)
+> and the live-verified sequence in [`../01-quickstart.md`](../01-quickstart.md);
+> Concurrency Model and Multi-replica →
+> [`../04-connectivity-sdk.md` § Several runners, one `agent_id`](../04-connectivity-sdk.md#several-runners-one-agent_id)
+> and [`../02-run-your-agent.md` § Reconnection and failover](../02-run-your-agent.md#reconnection-and-failover);
+> Relationship to supervoice →
+> [`../00-overview.md` § What Unpod owns vs what you own](../00-overview.md#what-unpod-owns-vs-what-you-own).
+> The frame-level Protocol Details are supervoice's to own, not the SDK's:
+> supervoice `docs/api/bridge-protocol-v2.md` is the wire-format spec and
+> `docs/04-connectivity.md` the canonical cross-repo story.
+>
+> Five claims below did not survive a code check:
+>
+> 1. **The package tree omits nine shipped modules and two subpackages.**
+>    Missing: `telephony/`, `observability/`, `_base_url.py`,
+>    `management/api_keys.py`, `management/sessions.py`,
+>    `management/trunks.py`, `connectivity/bridge_auth.py`,
+>    `connectivity/bridge_dialer.py`, `connectivity/bridge_server.py`,
+>    `connectivity/usage.py`, `adapters/openai.py`, `adapters/anthropic.py`.
+>    Adapters are six, not four.
+> 2. **§2 Protocol Mirroring cites a path that does not exist.** The frames are
+>    mirrored from supervoice `contracts/dispatch_protocol.py`, not
+>    `supervoice/shared/dispatch_protocol.py`.
+> 3. **The bridge event/verb tables omit three shipped events** —
+>    `turn.metrics`, `state` and `call.started`
+>    (`_protocol.py::TurnMetricsEvent`, `::StateEvent`, `::CallStartedEvent`).
+> 4. **The dispatch frame tables omit two frames** —
+>    `_protocol.py::StateChanged` and `::JobCompleted` — and the `JobAssign`
+>    field table omits `assign_id`, the per-attempt nonce a runner must echo in
+>    its `JobAck` so the orchestrator resolves the right failover attempt
+>    (`job_id` is constant across attempts).
+> 5. **`serve` is deprecated with teardown scheduled**, not a live
+>    "migration window" surface. `dial_out` is the only current transport
+>    (`contracts/dispatch_protocol.py::WorkerCapabilities.transport`).
+
 ## Package Structure
 
 ```
