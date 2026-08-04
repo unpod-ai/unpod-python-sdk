@@ -192,3 +192,26 @@ def test_serve_transport_warns_nothing_but_keeps_serving_url() -> None:
     r = _runner(transport="serve", serving_url="ws://1.2.3.4:8765")
     assert r._transport == "serve"
     assert r._serving_url == "ws://1.2.3.4:8765"
+
+
+def test_register_frame_advertises_placement(monkeypatch) -> None:
+    """The Workers page needs to name the machine behind a runner."""
+    monkeypatch.setenv("UNPOD_WORKER_HOSTNAME", "arsh-laptop")
+    monkeypatch.setenv("UNPOD_WORKER_ADDRESS", "192.168.1.42")
+    monkeypatch.setenv("UNPOD_WORKER_REGION", "blr-office")
+    monkeypatch.setenv("UNPOD_WORKER_DEPLOYMENT", "local")
+
+    caps = _runner()._build_register().capabilities
+
+    assert caps["hostname"] == "arsh-laptop"
+    assert caps["address"] == "192.168.1.42"
+    assert caps["region"] == "blr-office"
+    assert caps["deployment"] == "local"
+
+
+def test_placement_never_overrides_role_fields() -> None:
+    """Placement is additive — it must not disturb the routing-relevant keys."""
+    caps = _runner()._build_register().capabilities
+    assert caps["kind"] == "brain"
+    assert caps["transport"] == "dial_out"
+    assert set(caps) >= {"hostname", "address", "region", "deployment"}

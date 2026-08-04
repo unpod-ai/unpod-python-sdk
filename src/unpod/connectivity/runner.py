@@ -28,6 +28,7 @@ from unpod._protocol import (
 from unpod.connectivity.bridge_auth import verify_connection
 from unpod.connectivity.bridge_server import handle_bridge_connection
 from unpod.connectivity.call_context import CallContext
+from unpod.connectivity.host_info import placement
 from unpod.connectivity.hooks import HookRegistry
 from unpod.models.session import RunnerStats
 
@@ -322,6 +323,7 @@ class AgentRunner:
                         "agent_id": self._agent_id,
                         "serving_url": self._serving_url,
                         "kind": "brain",
+                        **placement(),
                     },
                 )
                 await ws.send(register.model_dump_json())
@@ -358,6 +360,9 @@ class AgentRunner:
                 # from agent_id when absent, but declaring it makes a
                 # mis-advertisement fail at Register instead of at dispatch.
                 "kind": "brain",
+                # Where this runner lives (hostname/address/region/cloud|local).
+                # Descriptive only — shown on the Workers page, never routed on.
+                **placement(),
             },
         )
 
