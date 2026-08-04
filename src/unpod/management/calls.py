@@ -29,7 +29,13 @@ class CallsResource:
         return [Call(**item) for item in resp]
 
     async def get(self, call_id: str) -> Call:
-        """Get a single call by ID."""
+        """Get a single call by ID.
+
+        Unlike :meth:`list`, this carries the whole record: ``transcript``
+        (turns as ``{role, content, timestamp}``) and ``recording_url``
+        alongside the status/duration fields. Both are populated once the call
+        has ended; a live or never-answered call reads an empty transcript.
+        """
         resp = unwrap_data(await self._http.get(f"/api/v2/platform/speech/v1/calls/{call_id}"))
         return Call(**resp)
 

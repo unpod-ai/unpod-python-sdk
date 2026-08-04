@@ -417,3 +417,43 @@ async def test_calls_create_contract_unchanged():
     assert fake.json is not None
     assert fake.json["pipe_id"] == "pipe-1"
     assert fake.json["to_number"] == "+15551230000"
+
+
+@pytest.mark.anyio
+async def test_calls_get_exposes_transcript_and_recording(client: AsyncClient):
+    """The single-call read carries the whole record — turns + recording."""
+    with patch.object(client.calls._http, "get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = {
+            "call_id": "SCL_talked",
+            "pipe_id": "PIPE_1",
+            "to_number": "+919800000002",
+            "status": "completed",
+            "direction": "outbound",
+            "duration_s": 12,
+            "recording_url": "https://rec.example/SCL_talked.mp3",
+            "disposition": "answered",
+            "transcript": [
+                {"role": "agent", "content": "Hi there."},
+                {"role": "user", "content": "Hello."},
+            ],
+        }
+        call = await client.calls.get("SCL_talked")
+
+    assert call.recording_url == "https://rec.example/SCL_talked.mp3"
+    assert call.disposition == "answered"
+    assert [t["role"] for t in call.transcript] == ["agent", "user"]
+
+
+@pytest.mark.anyio
+async def test_call_without_transcript_defaults_to_empty(client: AsyncClient):
+    """A live call has no transcript key yet — that must not raise."""
+    with patch.object(client.calls._http, "get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = {
+            "call_id": "SCL_live",
+            "status": "active",
+            "direction": "outbound",
+        }
+        call = await client.calls.get("SCL_live")
+
+    assert call.transcript == []
+    assert call.recording_url is None

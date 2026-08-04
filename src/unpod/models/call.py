@@ -33,6 +33,12 @@ class Call(BaseModel):
     duration_s: float | None = None
     status: str = "pending"
     end_reason: str | None = None
+    disposition: str | None = None
+    recording_url: str | None = None
+    # Conversation turns ({role, content, timestamp}). Populated on
+    # ``calls.get(call_id)``; the list endpoint projects it out, so a Call from
+    # ``calls.list()`` carries an empty transcript by design.
+    transcript: list[dict[str, Any]] = Field(default_factory=list)
     created: datetime | None = None
     modified: datetime | None = None
 
