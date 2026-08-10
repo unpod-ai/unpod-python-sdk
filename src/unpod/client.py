@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from unpod._base_url import platform_base, service_base
 from unpod.management._auth import Auth, BearerAuth, TokenAuth
 from unpod.management._http import AsyncHTTPClient
+from unpod.management.analytics import AnalyticsResource
 from unpod.management.api_keys import ApiKeysResource
 from unpod.management.calls import CallsResource
 from unpod.management.numbers import NumbersResource
@@ -113,6 +114,11 @@ class AsyncClient:
         # Voice profiles read from the backend-core platform plane (Django
         # /api/v2/platform/voice-profiles/), same client as telephony.
         self.voice_profiles = VoiceProfilesResource(self._platform_http)
+        # Analytics rides the backend-core proxy like every other
+        # developer-facing surface: the SDK never talks to supervoice directly,
+        # so the proxy stays the one place org resolution and key injection
+        # happen (/api/v2/platform + /speech/v1/analytics).
+        self.analytics = AnalyticsResource(self._platform_http)
         self.trunks = TrunksResource(self._http)
         self.numbers = NumbersResource(self._http)
         self.pipes = PipesResource(self._http)
@@ -120,6 +126,7 @@ class AsyncClient:
         self.sessions = SessionsResource(self._http, orch_http=self._orch_http)
         self.recordings = RecordingsResource(self._http)
         self.transcripts = TranscriptsResource(self._http)
+
         self.api_keys = ApiKeysResource(self._http)
 
     async def __aenter__(self) -> "AsyncClient":
@@ -161,6 +168,7 @@ class Client:
         self.recordings = _SyncResource(self._async_client.recordings)
         self.transcripts = _SyncResource(self._async_client.transcripts)
         self.api_keys = _SyncResource(self._async_client.api_keys)
+        self.analytics = _SyncResource(self._async_client.analytics)
         self.telephony = _SyncTelephonyNamespace(self._async_client.telephony)
 
     def close(self) -> None:

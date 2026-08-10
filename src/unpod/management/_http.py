@@ -106,13 +106,26 @@ class AsyncHTTPClient:
         except Exception:  # noqa: BLE001 — never mask the HTTP error
             pass
 
+    @staticmethod
+    def _json_or_empty(resp: Any) -> Any:
+        """Parsed body, or ``{}`` when there is none.
+
+        A 204 (or any empty 2xx) is a legitimate success — ``attach`` and
+        friends answer that way — but ``resp.json()`` raises JSONDecodeError on
+        an empty body, which surfaced as a parse error instead of the success
+        it actually was.
+        """
+        if getattr(resp, "status_code", 200) == 204 or not (resp.content or b""):
+            return {}
+        return resp.json()
+
     async def get(self, path: str, params: dict[str, str] | None = None) -> dict | list:
         """Send a GET request and return parsed JSON response."""
         client = await self._ensure_client()
         resp = await client.get(path, headers=self._headers(), params=params)
         self._log_response(resp)
         resp.raise_for_status()
-        return resp.json()  # type: ignore[no-any-return]
+        return self._json_or_empty(resp)  # type: ignore[no-any-return]
 
     async def post(self, path: str, json: dict | None = None) -> dict | list:
         """Send a POST request and return parsed JSON response."""
@@ -120,7 +133,7 @@ class AsyncHTTPClient:
         resp = await client.post(path, headers=self._headers(), json=json)
         self._log_response(resp)
         resp.raise_for_status()
-        return resp.json()  # type: ignore[no-any-return]
+        return self._json_or_empty(resp)  # type: ignore[no-any-return]
 
     async def put(self, path: str, json: dict | None = None) -> dict:
         """Send a PUT request and return parsed JSON response."""
@@ -128,7 +141,7 @@ class AsyncHTTPClient:
         resp = await client.put(path, headers=self._headers(), json=json)
         self._log_response(resp)
         resp.raise_for_status()
-        return resp.json()  # type: ignore[no-any-return]
+        return self._json_or_empty(resp)  # type: ignore[no-any-return]
 
     async def patch(self, path: str, json: dict | None = None) -> dict:
         """Send a PATCH request and return parsed JSON response."""
@@ -136,7 +149,7 @@ class AsyncHTTPClient:
         resp = await client.patch(path, headers=self._headers(), json=json)
         self._log_response(resp)
         resp.raise_for_status()
-        return resp.json()  # type: ignore[no-any-return]
+        return self._json_or_empty(resp)  # type: ignore[no-any-return]
 
     async def delete(self, path: str) -> None:
         """Send a DELETE request (no response body)."""
@@ -151,7 +164,7 @@ class AsyncHTTPClient:
         resp = await client.delete(path, headers=self._headers())
         self._log_response(resp)
         resp.raise_for_status()
-        return resp.json()  # type: ignore[no-any-return]
+        return self._json_or_empty(resp)  # type: ignore[no-any-return]
 
     async def close(self) -> None:
         """Close the underlying httpx client."""
