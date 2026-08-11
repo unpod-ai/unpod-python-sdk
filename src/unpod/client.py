@@ -11,6 +11,7 @@ from unpod._base_url import platform_base, service_base
 from unpod.management._auth import Auth, BearerAuth, TokenAuth
 from unpod.management._http import AsyncHTTPClient
 from unpod.management.analytics import AnalyticsResource
+from unpod.management.agent import AgentNamespace
 from unpod.management.api_keys import ApiKeysResource
 from unpod.management.calls import CallsResource
 from unpod.management.numbers import NumbersResource
@@ -122,6 +123,7 @@ class AsyncClient:
         self.trunks = TrunksResource(self._http)
         self.numbers = NumbersResource(self._http)
         self.pipes = PipesResource(self._http)
+        self.agent = AgentNamespace(self._http)
         self.calls = CallsResource(self._http)
         self.sessions = SessionsResource(self._http, orch_http=self._orch_http)
         self.recordings = RecordingsResource(self._http)
@@ -163,6 +165,7 @@ class Client:
         self.trunks = _SyncResource(self._async_client.trunks)
         self.numbers = _SyncResource(self._async_client.numbers)
         self.pipes = _SyncResource(self._async_client.pipes)
+        self.agent = _SyncAgentNamespace(self._async_client.agent)
         self.calls = _SyncResource(self._async_client.calls)
         self.sessions = _SyncResource(self._async_client.sessions)
         self.recordings = _SyncResource(self._async_client.recordings)
@@ -199,6 +202,13 @@ class _SyncResource:
             return result
 
         return _call
+
+
+class _SyncAgentNamespace:
+    """Blocking facade for the nested agent namespace."""
+
+    def __init__(self, async_namespace: Any) -> None:
+        self.voice = _SyncResource(async_namespace.voice)
 
 
 def _run_blocking(coro: Any) -> Any:
