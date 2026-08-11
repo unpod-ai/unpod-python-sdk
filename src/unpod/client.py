@@ -12,6 +12,7 @@ from unpod.management._auth import Auth, BearerAuth, TokenAuth
 from unpod.management._http import AsyncHTTPClient
 from unpod.management.analytics import AnalyticsResource
 from unpod.management.api_keys import ApiKeysResource
+from unpod.agents import AgentsNamespace
 from unpod.management.calls import CallsResource
 from unpod.management.numbers import NumbersResource
 from unpod.management.pipes import PipesResource
@@ -121,6 +122,9 @@ class AsyncClient:
         self.analytics = AnalyticsResource(self._platform_http)
         self.trunks = TrunksResource(self._http)
         self.numbers = NumbersResource(self._http)
+        self.agents = AgentsNamespace(self._http)
+        # Deprecated for one release; client.agents.voice is the documented
+        # surface. Both write the same rows.
         self.pipes = PipesResource(self._http)
         self.calls = CallsResource(self._http)
         self.sessions = SessionsResource(self._http, orch_http=self._orch_http)
@@ -162,6 +166,7 @@ class Client:
         self.voice_profiles = _SyncResource(self._async_client.voice_profiles)
         self.trunks = _SyncResource(self._async_client.trunks)
         self.numbers = _SyncResource(self._async_client.numbers)
+        self.agents = _SyncAgentsNamespace(self._async_client.agents)
         self.pipes = _SyncResource(self._async_client.pipes)
         self.calls = _SyncResource(self._async_client.calls)
         self.sessions = _SyncResource(self._async_client.sessions)
@@ -209,6 +214,27 @@ def _run_blocking(coro: Any) -> Any:
     raise RuntimeError(
         "Client cannot be used from a running event loop; use AsyncClient"
     )
+
+
+class _SyncAgentsNamespace:
+    """Blocking facade over ``client.agents`` (nested resources + group verbs)."""
+
+    def __init__(self, async_ns: Any) -> None:
+        self._async = async_ns
+        self.voice = _SyncResource(async_ns.voice)
+        self.numbers = _SyncResource(async_ns.numbers)
+
+    def list(self) -> Any:
+        return _run_blocking(self._async.list())
+
+    def get(self, agent_id: str) -> Any:
+        return _run_blocking(self._async.get(agent_id))
+
+    def update(self, agent_id: str, **kwargs: Any) -> Any:
+        return _run_blocking(self._async.update(agent_id, **kwargs))
+
+    def delete(self, agent_id: str) -> None:
+        return _run_blocking(self._async.delete(agent_id))
 
 
 class _SyncTelephonyNamespace:
