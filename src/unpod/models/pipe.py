@@ -19,6 +19,7 @@ class Pipe(BaseModel):
     voice_profile_id: str | None = Field(default=None, alias="voice_profile")
     agent_id: str | None = None  # was runner_agent_id (the dev brain)
     agent_endpoint: str | None = None
+    playbook_id: str | None = None
     recording: bool | dict[str, Any] = False
     max_call_duration_s: int = 3600
     number_id: str | None = None

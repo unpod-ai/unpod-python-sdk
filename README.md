@@ -61,6 +61,13 @@ from unpod import AsyncClient, AgentRunner, CallContext
 
 client = AsyncClient()  # picks up the env above; token auth wins over UNPOD_API_KEY
 
+# Create an embedded voice agent directly from a prompt (no runner/publish step)
+embedded = await client.agent.voice.create(
+    name="support-line",
+    voice_profile="VP_openai_alloy",
+    prompt="You are a concise, helpful support assistant.",
+)
+
 # Management: pick a voice, bind a Speech Pipe to your agent
 profiles = await client.voice_profiles.list(language="en")
 pipe = await client.pipes.create(
