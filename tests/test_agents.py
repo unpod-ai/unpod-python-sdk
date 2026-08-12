@@ -38,6 +38,10 @@ class _FakeHTTP:
     async def delete(self, path: str) -> None:
         self.calls.append(("DELETE", path, None))
 
+    async def delete_with_response(self, path: str):
+        self.calls.append(("DELETE", path, None))
+        return self._response
+
 
 def _ns(response: Any = None) -> tuple[AgentsNamespace, _FakeHTTP]:
     http = _FakeHTTP(response)
@@ -236,3 +240,19 @@ def test_brain_types_are_exported_at_package_root() -> None:
     for name in ("Playbook", "Prompt", "Endpoint", "Runner"):
         assert name in unpod.__all__
         assert hasattr(unpod, name)
+
+
+async def test_numbers_detach_targets_the_route_that_exists() -> None:
+    """DELETE /numbers/{id}/attach — there is no POST /detach on the platform.
+
+    numbers.py exposes POST /numbers/{id}/attach and DELETE
+    /numbers/{id}/attach; detaching is modelled as removing the attachment.
+    The first version of this method POSTed to a /detach path that 404s.
+    """
+    ns, http = _ns({})
+
+    await ns.numbers.detach("NUM_1")
+
+    method, path, _ = http.calls[0]
+    assert method == "DELETE"
+    assert path == "/api/v2/platform/speech/v1/numbers/NUM_1/attach"

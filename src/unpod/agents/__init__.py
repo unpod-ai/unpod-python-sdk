@@ -231,9 +231,13 @@ class AgentNumbersResource:
         return unwrap_data(resp)
 
     async def detach(self, number_id: str) -> dict[str, Any]:
-        """Release a number from whatever agent holds it."""
-        resp = await self._http.post(
-            f"/api/v2/platform/speech/v1/numbers/{number_id}/detach", json={}
+        """Release a number from whatever agent holds it.
+
+        DELETE on ``/attach``, not POST on ``/detach``: the platform models
+        detaching as removing the attachment, and no ``/detach`` route exists.
+        """
+        resp = await self._http.delete_with_response(
+            f"/api/v2/platform/speech/v1/numbers/{number_id}/attach"
         )
         return unwrap_data(resp)
 
