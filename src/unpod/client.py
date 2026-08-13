@@ -240,6 +240,11 @@ class _SyncAgentsNamespace:
     def get(self, agent_id: str) -> Any:
         return _run_blocking(self._async.get(agent_id))
 
+    def create(self, agent_id: str, *, brain: Any, **kwargs: Any) -> Any:
+        return _run_blocking(
+            self._async.create(agent_id, brain=brain, **kwargs)
+        )
+
     def update(self, agent_id: str, **kwargs: Any) -> Any:
         return _run_blocking(self._async.update(agent_id, **kwargs))
 

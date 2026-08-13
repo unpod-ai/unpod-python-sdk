@@ -132,6 +132,17 @@ async def test_create_posts_the_brain_as_one_object() -> None:
     assert body["voice_profile"] == "hindi-female-warm-hd"
 
 
+async def test_root_create_alias_serialises_typed_runner() -> None:
+    ns, http = _ns(_ROW)
+
+    await ns.create("gamestop", brain=Runner(agent_id="gamestop"))
+
+    assert http.calls[0][2]["brain"] == {
+        "type": "runner",
+        "ref": "gamestop",
+    }
+
+
 async def test_create_needs_no_playbook_for_a_prompt_agent() -> None:
     """PRD success criterion 1: a prompt agent, with nothing deployed."""
     ns, http = _ns(_ROW)
@@ -218,7 +229,9 @@ async def test_numbers_attach_binds_by_agent_id() -> None:
     method, path, body = http.calls[0]
     assert method == "POST"
     assert path.endswith("/numbers/NUM_1/attach")
-    assert body == {"agent_id": "gamestop-support"}
+    # The E.164 rides the BODY: supervoice matches an existing sv_numbers row
+    # by number before falling back to the path id.
+    assert body == {"number": "NUM_1", "agent_id": "gamestop-support"}
 
 
 # --- backward compatibility -------------------------------------------------

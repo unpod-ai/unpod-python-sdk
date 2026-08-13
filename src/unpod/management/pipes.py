@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from typing import Any
 
 from unpod.management._http import AsyncHTTPClient, unwrap_data
@@ -9,18 +10,20 @@ from unpod.models import Pipe
 
 
 class PipesResource:
-    """Manage deployed Speech Pipes."""
+    """Deprecated compatibility surface for the ``sv_agents`` API."""
 
     def __init__(self, http: AsyncHTTPClient) -> None:
         self._http = http
 
     async def list(self) -> list[Pipe]:
-        """List all pipes."""
+        """List agent rows through the deprecated pipe route."""
+        _warn_deprecated()
         resp = unwrap_data(await self._http.get("/api/v2/platform/speech/v1/pipes"))
         return [Pipe(**item) for item in resp]
 
     async def get(self, pipe_id: str) -> Pipe:
-        """Get a single pipe by ID."""
+        """Get an agent row through the deprecated pipe route."""
+        _warn_deprecated()
         resp = unwrap_data(await self._http.get(f"/api/v2/platform/speech/v1/pipes/{pipe_id}"))
         return Pipe(**resp)
 
@@ -33,7 +36,8 @@ class PipesResource:
         recording: bool = False,
         max_call_duration_s: int = 3600,
     ) -> Pipe:
-        """Create a new pipe."""
+        """Create an agent row through the deprecated pipe route."""
+        _warn_deprecated()
         body: dict[str, Any] = {
             "name": name,
             "recording": recording,
@@ -50,9 +54,21 @@ class PipesResource:
 
     async def update(self, pipe_id: str, **kwargs: Any) -> Pipe:
         """Update an existing pipe (PATCH — supervoice's only pipe-update verb)."""
+        _warn_deprecated()
         resp = unwrap_data(await self._http.patch(f"/api/v2/platform/speech/v1/pipes/{pipe_id}", json=kwargs))
         return Pipe(**resp)
 
     async def delete(self, pipe_id: str) -> None:
-        """Delete a pipe."""
+        """Delete an agent row through the deprecated pipe route."""
+        _warn_deprecated()
         await self._http.delete(f"/api/v2/platform/speech/v1/pipes/{pipe_id}")
+
+
+def _warn_deprecated() -> None:
+    warnings.warn(
+        "client.pipes is deprecated; use client.agents.voice, "
+        "client.agents, and client.agents.numbers instead. The server stores "
+        "these rows in sv_agents.",
+        DeprecationWarning,
+        stacklevel=3,
+    )

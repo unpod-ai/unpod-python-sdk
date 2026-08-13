@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from unpod import AsyncClient, Client
+from unpod.agents import Runner
 
 
 _PIPE = {
@@ -70,3 +71,61 @@ async def test_agent_voice_requires_exactly_one_source() -> None:
 def test_sync_agent_voice_namespace_is_available() -> None:
     client = Client(api_key="test", base_url="https://example.test")
     assert client.agent.voice is not None
+
+
+@pytest.mark.anyio
+async def test_grouped_agents_resource_uses_proxy_contract() -> None:
+    client = AsyncClient(
+        api_key="test", base_url="https://example.test/api/v2/platform/speech"
+    )
+    client.agents._http.get = AsyncMock(
+        return_value={
+            "data": [
+                {
+                    "agent_id": "support",
+                    "name": "Support",
+                    "brain": {"type": "runner", "ref": "support"},
+                    "voices": [],
+                }
+            ]
+        }
+    )
+
+    agents = await client.agents.list()
+
+    assert agents[0].agent_id == "support"
+    # Path-transparent through the Django proxy: v1/<resource> forwards to
+    # supervoice /platform/v1/<resource>, so the SDK spells the full mount.
+    client.agents._http.get.assert_awaited_once_with(
+        "/api/v2/platform/speech/v1/agents"
+    )
+
+
+@pytest.mark.anyio
+async def test_grouped_agents_create_accepts_model_or_keywords() -> None:
+    client = AsyncClient(api_key="test", base_url="https://example.test")
+    client.agents._http.post = AsyncMock(
+        return_value={
+            "data": {
+                "agent_id": "support",
+                "voice_profile_id": "vp_1",
+                "project_id": "proj_1",
+                "name": "Support",
+                "brain": {"type": "runner", "ref": "support"},
+                "brain_execution": "bridge",
+                "is_default": True,
+            }
+        }
+    )
+
+    await client.agents.create(
+        "support",
+        name="Support",
+        brain=Runner("support"),
+        voice_profile="vp_1",
+    )
+    body = client.agents._http.post.await_args.kwargs["json"]
+    assert body["agent_id"] == "support"
+    # The typed brain serialises through as_body(), never as a bare object the
+    # JSON encoder would choke on.
+    assert body["brain"] == {"type": "runner", "ref": "support"}

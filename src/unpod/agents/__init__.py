@@ -222,11 +222,36 @@ class AgentNumbersResource:
     def __init__(self, http: AsyncHTTPClient) -> None:
         self._http = http
 
-    async def attach(self, agent_id: str, number_id: str) -> dict[str, Any]:
-        """Point a number at an agent."""
+    async def attach(
+        self,
+        agent_id: str,
+        number: str,
+        *,
+        number_id: str | None = None,
+        inbound_trunk_id: str | None = None,
+        outbound_trunk_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Attach an E.164 number directly to an sv_agents agent.
+
+        This intentionally calls Supervoice's speech management plane rather
+        than backend-core's separate telephony agent registry. Supervoice
+        validates ``agent_id`` in ``sv_agents`` and upserts ``sv_numbers``.
+
+        ``number_id`` is the upstream (postgres) id. Supervoice matches an
+        EXISTING row by the E.164 in the body, so omitting it works for any
+        number already synced — but on the upsert branch the path id is stored
+        as ``unpod_number_id``, the cross-plane back-reference. Passing the
+        real id there keeps that reference meaningful instead of recording a
+        phone number as a database id.
+        """
+        body: dict[str, Any] = {"number": number, "agent_id": agent_id}
+        if inbound_trunk_id is not None:
+            body["inbound_trunk_id"] = inbound_trunk_id
+        if outbound_trunk_id is not None:
+            body["outbound_trunk_id"] = outbound_trunk_id
         resp = await self._http.post(
-            f"/api/v2/platform/speech/v1/numbers/{number_id}/attach",
-            json={"agent_id": agent_id},
+            f"/api/v2/platform/speech/v1/numbers/{number_id or number}/attach",
+            json=body,
         )
         return unwrap_data(resp)
 
@@ -254,6 +279,15 @@ class AgentsNamespace:
         self._http = http
         self.voice = AgentVoiceResource(http)
         self.numbers = AgentNumbersResource(http)
+
+    async def create(self, agent_id: str, *, brain: Brain, **kwargs: Any) -> AgentVoice:
+        """Backward-compatible alias for ``client.agents.voice.create``.
+
+        Older SDK examples used ``client.agents.create``. Keep that spelling
+        while routing through the typed brain serializer, so Brain objects
+        never leak into the JSON encoder.
+        """
+        return await self.voice.create(agent_id, brain=brain, **kwargs)
 
     async def list(self) -> list[Agent]:
         """Every agent in the project, each with all its voices."""
