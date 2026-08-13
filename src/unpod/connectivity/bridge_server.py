@@ -83,6 +83,12 @@ _RESERVED_METADATA_KEYS = {
     "instructions",
 }
 
+# Server-owned identity that must reach the entrypoint whatever the caller put
+# in ``data``. The playbook pool resolves its brain from these: ``agent_id``
+# first, ``playbook_id`` as the fallback, the other two only scoping the
+# lookup. Losing them is a call that connects and then hangs up in silence.
+_ROUTING_METADATA_KEYS = ("agent_id", "playbook_id", "project_id", "org_id")
+
 
 class _ServerTransport:
     """Adapts a server-side websocket to the bridge transport interface.
@@ -118,12 +124,31 @@ def _context_from_call_started(
     """Build the developer-facing call context from a call.started event."""
     metadata = started.metadata or {}
     data = metadata.get("data")
-    if not isinstance(data, dict):
+    if isinstance(data, dict):
+        # Copy: this dict belongs to the caller's frame, and the defaults below
+        # would otherwise mutate it.
+        data = dict(data)
+    else:
         data = {
             key: value
             for key, value in metadata.items()
             if key not in _RESERVED_METADATA_KEYS
         }
+    # The dispatcher forwards the ROUTING IDENTITY as top-level metadata keys,
+    # alongside a nested ``data`` holding the caller's own payload ("the caller
+    # never has to pass either in data" — supervoice dispatch_client). Because
+    # an empty ``data: {}`` is still a dict, the branch above always won and
+    # that identity was dropped on the floor: a pool brain then saw neither
+    # agent_id nor playbook_id, and ended the call as ``invalid_call_target``
+    # before it ever spoke.
+    #
+    # Server value wins over a same-named caller key. ``agent_id`` decides
+    # WHICH agent answers, so letting request data name it is the
+    # wrong-agent-answered bug.
+    for key in _ROUTING_METADATA_KEYS:
+        value = metadata.get(key)
+        if value:
+            data[key] = value
     # voice_profile_id rides call.started as a top-level field (not metadata);
     # surface it in data so entrypoints see the profile the media agent used.
     if started.voice_profile_id:

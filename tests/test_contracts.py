@@ -77,6 +77,77 @@ def test_runner_builds_call_context_from_call_started_metadata() -> None:
     assert ctx.data == {"customer_id": "C1", "voice_profile_id": "vp_1"}
 
 
+def test_routing_identity_survives_a_nested_data_payload() -> None:
+    """The regression that made an agent connect and then say nothing.
+
+    supervoice's dispatcher sends the routing identity as TOP-LEVEL metadata
+    keys and the caller's payload under ``data``. An empty ``data: {}`` is
+    still a dict, so it always won and agent_id/playbook_id never reached the
+    entrypoint — the playbook pool then ended the call ``invalid_call_target``
+    before the first turn. This is the exact frame a runner-brain call sends.
+    """
+    started = CallStartedEvent(
+        session_id="s-1",
+        job_id="j-1",
+        room_id="r-1",
+        voice_profile_id="vp_1",
+        metadata={
+            "agent_id": "my-support-agent",
+            "playbook_id": None,
+            "project_id": "22",
+            "org_id": "22",
+            "pipe_id": "PIPE_x",
+            "data": {"org_handle": "example.co"},
+        },
+    )
+
+    ctx = _context_from_call_started(
+        started, agent_id="my-support-agent", session=object()  # type: ignore[arg-type]
+    )
+
+    assert ctx.data["agent_id"] == "my-support-agent"
+    assert ctx.data["project_id"] == "22"
+    # The caller's own payload is still there.
+    assert ctx.data["org_handle"] == "example.co"
+
+
+def test_request_data_cannot_rename_the_answering_agent() -> None:
+    """Server identity outranks caller data — else `data` picks the agent."""
+    started = CallStartedEvent(
+        session_id="s-1",
+        job_id="j-1",
+        room_id="r-1",
+        metadata={
+            "agent_id": "real-agent",
+            "data": {"agent_id": "attacker-agent"},
+        },
+    )
+
+    ctx = _context_from_call_started(
+        started, agent_id="real-agent", session=object()  # type: ignore[arg-type]
+    )
+
+    assert ctx.data["agent_id"] == "real-agent"
+
+
+def test_call_started_metadata_dict_is_not_mutated() -> None:
+    """The frame's own dict must survive context construction unchanged."""
+    payload = {"customer_id": "C1"}
+    started = CallStartedEvent(
+        session_id="s-1",
+        job_id="j-1",
+        room_id="r-1",
+        voice_profile_id="vp_1",
+        metadata={"agent_id": "a", "data": payload},
+    )
+
+    _context_from_call_started(
+        started, agent_id="a", session=object()  # type: ignore[arg-type]
+    )
+
+    assert payload == {"customer_id": "C1"}
+
+
 def test_call_context_data_keeps_explicit_voice_profile_id() -> None:
     started = CallStartedEvent(
         session_id="sess_1",
