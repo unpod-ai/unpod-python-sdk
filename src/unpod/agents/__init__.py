@@ -30,6 +30,7 @@ belongs to the agent, so editing it reaches every voice.
 
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -37,6 +38,92 @@ from pydantic import BaseModel, ConfigDict, Field
 from unpod.management._http import AsyncHTTPClient, unwrap_data
 
 _BASE = "/api/v2/platform/speech/v1/agents"
+
+
+# ── platform tools + ambience ────────────────────────────────────────────────
+
+
+class BackgroundSound(StrEnum):
+    """Continuous ambience mixed under the agent's speech.
+
+    ``none`` is off, and off is the default — an agent that does not ask for a
+    bed gets no mixer at all.
+    """
+
+    office = "office"
+    city = "city"
+    forest = "forest"
+    crowded_room = "crowded_room"
+    none = "none"
+
+
+class HandoverTool(BaseModel):
+    """Escalation to a human.
+
+    ``numbers`` is an ORDERED fallback list: the worker dials the first, and on
+    a failure walks to the next. There is no concurrency pool, so two calls
+    escalating at once can reach the same person.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    numbers: list[str] = Field(default_factory=list)
+
+
+class VoicemailTool(BaseModel):
+    """The line left on an answering machine before hanging up.
+
+    The tool itself cannot be disabled — a call parked on a voicemail box holds
+    a concurrency slot and bills the whole box timeout. Only the wording is
+    configurable; unset uses the platform default.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    message: str | None = None
+
+
+class ToolsConfig(BaseModel):
+    """Per-agent platform-tool config.
+
+    ``end_call`` and ``voicemail_detector`` are always enabled and are therefore
+    not representable here as disabled — by design, not omission.
+
+    ``extra="forbid"`` is the opposite choice from :class:`Agent` on purpose: a
+    typo in a REQUEST should fail at the call site, while an unknown field in a
+    RESPONSE must never break an older SDK.
+
+    Reachability, which surprises everyone once: a platform tool runs when a
+    playbook checkpoint it is attached to is entered. The playbook must declare
+    it (``type: python``, matching ``id``) and reference it from an ``on_enter``.
+    Enabling a tool here decides whether the implementation exists behind that
+    id — it does not, on its own, make the agent use it. Playbook brains only:
+    prompt and endpoint brains have no checkpoints.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    handover: HandoverTool | None = None
+    voicemail: VoicemailTool | None = None
+
+    def as_body(self) -> dict[str, Any]:
+        """Only the sections actually set, so a PATCH never blanks a sibling."""
+        body: dict[str, Any] = {}
+        if self.handover is not None:
+            body["handover"] = self.handover.model_dump()
+        if self.voicemail is not None:
+            body["voicemail"] = self.voicemail.model_dump()
+        return body
+
+
+def _tools_body(tools: "ToolsConfig | dict[str, Any] | None") -> dict[str, Any] | None:
+    """Normalise the ``tools=`` argument to a request body."""
+    if tools is None:
+        return None
+    if isinstance(tools, ToolsConfig):
+        return tools.as_body()
+    return dict(tools)
 
 
 # ── the brain union ──────────────────────────────────────────────────────────
@@ -147,6 +234,8 @@ class AgentVoice(BaseModel):
     brain: dict[str, Any] = Field(default_factory=dict)
     brain_execution: str = "bridge"
     is_default: bool = False
+    tools: dict[str, Any] = Field(default_factory=dict)
+    background_sound: str | None = None
 
 
 class Agent(BaseModel):
@@ -159,6 +248,8 @@ class Agent(BaseModel):
     brain: dict[str, Any] = Field(default_factory=dict)
     brain_execution: str = "bridge"
     voices: list[AgentVoice] = Field(default_factory=list)
+    tools: dict[str, Any] = Field(default_factory=dict)
+    background_sound: str | None = None
 
 
 # ── resources ────────────────────────────────────────────────────────────────
@@ -182,6 +273,8 @@ class AgentVoiceResource:
         max_call_duration_s: int = 3600,
         max_concurrent: int = 1,
         brain_execution: str | None = None,
+        tools: ToolsConfig | dict[str, Any] | None = None,
+        background_sound: BackgroundSound | str | None = None,
     ) -> AgentVoice:
         """Create an agent with its first voice."""
         body: dict[str, Any] = {
@@ -196,6 +289,8 @@ class AgentVoiceResource:
             ("voice_profile", voice_profile),
             ("greeting", greeting),
             ("brain_execution", brain_execution),
+            ("tools", _tools_body(tools)),
+            ("background_sound", str(background_sound) if background_sound else None),
         ):
             if value is not None:
                 body[key] = value
@@ -267,6 +362,48 @@ class AgentNumbersResource:
         return unwrap_data(resp)
 
 
+class AgentToolsResource:
+    """``client.agents.tools`` — read and modify one agent's tool config.
+
+    Implemented over GET + PUT of the agent itself. There is no
+    ``/agents/{id}/tools`` endpoint, and there must not be one: the Django
+    speech proxy enumerates agent routes explicitly and its passthrough
+    excludes ``agents``, so a sub-route would 404 through the proxy while
+    working against supervoice directly. The proxy has already been bitten by
+    this once, for call analytics.
+    """
+
+    def __init__(self, http: AsyncHTTPClient) -> None:
+        self._http = http
+
+    async def get(self, agent_id: str) -> ToolsConfig:
+        """This agent's tool config, typed."""
+        resp = unwrap_data(await self._http.get(f"{_BASE}/{agent_id}"))
+        raw = (resp or {}).get("tools") or {}
+        return ToolsConfig(**raw)
+
+    async def set(
+        self,
+        agent_id: str,
+        *,
+        handover: HandoverTool | None = None,
+        voicemail: VoicemailTool | None = None,
+    ) -> Agent:
+        """Change the given sections, leaving the rest as they are.
+
+        Read-modify-write, and a MERGE rather than a replace: setting
+        ``voicemail`` must not silently wipe a configured ``handover``.
+        """
+        resp = unwrap_data(await self._http.get(f"{_BASE}/{agent_id}"))
+        merged: dict[str, Any] = dict((resp or {}).get("tools") or {})
+        if handover is not None:
+            merged["handover"] = handover.model_dump()
+        if voicemail is not None:
+            merged["voicemail"] = voicemail.model_dump()
+        put = await self._http.put(f"{_BASE}/{agent_id}", json={"tools": merged})
+        return Agent(**unwrap_data(put))
+
+
 class AgentsNamespace:
     """``client.agents`` — configure, voice, and reach an agent.
 
@@ -278,6 +415,7 @@ class AgentsNamespace:
     def __init__(self, http: AsyncHTTPClient) -> None:
         self._http = http
         self.voice = AgentVoiceResource(http)
+        self.tools = AgentToolsResource(http)
         self.numbers = AgentNumbersResource(http)
 
     async def create(self, agent_id: str, *, brain: Brain, **kwargs: Any) -> AgentVoice:
@@ -305,6 +443,8 @@ class AgentsNamespace:
         name: str | None = None,
         greeting: str | None = None,
         brain_execution: str | None = None,
+        tools: ToolsConfig | dict[str, Any] | None = None,
+        background_sound: BackgroundSound | str | None = None,
         **fields: Any,
     ) -> Agent:
         """Update the agent. A brain change reaches every voice."""
@@ -315,6 +455,8 @@ class AgentsNamespace:
             ("name", name),
             ("greeting", greeting),
             ("brain_execution", brain_execution),
+            ("tools", _tools_body(tools)),
+            ("background_sound", str(background_sound) if background_sound else None),
         ):
             if value is not None:
                 body[key] = value
@@ -329,12 +471,17 @@ class AgentsNamespace:
 __all__ = [
     "Agent",
     "AgentNumbersResource",
+    "AgentToolsResource",
     "AgentVoice",
     "AgentVoiceResource",
     "AgentsNamespace",
+    "BackgroundSound",
     "Brain",
     "Endpoint",
+    "HandoverTool",
     "Playbook",
     "Prompt",
     "Runner",
+    "ToolsConfig",
+    "VoicemailTool",
 ]

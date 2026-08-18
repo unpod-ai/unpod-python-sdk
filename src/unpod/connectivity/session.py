@@ -146,6 +146,7 @@ class Session:
         transfer_type: str = "number",
         mode: str = "cold",
         announcement: str = "",
+        fallback_targets: list[str] | None = None,
     ) -> None:
         """Transfer the call to ``target`` (E.164 number, agent id, or queue).
 
@@ -158,13 +159,22 @@ class Session:
         ``transfer_allowed_numbers`` / ``transfer_allowed_prefixes`` is set
         in pipe config, while ``human`` / ``agent`` targets bypass it. On
         success the agent's job ends.
+
+        ``fallback_targets`` are tried IN ORDER when ``target`` cannot be
+        reached, each re-checked against the same policy. The worker does the
+        walking: this method returns as soon as the verb is queued, so a loop
+        here would dial every number simultaneously. When every target fails the
+        worker speaks its own apology and the call resumes — callers must not
+        apologise as well.
         """
+        fallbacks = list(fallback_targets or [])
         logger.info(
-            "verb agent.transfer type=%s mode=%s target=%s%s "
+            "verb agent.transfer type=%s mode=%s target=%s fallbacks=%d%s "
             "(the worker enforces the destination allowlist)",
             transfer_type,
             mode,
             target,
+            len(fallbacks),
             " with announcement" if announcement else "",
         )
         await self._bridge.send_verb(
@@ -173,6 +183,7 @@ class Session:
                 target=target,
                 mode=mode,
                 announcement=announcement,
+                fallback_targets=fallbacks,
             )
         )
 
@@ -386,9 +397,7 @@ class Session:
                                             await chunk_task
                                         with contextlib.suppress(Exception):
                                             await stream.aclose()
-                                        await self._apply_interrupt(
-                                            ev, mid_stream=True
-                                        )
+                                        await self._apply_interrupt(ev, mid_stream=True)
                                         break
                                     elif await self._handle_passive_event(ev):
                                         pass
