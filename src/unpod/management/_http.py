@@ -51,6 +51,29 @@ class AsyncHTTPClient:
         self._timeout = timeout
         self._client: httpx.AsyncClient | None = None
 
+    def _url(self, path: str) -> str:
+        """The request target, honouring host-root paths.
+
+        Resources spell backend-core routes absolutely
+        (``/api/v2/platform/speech/v1/agents``). httpx resolves a leading slash
+        RELATIVE to ``base_url``, so a base that carries a path pushed every
+        such call one level down — ``http://host/platform`` produced
+        ``/platform/api/v2/platform/speech/v1/agents``, which nothing serves.
+        The base grows that path on its own whenever
+        ``UNPOD_SERVICE_BASE_URL`` is unset (``service_base()`` appends
+        ``/platform``), so the misroute came from an ABSENT variable.
+
+        An ``/api/`` path is addressed from the host root by construction:
+        resolve it against the origin and drop the base's path. Every other
+        path (``/v1/sessions`` on the orchestrator base, ``/v1/agents`` on a
+        direct-supervoice base) stays relative — those planes mount their
+        routes under whatever prefix the base names.
+        """
+        if not path.startswith("/api/"):
+            return path
+        origin = httpx.URL(self._base_url)
+        return str(origin.copy_with(raw_path=path.encode(), query=None))
+
     def _headers(self) -> dict[str, str]:
         """Auth + request ID headers.
 
@@ -122,7 +145,7 @@ class AsyncHTTPClient:
     async def get(self, path: str, params: dict[str, str] | None = None) -> dict | list:
         """Send a GET request and return parsed JSON response."""
         client = await self._ensure_client()
-        resp = await client.get(path, headers=self._headers(), params=params)
+        resp = await client.get(self._url(path), headers=self._headers(), params=params)
         self._log_response(resp)
         resp.raise_for_status()
         return self._json_or_empty(resp)  # type: ignore[no-any-return]
@@ -130,7 +153,7 @@ class AsyncHTTPClient:
     async def post(self, path: str, json: dict | None = None) -> dict | list:
         """Send a POST request and return parsed JSON response."""
         client = await self._ensure_client()
-        resp = await client.post(path, headers=self._headers(), json=json)
+        resp = await client.post(self._url(path), headers=self._headers(), json=json)
         self._log_response(resp)
         resp.raise_for_status()
         return self._json_or_empty(resp)  # type: ignore[no-any-return]
@@ -138,7 +161,7 @@ class AsyncHTTPClient:
     async def put(self, path: str, json: dict | None = None) -> dict:
         """Send a PUT request and return parsed JSON response."""
         client = await self._ensure_client()
-        resp = await client.put(path, headers=self._headers(), json=json)
+        resp = await client.put(self._url(path), headers=self._headers(), json=json)
         self._log_response(resp)
         resp.raise_for_status()
         return self._json_or_empty(resp)  # type: ignore[no-any-return]
@@ -146,7 +169,7 @@ class AsyncHTTPClient:
     async def patch(self, path: str, json: dict | None = None) -> dict:
         """Send a PATCH request and return parsed JSON response."""
         client = await self._ensure_client()
-        resp = await client.patch(path, headers=self._headers(), json=json)
+        resp = await client.patch(self._url(path), headers=self._headers(), json=json)
         self._log_response(resp)
         resp.raise_for_status()
         return self._json_or_empty(resp)  # type: ignore[no-any-return]
@@ -154,14 +177,14 @@ class AsyncHTTPClient:
     async def delete(self, path: str) -> None:
         """Send a DELETE request (no response body)."""
         client = await self._ensure_client()
-        resp = await client.delete(path, headers=self._headers())
+        resp = await client.delete(self._url(path), headers=self._headers())
         self._log_response(resp)
         resp.raise_for_status()
 
     async def delete_with_response(self, path: str) -> dict:
         """Send a DELETE request and return parsed JSON response."""
         client = await self._ensure_client()
-        resp = await client.delete(path, headers=self._headers())
+        resp = await client.delete(self._url(path), headers=self._headers())
         self._log_response(resp)
         resp.raise_for_status()
         return self._json_or_empty(resp)  # type: ignore[no-any-return]
