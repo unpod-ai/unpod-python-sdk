@@ -104,6 +104,15 @@ class ObservabilityManager:
                 prompt_messages=data.prompt_messages,
                 response_json=data.response_json,
                 edge_id=data.edge_id,
+                # Additive — a consumer keying **data can ignore these. Were
+                # previously dropped here even though the sibling
+                # self._usage.record_llm() call (session.py) already reads
+                # them off the same `data` object for the real billing
+                # ledger; a caller keyed on THIS hook event (e.g. the
+                # playground's own live cost display) never saw them.
+                cached=getattr(data, "cached", 0),
+                cache_write=getattr(data, "cache_write", 0),
+                estimated=getattr(data, "estimated", False),
             )
 
     def end_turn(self, agent_text: str, from_node: str, to_node: str) -> None:
