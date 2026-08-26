@@ -90,8 +90,10 @@ async def setup() -> None:
         if not available:
             print("No available numbers to attach — sync a trunk first.")
             return
-        number = await client.numbers.attach(available[0].number_id, pipe.pipe_id)
-        print(f"Attached number: {number.number} → Speech Pipe {pipe.pipe_id}")
+        # The binding is the AGENT, not the pipe: supervoice resolves the pipe
+        # from the agent at call time and no longer stores a pin.
+        number = await client.numbers.attach(available[0].number_id, pipe.agent_id)
+        print(f"Attached number: {number.number} → agent {pipe.agent_id}")
 
 
 # ---------------------------------------------------------------------------
