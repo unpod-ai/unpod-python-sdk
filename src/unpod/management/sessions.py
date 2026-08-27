@@ -14,12 +14,21 @@ from unpod.models import (
 )
 
 
+#: The speech proxy's canonical external mount (``config/urls.py``). The short
+#: ``/v1/...`` form these routes used before is not an API path on the
+#: deployment: the edge 308s it to the Next.js app, so the SDK got a redirect
+#: or HTML where it expected JSON. ``calls`` already used the full prefix,
+#: which is why it worked while its siblings did not.
+_SPEECH = "/api/v2/platform/speech/v1"
+
+
 class SessionsResource:
     """Access voice sessions.
 
     CRUD operations (``list``/``get``/``create_token``) target the platform
     service, while lifecycle operations (``end``/``transfer``/``merge``)
-    target the orchestrator service.
+    target the orchestrator service — a DIFFERENT base url, which is why those
+    three keep the bare ``/v1/...`` form below.
     """
 
     def __init__(
@@ -30,12 +39,12 @@ class SessionsResource:
 
     async def list(self) -> list[Session]:
         """List all sessions."""
-        resp = unwrap_data(await self._http.get("/v1/sessions"))
+        resp = unwrap_data(await self._http.get(f"{_SPEECH}/sessions"))
         return [Session(**item) for item in resp]
 
     async def get(self, session_id: str) -> Session:
         """Get a single session by ID."""
-        resp = unwrap_data(await self._http.get(f"/v1/sessions/{session_id}"))
+        resp = unwrap_data(await self._http.get(f"{_SPEECH}/sessions/{session_id}"))
         return Session(**resp)
 
     async def create_token(
@@ -51,7 +60,7 @@ class SessionsResource:
         body: dict[str, Any] = {"pipe_id": pipe_id}
         if metadata is not None:
             body["metadata"] = metadata
-        resp = unwrap_data(await self._http.post("/v1/sessions/token", json=body))
+        resp = unwrap_data(await self._http.post(f"{_SPEECH}/sessions/token", json=body))
         return SessionToken(**resp)
 
     async def end(self, session_id: str) -> SessionEndResult:

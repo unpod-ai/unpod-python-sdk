@@ -186,7 +186,7 @@ async def test_recordings_list(client: AsyncClient):
         recordings = await client.recordings.list(call_id="call_1")
         assert recordings[0].session_id == "sess_1"
         assert recordings[0].recording_url == "https://rec.example/1.wav"
-        mock_get.assert_called_once_with("/v1/recordings", params={"call_id": "call_1"})
+        mock_get.assert_called_once_with("/api/v2/platform/speech/v1/recordings", params={"call_id": "call_1"})
 
 
 @pytest.mark.anyio
@@ -206,7 +206,7 @@ async def test_transcripts_list(client: AsyncClient):
         sessions = await client.transcripts.list()
         assert sessions[0].session_id == "sess_1"
         assert sessions[0].transcript[0].content == "hi"
-        mock_get.assert_called_once_with("/v1/transcripts")
+        mock_get.assert_called_once_with("/api/v2/platform/speech/v1/transcripts")
 
 
 @pytest.mark.anyio
@@ -222,7 +222,7 @@ async def test_transcripts_get(client: AsyncClient):
         session = await client.transcripts.get("sess_1")
         assert session.session_id == "sess_1"
         assert session.transcript[0].content == "Hello"
-        mock_get.assert_called_once_with("/v1/sessions/sess_1")
+        mock_get.assert_called_once_with("/api/v2/platform/speech/v1/sessions/sess_1")
 
 
 @pytest.mark.anyio
@@ -238,7 +238,7 @@ async def test_sessions_create_token(client: AsyncClient):
         token = await client.sessions.create_token(pipe_id="PIPE_001")
         assert token.token == "tok-abc"
         mock_post.assert_called_once_with(
-            "/v1/sessions/token", json={"pipe_id": "PIPE_001"}
+            "/api/v2/platform/speech/v1/sessions/token", json={"pipe_id": "PIPE_001"}
         )
 
 
@@ -256,7 +256,7 @@ async def test_sessions_create_token_with_metadata(client: AsyncClient):
             pipe_id="PIPE_001", metadata={"user_id": "u42"}
         )
         mock_post.assert_called_once_with(
-            "/v1/sessions/token",
+            "/api/v2/platform/speech/v1/sessions/token",
             json={"pipe_id": "PIPE_001", "metadata": {"user_id": "u42"}},
         )
 
@@ -445,8 +445,13 @@ async def test_calls_get_exposes_transcript_and_recording(client: AsyncClient):
 
 
 @pytest.mark.anyio
-async def test_call_without_transcript_defaults_to_empty(client: AsyncClient):
-    """A live call has no transcript key yet — that must not raise."""
+async def test_call_without_transcript_reads_as_not_loaded(client: AsyncClient):
+    """A live call has no transcript key yet — that must not raise.
+
+    It reads as ``None`` (not loaded), not ``[]`` (said nothing): the two are
+    now different answers, because a list row projects the turns out and used
+    to be indistinguishable from a silent call.
+    """
     with patch.object(client.calls._http, "get", new_callable=AsyncMock) as mock_get:
         mock_get.return_value = {
             "call_id": "SCL_live",
@@ -455,5 +460,6 @@ async def test_call_without_transcript_defaults_to_empty(client: AsyncClient):
         }
         call = await client.calls.get("SCL_live")
 
-    assert call.transcript == []
+    assert call.transcript is None
+    assert call.transcript_turns == 0
     assert call.recording_url is None

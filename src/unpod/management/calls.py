@@ -28,13 +28,21 @@ class CallsResource:
         resp = unwrap_data(await self._http.get("/api/v2/platform/speech/v1/calls", params=params or None))
         return [Call(**item) for item in resp]
 
+    # NOTE for readers of a list row: ``call.transcript`` is ``None`` because
+    # the turns were not loaded, NOT because the call was silent. ``call
+    # .transcript_turns`` tells you how many there are; ``get(call_id)`` fetches
+    # them.
+
     async def get(self, call_id: str) -> Call:
         """Get a single call by ID.
 
         Unlike :meth:`list`, this carries the whole record: ``transcript``
         (turns as ``{role, content, timestamp}``) and ``recording_url``
         alongside the status/duration fields. Both are populated once the call
-        has ended; a live or never-answered call reads an empty transcript.
+        has ended; a live or never-answered call reads an empty transcript --
+        ``[]`` here, as opposed to the ``None`` a list row carries for turns it
+        simply did not load. ``transcript_turns`` is on both, so a list row can
+        say how much there is to fetch.
         """
         resp = unwrap_data(await self._http.get(f"/api/v2/platform/speech/v1/calls/{call_id}"))
         return Call(**resp)

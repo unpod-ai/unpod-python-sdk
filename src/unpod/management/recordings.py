@@ -21,5 +21,5 @@ class RecordingsResource:
     async def list(self, call_id: str | None = None) -> list[Session]:
         """List sessions that have a recording (read ``.recording_url`` on each)."""
         params = {"call_id": call_id} if call_id else None
-        resp = unwrap_data(await self._http.get("/v1/recordings", params=params))
+        resp = unwrap_data(await self._http.get("/api/v2/platform/speech/v1/recordings", params=params))
         return [Session(**item) for item in resp]

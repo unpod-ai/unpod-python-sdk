@@ -143,6 +143,10 @@ class AgentVoice(BaseModel):
 
     agent_id: str
     voice_profile_id: str | None = None
+    # The profile's display name, joined server-side. ``name`` below is the
+    # AGENT's name — the two are unrelated and were easy to confuse when only
+    # the opaque id came back.
+    voice_profile_name: str | None = None
     name: str = ""
     brain: dict[str, Any] = Field(default_factory=dict)
     brain_execution: str = "bridge"

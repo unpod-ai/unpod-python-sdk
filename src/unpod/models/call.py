@@ -37,8 +37,14 @@ class Call(BaseModel):
     recording_url: str | None = None
     # Conversation turns ({role, content, timestamp}). Populated on
     # ``calls.get(call_id)``; the list endpoint projects it out, so a Call from
-    # ``calls.list()`` carries an empty transcript by design.
-    transcript: list[dict[str, Any]] = Field(default_factory=list)
+    # ``None`` means NOT LOADED, ``[]`` means the call genuinely has no turns.
+    # ``calls.list()`` projects the turns out so a page stays small, and the old
+    # ``[]`` default made that indistinguishable from a silent call. Use
+    # ``transcript_turns`` to see whether there is anything to fetch, and
+    # ``calls.get(call_id)`` to fetch it.
+    transcript: list[dict[str, Any]] | None = None
+    #: Turn count, present on list rows as well as detail reads.
+    transcript_turns: int = 0
     created: datetime | None = None
     modified: datetime | None = None
 

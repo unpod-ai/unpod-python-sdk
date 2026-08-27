@@ -20,7 +20,7 @@ class TranscriptsResource:
 
     async def list(self) -> list[Session]:
         """List sessions that have a transcript (read ``.transcript`` on each)."""
-        resp = unwrap_data(await self._http.get("/v1/transcripts"))
+        resp = unwrap_data(await self._http.get("/api/v2/platform/speech/v1/transcripts"))
         return [Session(**item) for item in resp]
 
     async def get(self, session_id: str) -> Session:
@@ -29,5 +29,5 @@ class TranscriptsResource:
         There is no per-transcript endpoint; this reads the session, which
         carries the transcript.
         """
-        resp = unwrap_data(await self._http.get(f"/v1/sessions/{session_id}"))
+        resp = unwrap_data(await self._http.get(f"/api/v2/platform/speech/v1/sessions/{session_id}"))
         return Session(**resp)
