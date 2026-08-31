@@ -15,6 +15,7 @@ from unpod.management.agent import AgentNamespace
 from unpod.management.api_keys import ApiKeysResource
 from unpod.agents import AgentsNamespace
 from unpod.management.calls import CallsResource
+from unpod.management.domain_dictionaries import DomainDictionariesResource
 from unpod.management.numbers import NumbersResource
 from unpod.management.pipes import PipesResource
 from unpod.management.recordings import RecordingsResource
@@ -124,6 +125,11 @@ class AsyncClient:
         self.trunks = TrunksResource(self._http)
         self.numbers = NumbersResource(self._http)
         self.agents = AgentsNamespace(self._http)
+        # The words an agent hears and says. Same plane as agents: an agent's
+        # ``domain`` tag and the dictionary it names have to be written through
+        # one credential, or a tag can point at a dictionary the caller cannot
+        # read back.
+        self.domain_dictionaries = DomainDictionariesResource(self._http)
         # Deprecated for one release; client.agents.voice is the documented
         # surface. Both write the same rows.
         self.pipes = PipesResource(self._http)
@@ -169,6 +175,9 @@ class Client:
         self.trunks = _SyncResource(self._async_client.trunks)
         self.numbers = _SyncResource(self._async_client.numbers)
         self.agents = _SyncAgentsNamespace(self._async_client.agents)
+        self.domain_dictionaries = _SyncResource(
+            self._async_client.domain_dictionaries
+        )
         self.pipes = _SyncResource(self._async_client.pipes)
         self.agent = _SyncAgentNamespace(self._async_client.agent)
         self.calls = _SyncResource(self._async_client.calls)

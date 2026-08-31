@@ -293,6 +293,87 @@ both (`platform/routers/pipes.py::_resolve_voice_profile`). Prefer the
 `platform/seed/voice_profiles.py::GLOBAL_PROFILES`, not `"Alloy"`), which turns
 a hard-coded name into a 422 `voice_profile_not_found`.
 
+## Domain dictionaries — the words an agent hears and says
+
+`client.domain_dictionaries` (`management/domain_dictionaries.py`, supervoice
+`/v1/domain-dictionaries`). One dictionary per *domain*, reused by every agent
+tagged with that domain. Three sections:
+
+| Section | Feeds | `key` | `value` |
+|---|---|---|---|
+| `vocabulary` | STT keyterms | the term | an optional misheard variant |
+| `pronunciation` | TTS | the term | its respelling |
+| `fillers` | what the agent says while thinking | language code (`en`, `hi`) | phrases, one per line |
+
+**Two steps, and both are load-bearing.** The dictionary is one object; the
+agent's `domain` tag is another. Nothing looks a dictionary up by name at call
+time — the runtime reads the tag off the agent row
+(`supervoice/composition.py::_domain_of`) and loads the dictionary it names.
+A dictionary with nothing tagged changes no call.
+
+```python
+# 1. author it (REPLACES this tenant's rows for the domain — not a merge)
+await client.domain_dictionaries.upsert(
+    "gamestop",
+    vocabulary={"PowerUp Rewards": "power up rewords", "Xbox Series X": ""},
+    pronunciation={"GameStop": "GAME-stop"},
+    fillers={"en": "One moment…\nLet me check that…"},
+)
+
+# 2. tag the agent — this is what makes a call use it
+await client.agents.voice.create(
+    "gamestop-support", brain=Prompt("You are…"), domain="gamestop"
+)
+# or retag a live agent; reaches every voice of the group
+await client.agents.update("gamestop-support", domain="gamestop")
+```
+
+`upsert` accepts a mapping (shown above), a list of `{"key":…, "value":…}` rows,
+or a list of `models.KVItem` — so a fetched dictionary round-trips unedited.
+Since it REPLACES the tenant layer, add a single term by reading first:
+
+```python
+doc = await client.domain_dictionaries.get("gamestop")
+rows = [{"key": i.key, "value": i.value} for i in doc.vocabulary]
+rows.append({"key": "Pro Day", "value": ""})
+await client.domain_dictionaries.upsert("gamestop", vocabulary=rows)
+```
+
+**Three bundled seeds need no rows at all**: `banking`, `real_estate`,
+`hospital`. Tagging an agent `domain="banking"` works with an empty project —
+the seed resolves server-side, and your `upsert` rows layer on top (tenant wins
+per key). A *custom* domain with no rows and no seed resolves to nothing, so the
+tag applies no keyterms and no fillers; that is the one silent failure here, and
+`get()` returning empty `vocabulary`/`fillers` is how you see it.
+
+Reads are MERGED (seed ∪ tenant) — `vocabulary` is what the runtime will use,
+`seed_vocabulary` is the bundled half read-only, so you can tell what you
+inherited from what you typed. `DomainDictionary.keyterms` computes the exact
+keyterm list the recognizer receives (key AND variant, deduped).
+
+```python
+for row in await client.domain_dictionaries.list():
+    print(row.domain, "seeded" if row.seeded else "custom", row.agent_ids)
+
+await client.domain_dictionaries.clone("banking", "acme-banking")  # 409 if it has rows
+await client.domain_dictionaries.delete("gamestop")
+```
+
+`delete` means two different things by design: a **seeded** domain is *reset*
+(your overrides drop, the seed and the tags remain), a **custom** domain ceases
+to exist (agents and voice profiles pointing at it are untagged).
+
+`attach` / `detach` write only the `agent_ids` reverse index — what the
+Dictionaries pane lists. They do **not** change which dictionary an agent
+speaks with; that is the `domain=` tag. Creating an agent with `domain=` writes
+both (`platform/routers/agents.py::_sync_dictionary_index`), so you rarely call
+them directly. One dictionary per agent is enforced: attaching pulls the agent
+out of every other domain.
+
+The older `client.agent.voice.create(...)` surface takes `domain=` too, and for
+a playbook brain stamps it on the playbook document as well, so the authoring UI
+shows the same tag.
+
 ## Pipes
 
 A Pipe binds a voice profile to an `agent_id`. The real signature
@@ -487,6 +568,9 @@ trunk-path `AttachResult` / `DetachResult` / `OriginEndpoint` / `Trunk`.
 
 ### `models/pipe.py::Pipe`
 
+Carries `domain` — the domain dictionary this agent speaks with, or `None`
+(applies no dictionary).
+
 | Field | Type | Notes |
 |---|---|---|
 | `pipe_id`, `project_id`, `name` | `str` | |
@@ -500,6 +584,16 @@ trunk-path `AttachResult` / `DetachResult` / `OriginEndpoint` / `Trunk`.
 | `first_speaker` | `str \| None` | |
 | `fillers` | `dict` | |
 | `created`, `modified` | `datetime \| None` | |
+
+### `models/domain_dictionary.py::DomainDictionary`
+
+`domain`, `resolved_key` (the bundled seed it resolved to, `None` for a custom
+domain), `vocabulary` / `pronunciation` / `fillers` (merged — what the runtime
+uses), `seed_vocabulary` / `seed_pronunciation` (bundled, read-only), `settings`
+(filler knobs), `agent_ids` (reverse index), `updated_by_user_id`. Rows are
+`KVItem(key, value)`. `.keyterms` is a computed property, not a server field.
+
+`DomainListItem` is `domain` + `seeded` + `agent_ids`.
 
 ### `models/call.py::Call`
 

@@ -269,3 +269,52 @@ async def test_numbers_detach_targets_the_route_that_exists() -> None:
     method, path, _ = http.calls[0]
     assert method == "DELETE"
     assert path == "/api/v2/platform/speech/v1/numbers/NUM_1/attach"
+
+
+# --- domain dictionary tag --------------------------------------------------
+#
+# The dictionary itself lives in client.domain_dictionaries; THIS is the tag
+# that decides whether an agent uses one. Nothing resolves a dictionary by name
+# at call time, so an agent created without the tag applies none.
+
+
+@pytest.mark.anyio
+async def test_create_sends_the_domain_tag() -> None:
+    ns, http = _ns(_ROW)
+    await ns.voice.create("support", brain=Runner(), domain="gamestop")
+    assert http.calls[0][2]["domain"] == "gamestop"
+
+
+@pytest.mark.anyio
+async def test_create_without_a_domain_sends_no_key() -> None:
+    ns, http = _ns(_ROW)
+    await ns.voice.create("support", brain=Runner())
+    assert "domain" not in http.calls[0][2]
+
+
+@pytest.mark.anyio
+async def test_the_response_exposes_which_dictionary_an_agent_uses() -> None:
+    ns, _ = _ns({**_ROW, "domain": "gamestop"})
+    row = await ns.voice.create("support", brain=Runner())
+    assert row.domain == "gamestop"
+
+
+@pytest.mark.anyio
+async def test_update_retags_the_dictionary() -> None:
+    ns, http = _ns({"agent_id": "support", "voices": []})
+    await ns.update("support", domain="banking")
+    assert http.calls[0][:2] == (
+        "PUT",
+        "/api/v2/platform/speech/v1/agents/support",
+    )
+    assert http.calls[0][2] == {"domain": "banking"}
+
+
+@pytest.mark.anyio
+async def test_update_can_detach_with_an_empty_domain() -> None:
+    """`""` is the explicit detach; omitting the kwarg leaves the tag alone."""
+    ns, http = _ns({"agent_id": "support", "voices": []})
+    await ns.update("support", domain="")
+    assert http.calls[0][2] == {"domain": ""}
+    await ns.update("support", name="Renamed")
+    assert "domain" not in http.calls[1][2]

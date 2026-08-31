@@ -7,6 +7,11 @@ from unpod.models.analytics import (
 )
 from unpod.models.api_key import ApiKey
 from unpod.models.call import Call, CallCreate
+from unpod.models.domain_dictionary import (
+    DomainDictionary,
+    DomainListItem,
+    KVItem,
+)
 from unpod.models.number import Number
 from unpod.models.orchestrator_session import (
     MergeOutcome,
@@ -41,6 +46,9 @@ __all__ = [
     "CallCreate",
     "CallMetrics",
     "CostBreakdown",
+    "DomainDictionary",
+    "DomainListItem",
+    "KVItem",
     "MergeOutcome",
     "Number",
     "OrchestratorParticipant",

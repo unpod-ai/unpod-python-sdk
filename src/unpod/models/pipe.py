@@ -26,6 +26,10 @@ class Pipe(BaseModel):
     number: str | None = None
     status: str = "active"
     first_speaker: str | None = None
+    #: Domain dictionary this agent speaks with (``client.domain_dictionaries``).
+    #: The runtime reads the tag from HERE, so an agent showing None applies no
+    #: dictionary however many exist in the project.
+    domain: str | None = None
     fillers: dict[str, Any] = Field(default_factory=dict)
     created: datetime | None = None
     modified: datetime | None = None
@@ -44,6 +48,8 @@ class PipeCreate(BaseModel):
     first_speaker: str | None = None
     recording: bool | dict[str, Any] = False
     max_call_duration_s: int = 3600
+    #: Domain dictionary tag; see ``client.domain_dictionaries``.
+    domain: str | None = None
 
 
 class PipeUpdate(BaseModel):
@@ -57,3 +63,5 @@ class PipeUpdate(BaseModel):
     agent_endpoint: str | None = None
     recording: bool | None = None
     max_call_duration_s: int | None = None
+    #: None leaves the tag alone; an EMPTY STRING detaches the dictionary.
+    domain: str | None = None

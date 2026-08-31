@@ -35,8 +35,15 @@ class PipesResource:
         agent_endpoint: str | None = None,
         recording: bool = False,
         max_call_duration_s: int = 3600,
+        domain: str | None = None,
     ) -> Pipe:
-        """Create an agent row through the deprecated pipe route."""
+        """Create an agent row through the deprecated pipe route.
+
+        ``domain`` is the dictionary tag (``client.domain_dictionaries``). This
+        route writes a complete agent row, so a pipe created here uses a
+        dictionary exactly as an agent created through ``client.agents.voice``
+        does.
+        """
         _warn_deprecated()
         body: dict[str, Any] = {
             "name": name,
@@ -49,6 +56,8 @@ class PipesResource:
             body["agent_id"] = agent_id
         if agent_endpoint is not None:
             body["agent_endpoint"] = agent_endpoint
+        if domain is not None:
+            body["domain"] = domain
         resp = unwrap_data(await self._http.post("/api/v2/platform/speech/v1/pipes", json=body))
         return Pipe(**resp)
 

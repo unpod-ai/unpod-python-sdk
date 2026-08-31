@@ -129,3 +129,32 @@ async def test_grouped_agents_create_accepts_model_or_keywords() -> None:
     # The typed brain serialises through as_body(), never as a bare object the
     # JSON encoder would choke on.
     assert body["brain"] == {"type": "runner", "ref": "support"}
+
+
+@pytest.mark.anyio
+async def test_agent_voice_carries_the_domain_dictionary_tag() -> None:
+    """The tag the runtime resolves — omitted entirely when not asked for."""
+    client = AsyncClient(api_key="test", base_url="https://example.test")
+    client.agent.voice._http.post = AsyncMock(
+        return_value={**_PIPE, "domain": "gamestop"}
+    )
+
+    pipe = await client.agent.voice.create(
+        name="support", prompt="You are helpful.", domain="gamestop"
+    )
+
+    assert client.agent.voice._http.post.await_args.kwargs["json"]["domain"] == (
+        "gamestop"
+    )
+    assert pipe.domain == "gamestop"
+
+
+@pytest.mark.anyio
+async def test_agent_voice_without_a_domain_sends_no_key() -> None:
+    """The route forbids extra keys; a null would be a 422, not a no-op."""
+    client = AsyncClient(api_key="test", base_url="https://example.test")
+    client.agent.voice._http.post = AsyncMock(return_value=_PIPE)
+
+    await client.agent.voice.create(name="support", prompt="hi")
+
+    assert "domain" not in client.agent.voice._http.post.await_args.kwargs["json"]

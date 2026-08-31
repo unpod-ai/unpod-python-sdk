@@ -151,6 +151,10 @@ class AgentVoice(BaseModel):
     brain: dict[str, Any] = Field(default_factory=dict)
     brain_execution: str = "bridge"
     is_default: bool = False
+    #: The domain dictionary this voice speaks with (``client.domain_dictionaries``),
+    #: or None. This is the tag the runtime resolves — an agent created without
+    #: one applies no dictionary, whatever dictionaries exist in the project.
+    domain: str | None = None
 
 
 class Agent(BaseModel):
@@ -186,8 +190,16 @@ class AgentVoiceResource:
         max_call_duration_s: int = 3600,
         max_concurrent: int = 1,
         brain_execution: str | None = None,
+        domain: str | None = None,
     ) -> AgentVoice:
-        """Create an agent with its first voice."""
+        """Create an agent with its first voice.
+
+        ``domain`` names the dictionary this agent speaks with — author it with
+        ``client.domain_dictionaries.upsert()``, or use a bundled seed
+        (``banking``, ``real_estate``, ``hospital``) which needs no rows of your
+        own. The tag is stamped on the agent row, which is what the call path
+        resolves; a voice added later inherits it.
+        """
         body: dict[str, Any] = {
             "agent_id": agent_id,
             "name": name or agent_id,
@@ -200,6 +212,7 @@ class AgentVoiceResource:
             ("voice_profile", voice_profile),
             ("greeting", greeting),
             ("brain_execution", brain_execution),
+            ("domain", domain),
         ):
             if value is not None:
                 body[key] = value
@@ -309,9 +322,15 @@ class AgentsNamespace:
         name: str | None = None,
         greeting: str | None = None,
         brain_execution: str | None = None,
+        domain: str | None = None,
         **fields: Any,
     ) -> Agent:
-        """Update the agent. A brain change reaches every voice."""
+        """Update the agent. A brain change reaches every voice.
+
+        ``domain`` retags which dictionary the agent speaks with and reaches
+        every voice; pass ``""`` to detach it from its dictionary entirely.
+        Omitting it leaves the current tag alone.
+        """
         body: dict[str, Any] = dict(fields)
         if brain is not None:
             body["brain"] = brain.as_body()
@@ -319,6 +338,7 @@ class AgentsNamespace:
             ("name", name),
             ("greeting", greeting),
             ("brain_execution", brain_execution),
+            ("domain", domain),
         ):
             if value is not None:
                 body[key] = value

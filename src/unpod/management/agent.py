@@ -41,7 +41,14 @@ class VoiceAgentResource:
         playbook: str | os.PathLike[str] | None = None,
         recording: bool = False,
         max_call_duration_s: int = 3600,
+        domain: str | None = None,
     ) -> Pipe:
+        """Create a voice agent from exactly one brain source.
+
+        ``domain`` names the dictionary the agent speaks with (see
+        ``client.domain_dictionaries``); it is stamped on the agent row, and on
+        the playbook doc too when the brain is a playbook.
+        """
         sources: dict[str, Any] = {
             "agent_id": agent_id,
             "agent_endpoint": agent_endpoint,
@@ -66,6 +73,8 @@ class VoiceAgentResource:
         }
         if voice_profile is not None:
             body["voice_profile"] = voice_profile
+        if domain is not None:
+            body["domain"] = domain
         if agent_id is not None:
             body["agent_id"] = agent_id
         elif agent_endpoint is not None:
