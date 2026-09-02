@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from unpod.agents import BackgroundSound, check_background_volume
 from unpod.management._http import AsyncHTTPClient, unwrap_data
 from unpod.models import Pipe
 
@@ -42,12 +43,22 @@ class VoiceAgentResource:
         recording: bool = False,
         max_call_duration_s: int = 3600,
         domain: str | None = None,
+        background_sound: BackgroundSound | str | None = None,
+        background_sound_enabled: bool | None = None,
+        background_sound_volume: float | None = None,
     ) -> Pipe:
         """Create a voice agent from exactly one brain source.
 
         ``domain`` names the dictionary the agent speaks with (see
         ``client.domain_dictionaries``); it is stamped on the agent row, and on
         the playbook doc too when the brain is a playbook.
+
+        ``background_sound`` is the room the caller hears behind the agent
+        (:class:`~unpod.agents.BackgroundSound`), ``background_sound_volume``
+        its gain (0.0-1.0; omitted means the platform's own level, not
+        silence), and ``background_sound_enabled=False`` switches the bed off
+        while keeping the chosen room. All three apply for the whole call — the
+        agent cannot change them mid-conversation, by design.
         """
         sources: dict[str, Any] = {
             "agent_id": agent_id,
@@ -75,6 +86,14 @@ class VoiceAgentResource:
             body["voice_profile"] = voice_profile
         if domain is not None:
             body["domain"] = domain
+        # Ambience, sent only when named: an omitted level means the platform
+        # default, which must stay a default rather than being pinned here.
+        if background_sound is not None:
+            body["background_sound"] = str(background_sound)
+        if background_sound_enabled is not None:
+            body["background_sound_enabled"] = background_sound_enabled
+        if background_sound_volume is not None:
+            body["background_sound_volume"] = check_background_volume(background_sound_volume)
         if agent_id is not None:
             body["agent_id"] = agent_id
         elif agent_endpoint is not None:

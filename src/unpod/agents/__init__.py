@@ -30,6 +30,7 @@ belongs to the agent, so editing it reaches every voice.
 
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -37,6 +38,49 @@ from pydantic import BaseModel, ConfigDict, Field
 from unpod.management._http import AsyncHTTPClient, unwrap_data
 
 _BASE = "/api/v2/platform/speech/v1/agents"
+
+
+class BackgroundSound(StrEnum):
+    """Ambience mixed under the agent's speech for the whole call.
+
+    A ``StrEnum``, so the plain strings keep working and the four rooms the
+    platform actually ships are discoverable. The server refuses anything else
+    rather than substituting a default: a typo plays silence, which is
+    noticeable, instead of confidently the wrong room.
+    """
+
+    office = "office"
+    city = "city"
+    forest = "forest"
+    crowded_room = "crowded_room"
+    none = "none"
+
+
+#: Level bounds for that bed — a GAIN, not a percentage. Checked here so a
+#: slider sending 30 fails at the call site rather than on a round trip.
+VOLUME_MIN = 0.0
+VOLUME_MAX = 1.0
+
+
+def check_background_volume(value: float | None) -> float | None:
+    """*value* if it is a usable level, else raise. ``None`` passes through.
+
+    Public because the two management resources that also take a level
+    (``client.agent.voice.create``, ``client.pipes.create``) import it — one
+    range, checked identically wherever a level is accepted.
+
+    ``None`` means "the platform default" (a bed plays at the server's own
+    level), NOT silence, and not "unchanged" — for that, omit the argument.
+    """
+    if value is None:
+        return None
+    level = float(value)
+    if not VOLUME_MIN <= level <= VOLUME_MAX:
+        raise ValueError(
+            f"background_sound_volume must be between {VOLUME_MIN} and "
+            f"{VOLUME_MAX} (a gain, not a percentage); got {value!r}"
+        )
+    return level
 
 
 # ── the brain union ──────────────────────────────────────────────────────────
@@ -155,6 +199,13 @@ class AgentVoice(BaseModel):
     #: or None. This is the tag the runtime resolves — an agent created without
     #: one applies no dictionary, whatever dictionaries exist in the project.
     domain: str | None = None
+    #: Ambience under the agent's speech: which room, whether it plays, and how
+    #: loud. ``background_sound_volume`` of None means the platform's own
+    #: default level, not silence — ambience is switched off with
+    #: ``background_sound_enabled``.
+    background_sound: str | None = None
+    background_sound_enabled: bool = True
+    background_sound_volume: float | None = None
 
 
 class Agent(BaseModel):
@@ -167,6 +218,9 @@ class Agent(BaseModel):
     brain: dict[str, Any] = Field(default_factory=dict)
     brain_execution: str = "bridge"
     voices: list[AgentVoice] = Field(default_factory=list)
+    background_sound: str | None = None
+    background_sound_enabled: bool = True
+    background_sound_volume: float | None = None
 
 
 # ── resources ────────────────────────────────────────────────────────────────
@@ -191,6 +245,9 @@ class AgentVoiceResource:
         max_concurrent: int = 1,
         brain_execution: str | None = None,
         domain: str | None = None,
+        background_sound: BackgroundSound | str | None = None,
+        background_sound_enabled: bool | None = None,
+        background_sound_volume: float | None = None,
     ) -> AgentVoice:
         """Create an agent with its first voice.
 
@@ -199,6 +256,14 @@ class AgentVoiceResource:
         (``banking``, ``real_estate``, ``hospital``) which needs no rows of your
         own. The tag is stamped on the agent row, which is what the call path
         resolves; a voice added later inherits it.
+
+        ``background_sound`` picks the room the caller hears behind the agent
+        (:class:`BackgroundSound`); ``background_sound_volume`` is its gain,
+        0.0-1.0, defaulting to the platform's level when omitted. The two are
+        separate from ``background_sound_enabled`` on purpose: switching
+        ambience off keeps the chosen room, so turning it back on needs no
+        second decision, and a volume of 0.0 is a SILENT bed rather than the
+        off switch.
         """
         body: dict[str, Any] = {
             "agent_id": agent_id,
@@ -213,6 +278,12 @@ class AgentVoiceResource:
             ("greeting", greeting),
             ("brain_execution", brain_execution),
             ("domain", domain),
+            # Sent only when named. An omitted level means the platform's
+            # default, and pinning today's number into the request would keep
+            # this agent on it after the default moves.
+            ("background_sound", background_sound),
+            ("background_sound_enabled", background_sound_enabled),
+            ("background_sound_volume", check_background_volume(background_sound_volume)),
         ):
             if value is not None:
                 body[key] = value
@@ -323,6 +394,9 @@ class AgentsNamespace:
         greeting: str | None = None,
         brain_execution: str | None = None,
         domain: str | None = None,
+        background_sound: BackgroundSound | str | None = None,
+        background_sound_enabled: bool | None = None,
+        background_sound_volume: float | None = None,
         **fields: Any,
     ) -> Agent:
         """Update the agent. A brain change reaches every voice.
@@ -330,6 +404,12 @@ class AgentsNamespace:
         ``domain`` retags which dictionary the agent speaks with and reaches
         every voice; pass ``""`` to detach it from its dictionary entirely.
         Omitting it leaves the current tag alone.
+
+        The three ``background_sound*`` arguments change the ambience the same
+        way: omitted means unchanged. There is no way to send the LEVEL back to
+        the platform default once set — write the level you want. ``0.0`` is a
+        silent bed, not the off switch; that is
+        ``background_sound_enabled=False``, which keeps the chosen room.
         """
         body: dict[str, Any] = dict(fields)
         if brain is not None:
@@ -339,6 +419,9 @@ class AgentsNamespace:
             ("greeting", greeting),
             ("brain_execution", brain_execution),
             ("domain", domain),
+            ("background_sound", background_sound),
+            ("background_sound_enabled", background_sound_enabled),
+            ("background_sound_volume", check_background_volume(background_sound_volume)),
         ):
             if value is not None:
                 body[key] = value
@@ -352,6 +435,7 @@ class AgentsNamespace:
 
 __all__ = [
     "Agent",
+    "BackgroundSound",
     "AgentNumbersResource",
     "AgentVoice",
     "AgentVoiceResource",

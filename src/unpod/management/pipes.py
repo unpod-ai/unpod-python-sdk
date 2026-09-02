@@ -5,6 +5,7 @@ from __future__ import annotations
 import warnings
 from typing import Any
 
+from unpod.agents import BackgroundSound, check_background_volume
 from unpod.management._http import AsyncHTTPClient, unwrap_data
 from unpod.models import Pipe
 
@@ -36,13 +37,16 @@ class PipesResource:
         recording: bool = False,
         max_call_duration_s: int = 3600,
         domain: str | None = None,
+        background_sound: BackgroundSound | str | None = None,
+        background_sound_enabled: bool | None = None,
+        background_sound_volume: float | None = None,
     ) -> Pipe:
         """Create an agent row through the deprecated pipe route.
 
         ``domain`` is the dictionary tag (``client.domain_dictionaries``). This
         route writes a complete agent row, so a pipe created here uses a
-        dictionary exactly as an agent created through ``client.agents.voice``
-        does.
+        dictionary — and an ambience bed — exactly as an agent created through
+        ``client.agents.voice`` does.
         """
         _warn_deprecated()
         body: dict[str, Any] = {
@@ -58,6 +62,12 @@ class PipesResource:
             body["agent_endpoint"] = agent_endpoint
         if domain is not None:
             body["domain"] = domain
+        if background_sound is not None:
+            body["background_sound"] = str(background_sound)
+        if background_sound_enabled is not None:
+            body["background_sound_enabled"] = background_sound_enabled
+        if background_sound_volume is not None:
+            body["background_sound_volume"] = check_background_volume(background_sound_volume)
         resp = unwrap_data(await self._http.post("/api/v2/platform/speech/v1/pipes", json=body))
         return Pipe(**resp)
 

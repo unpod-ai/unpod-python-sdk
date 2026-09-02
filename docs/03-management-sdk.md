@@ -374,6 +374,54 @@ The older `client.agent.voice.create(...)` surface takes `domain=` too, and for
 a playbook brain stamps it on the playbook document as well, so the authoring UI
 shows the same tag.
 
+## Background sound — the room a caller hears behind the agent
+
+Ambience is mixed into the agent's outgoing audio for the whole call. Three
+independent knobs, and conflating any two of them is the mistake worth avoiding:
+
+| Argument | Says | Unset means |
+|---|---|---|
+| `background_sound` | WHICH room — `office`, `city`, `forest`, `crowded_room`, `none` | no bed (ambience is opt-in on the track) |
+| `background_sound_enabled` | WHETHER any bed plays | on |
+| `background_sound_volume` | HOW LOUD — a **gain** in `0.0`–`1.0`, not a percentage | the platform's own level (currently `0.3`), never silence |
+
+```python
+from unpod import BackgroundSound, Client, Prompt
+
+client = Client()
+
+client.agents.voice.create(
+    "gamestop-support",
+    brain=Prompt("You are…"),
+    voice_profile="hindi-female-warm-hd",
+    background_sound=BackgroundSound.office,
+    background_sound_volume=0.45,
+)
+
+# Level alone; the room is untouched.
+client.agents.update("gamestop-support", background_sound_volume=0.15)
+
+# Off for now — the room is REMEMBERED, so switching back on picks it up again.
+client.agents.update("gamestop-support", background_sound_enabled=False)
+```
+
+`background_sound_volume=0.0` is a **silent bed**, not the off switch — use
+`background_sound_enabled=False` for that, and it keeps the chosen room. A level
+outside the range raises `ValueError` at the call site rather than on the round
+trip, because the mistake it catches (`30`, meaning "30%") would otherwise play
+at full level.
+
+Fixed for the call, by design: the agent cannot turn its own ambience up
+mid-sentence, and nothing about the bed is reachable by the LLM or the caller.
+Both creation surfaces take all three arguments — `client.agents.voice.create`
+(`/v1/agents`) and `client.agent.voice.create` (`/v1/agent/voice`) — as does the
+deprecated `client.pipes.create`. `client.pipes.update(pipe_id, **kwargs)`
+forwards them too.
+
+Requires supervoice with the ambience-volume field. Against an older
+deployment, `/v1/agent/voice` answers **422** for these keys and
+`/v1/pipes` PATCH ignores them silently.
+
 ## Pipes
 
 A Pipe binds a voice profile to an `agent_id`. The real signature

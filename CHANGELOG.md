@@ -6,6 +6,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 While the SDK is pre-1.0, breaking changes ship in a **minor** bump.
 
+## [0.3.1] - 2026-09-02
+
+### Added
+
+- **Background sound is settable from the SDK.** `background_sound`,
+  `background_sound_enabled` and `background_sound_volume` on
+  `client.agents.voice.create`, `client.agents.update`,
+  `client.agent.voice.create` and `client.pipes.create`, plus a
+  `BackgroundSound` enum (`office`, `city`, `forest`, `crowded_room`, `none`)
+  exported from `unpod`. The three response models (`AgentVoice`, `Agent`,
+  `Pipe`) declare the fields, so a bed set through the API reads back.
+- `background_sound_volume` is a **gain** in `0.0`-`1.0`, not a percentage, and
+  is range-checked at the call site (`ValueError`) rather than on the round
+  trip. Omitting it means the platform's default level, not silence; `0.0` is a
+  silent bed and `background_sound_enabled=False` is the off switch, which
+  keeps the chosen room.
+
+### Requires
+
+- A supervoice deployment carrying the ambience-volume field. Older
+  deployments answer 422 on `/v1/agent/voice` for these keys and ignore them
+  silently on `/v1/pipes` PATCH.
+
 ## [0.3.0] - 2026-08-31
 
 Two things ship here: **domain dictionaries** — the words an agent hears and

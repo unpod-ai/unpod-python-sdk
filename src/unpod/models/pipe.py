@@ -30,6 +30,12 @@ class Pipe(BaseModel):
     #: The runtime reads the tag from HERE, so an agent showing None applies no
     #: dictionary however many exist in the project.
     domain: str | None = None
+    #: Ambience under the agent's speech. ``background_sound_volume`` of None
+    #: means the platform's default level, not silence; ambience is off when
+    #: ``background_sound_enabled`` is False or no room is named.
+    background_sound: str | None = None
+    background_sound_enabled: bool = True
+    background_sound_volume: float | None = None
     fillers: dict[str, Any] = Field(default_factory=dict)
     created: datetime | None = None
     modified: datetime | None = None
@@ -50,6 +56,10 @@ class PipeCreate(BaseModel):
     max_call_duration_s: int = 3600
     #: Domain dictionary tag; see ``client.domain_dictionaries``.
     domain: str | None = None
+    #: Ambience; see :class:`Pipe`.
+    background_sound: str | None = None
+    background_sound_enabled: bool | None = None
+    background_sound_volume: float | None = None
 
 
 class PipeUpdate(BaseModel):
