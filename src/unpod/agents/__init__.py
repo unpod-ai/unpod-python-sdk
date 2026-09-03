@@ -56,6 +56,34 @@ class BackgroundSound(StrEnum):
     none = "none"
 
 
+class NoiseCancellation(StrEnum):
+    """Which inbound noise canceller runs on this agent's calls.
+
+    Cleans the CALLER's audio before it reaches STT, so it changes what the
+    agent hears, never what it says. A ``StrEnum``, so plain strings keep
+    working.
+
+    ``hush`` and ``rnnoise`` run inside the media pipeline and work on any
+    transport; ``bvc`` / ``bvc_telephony`` are LiveKit Cloud's own canceller and
+    apply at the room layer instead. ``none`` runs none at all.
+
+    Omitting the field is NOT the same as ``none``: unset leaves the
+    deployment's own default in charge, while ``none`` is this agent asking for
+    raw audio. A backend whose model or licence is missing on the server
+    degrades to no filtering rather than failing the call, so a value accepted
+    here is not by itself proof the model loaded — the worker logs which one it
+    resolved.
+    """
+
+    rnnoise = "rnnoise"
+    hush = "hush"
+    aic = "aic"
+    krisp = "krisp"
+    bvc = "bvc"
+    bvc_telephony = "bvc-telephony"
+    none = "none"
+
+
 #: Level bounds for that bed — a GAIN, not a percentage. Checked here so a
 #: slider sending 30 fails at the call site rather than on a round trip.
 VOLUME_MIN = 0.0
@@ -199,6 +227,9 @@ class AgentVoice(BaseModel):
     #: or None. This is the tag the runtime resolves — an agent created without
     #: one applies no dictionary, whatever dictionaries exist in the project.
     domain: str | None = None
+    #: Which inbound noise canceller this agent's calls run. ``None`` means the
+    #: deployment's own default, not "no cancellation".
+    noise_cancellation: str | None = None
     #: Ambience under the agent's speech: which room, whether it plays, and how
     #: loud. ``background_sound_volume`` of None means the platform's own
     #: default level, not silence — ambience is switched off with
@@ -221,6 +252,9 @@ class Agent(BaseModel):
     background_sound: str | None = None
     background_sound_enabled: bool = True
     background_sound_volume: float | None = None
+    #: Which inbound noise canceller this agent's calls run. ``None`` means the
+    #: deployment's own default, not "no cancellation".
+    noise_cancellation: str | None = None
 
 
 # ── resources ────────────────────────────────────────────────────────────────
@@ -248,6 +282,7 @@ class AgentVoiceResource:
         background_sound: BackgroundSound | str | None = None,
         background_sound_enabled: bool | None = None,
         background_sound_volume: float | None = None,
+        noise_cancellation: NoiseCancellation | str | None = None,
     ) -> AgentVoice:
         """Create an agent with its first voice.
 
@@ -256,6 +291,11 @@ class AgentVoiceResource:
         (``banking``, ``real_estate``, ``hospital``) which needs no rows of your
         own. The tag is stamped on the agent row, which is what the call path
         resolves; a voice added later inherits it.
+
+        ``noise_cancellation`` picks the canceller that cleans the CALLER's
+        audio before it reaches STT (:class:`NoiseCancellation`). Omit it to
+        leave the deployment's default in charge — that is not the same as
+        ``"none"``, which asks for no cancellation on this agent.
 
         ``background_sound`` picks the room the caller hears behind the agent
         (:class:`BackgroundSound`); ``background_sound_volume`` is its gain,
@@ -284,6 +324,7 @@ class AgentVoiceResource:
             ("background_sound", background_sound),
             ("background_sound_enabled", background_sound_enabled),
             ("background_sound_volume", check_background_volume(background_sound_volume)),
+            ("noise_cancellation", noise_cancellation),
         ):
             if value is not None:
                 body[key] = value
@@ -397,6 +438,7 @@ class AgentsNamespace:
         background_sound: BackgroundSound | str | None = None,
         background_sound_enabled: bool | None = None,
         background_sound_volume: float | None = None,
+        noise_cancellation: NoiseCancellation | str | None = None,
         **fields: Any,
     ) -> Agent:
         """Update the agent. A brain change reaches every voice.
@@ -410,6 +452,10 @@ class AgentsNamespace:
         the platform default once set — write the level you want. ``0.0`` is a
         silent bed, not the off switch; that is
         ``background_sound_enabled=False``, which keeps the chosen room.
+
+        ``noise_cancellation`` behaves the same: omitted means unchanged. Once
+        set there is no way back to the deployment default through this call —
+        name the backend you want, or ``"none"`` for no cancellation at all.
         """
         body: dict[str, Any] = dict(fields)
         if brain is not None:
@@ -422,6 +468,7 @@ class AgentsNamespace:
             ("background_sound", background_sound),
             ("background_sound_enabled", background_sound_enabled),
             ("background_sound_volume", check_background_volume(background_sound_volume)),
+            ("noise_cancellation", noise_cancellation),
         ):
             if value is not None:
                 body[key] = value
@@ -435,6 +482,7 @@ class AgentsNamespace:
 
 __all__ = [
     "Agent",
+    "NoiseCancellation",
     "BackgroundSound",
     "AgentNumbersResource",
     "AgentVoice",

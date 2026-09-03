@@ -36,6 +36,9 @@ class Pipe(BaseModel):
     background_sound: str | None = None
     background_sound_enabled: bool = True
     background_sound_volume: float | None = None
+    #: Inbound noise canceller for this agent. ``None`` means the deployment's
+    #: own default, not "no cancellation".
+    noise_cancellation: str | None = None
     fillers: dict[str, Any] = Field(default_factory=dict)
     created: datetime | None = None
     modified: datetime | None = None
@@ -60,6 +63,7 @@ class PipeCreate(BaseModel):
     background_sound: str | None = None
     background_sound_enabled: bool | None = None
     background_sound_volume: float | None = None
+    noise_cancellation: str | None = None
 
 
 class PipeUpdate(BaseModel):

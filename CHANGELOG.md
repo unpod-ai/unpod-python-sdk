@@ -6,6 +6,34 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 While the SDK is pre-1.0, breaking changes ship in a **minor** bump.
 
+## [Unreleased]
+
+### Added
+
+- **Noise cancellation is settable per agent.** `noise_cancellation` on
+  `client.agents.voice.create`, `client.agents.update`,
+  `client.agent.voice.create` and `client.pipes.create`, plus a
+  `NoiseCancellation` enum (`rnnoise`, `hush`, `aic`, `krisp`, `bvc`,
+  `bvc_telephony`, `none`) exported from `unpod`. `AgentVoice`, `Agent` and
+  `Pipe` declare the field, so a backend set through the API reads back.
+- It filters the CALLER's audio before STT — what the agent hears, never what
+  it says. `hush`/`rnnoise`/`aic`/`krisp` run inside the media pipeline on any
+  transport; `bvc`/`bvc-telephony` are LiveKit Cloud's own canceller at the
+  room layer.
+- **Omitting the field is not `"none"`.** Unset leaves the deployment's
+  `SUPERVOICE_NOISE_BACKEND` in charge — what every existing agent runs on —
+  while `"none"` is that agent asking for raw audio. There is no way back to
+  unset once a value is stored.
+
+### Requires
+
+- A supervoice deployment carrying `sv_agents.noise_cancellation`. Older ones
+  reject the key on `/v1/agent/voice` (that model forbids extra keys) and
+  ignore it silently on `/v1/pipes`.
+- The chosen backend's library/model present on the worker. A missing one
+  degrades to no filtering rather than failing the call, so a stored value is
+  not by itself proof the model loaded.
+
 ## [0.3.1] - 2026-09-02
 
 ### Added

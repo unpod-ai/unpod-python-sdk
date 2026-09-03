@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from unpod.agents import BackgroundSound, check_background_volume
+from unpod.agents import BackgroundSound, NoiseCancellation, check_background_volume
 from unpod.management._http import AsyncHTTPClient, unwrap_data
 from unpod.models import Pipe
 
@@ -46,12 +46,17 @@ class VoiceAgentResource:
         background_sound: BackgroundSound | str | None = None,
         background_sound_enabled: bool | None = None,
         background_sound_volume: float | None = None,
+        noise_cancellation: NoiseCancellation | str | None = None,
     ) -> Pipe:
         """Create a voice agent from exactly one brain source.
 
         ``domain`` names the dictionary the agent speaks with (see
         ``client.domain_dictionaries``); it is stamped on the agent row, and on
         the playbook doc too when the brain is a playbook.
+
+        ``noise_cancellation`` cleans the CALLER's audio before STT
+        (:class:`~unpod.agents.NoiseCancellation`). Omit it for the
+        deployment's default; ``"none"`` asks for no cancellation at all.
 
         ``background_sound`` is the room the caller hears behind the agent
         (:class:`~unpod.agents.BackgroundSound`), ``background_sound_volume``
@@ -94,6 +99,10 @@ class VoiceAgentResource:
             body["background_sound_enabled"] = background_sound_enabled
         if background_sound_volume is not None:
             body["background_sound_volume"] = check_background_volume(background_sound_volume)
+        # Same rule: omitted leaves the deployment's canceller in charge, which
+        # is NOT what "none" means.
+        if noise_cancellation is not None:
+            body["noise_cancellation"] = str(noise_cancellation)
         if agent_id is not None:
             body["agent_id"] = agent_id
         elif agent_endpoint is not None:

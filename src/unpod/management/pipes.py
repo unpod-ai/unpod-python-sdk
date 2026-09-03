@@ -5,7 +5,7 @@ from __future__ import annotations
 import warnings
 from typing import Any
 
-from unpod.agents import BackgroundSound, check_background_volume
+from unpod.agents import BackgroundSound, NoiseCancellation, check_background_volume
 from unpod.management._http import AsyncHTTPClient, unwrap_data
 from unpod.models import Pipe
 
@@ -40,6 +40,7 @@ class PipesResource:
         background_sound: BackgroundSound | str | None = None,
         background_sound_enabled: bool | None = None,
         background_sound_volume: float | None = None,
+        noise_cancellation: NoiseCancellation | str | None = None,
     ) -> Pipe:
         """Create an agent row through the deprecated pipe route.
 
@@ -68,6 +69,8 @@ class PipesResource:
             body["background_sound_enabled"] = background_sound_enabled
         if background_sound_volume is not None:
             body["background_sound_volume"] = check_background_volume(background_sound_volume)
+        if noise_cancellation is not None:
+            body["noise_cancellation"] = str(noise_cancellation)
         resp = unwrap_data(await self._http.post("/api/v2/platform/speech/v1/pipes", json=body))
         return Pipe(**resp)
 

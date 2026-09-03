@@ -374,6 +374,52 @@ The older `client.agent.voice.create(...)` surface takes `domain=` too, and for
 a playbook brain stamps it on the playbook document as well, so the authoring UI
 shows the same tag.
 
+## Noise cancellation — cleaning the caller's audio
+
+One knob, `noise_cancellation`, on the same surfaces as ambience. It filters
+the CALLER's audio before it reaches STT, so it changes what the agent *hears*;
+it never touches what the agent says.
+
+| Value | Runs where | Needs |
+|---|---|---|
+| `rnnoise` | in the media pipeline, any transport | nothing |
+| `hush` | in the media pipeline, any transport | the Weya NC library + model on the server |
+| `aic` | in the media pipeline | ai-coustics SDK + licence |
+| `krisp` | in the media pipeline | Krisp SDK + `.kef` model |
+| `bvc`, `bvc-telephony` | LiveKit Cloud's room layer, before the pipeline | a LiveKit Cloud deployment |
+| `none` | nowhere — raw audio | — |
+
+```python
+from unpod import Client, NoiseCancellation, Prompt
+
+client = Client()
+
+client.agents.voice.create(
+    "gamestop-support",
+    brain=Prompt("You are…"),
+    noise_cancellation=NoiseCancellation.hush,
+)
+
+# or change it on a live agent; reaches every voice of the group
+client.agents.update("gamestop-support", noise_cancellation="none")
+```
+
+**Omitting it is not the same as `"none"`.** Unset leaves the deployment's own
+`SUPERVOICE_NOISE_BACKEND` in charge, which is what every agent created before
+this field has been running on. `"none"` is this agent asking for raw audio.
+There is no way back to "unset" through the API once a value is stored — name
+the backend you want instead.
+
+The field is stored on the agent row and read at call time, so it applies to
+every brain type and every call door, like `domain`. The response models echo it
+(`AgentVoice.noise_cancellation`, `Agent`, `Pipe`), so a write can be confirmed
+without querying the database.
+
+One caveat worth knowing: a backend whose model, library or licence is missing
+on the server degrades to **no filtering** rather than failing the call. So a
+202 here is proof the value was stored, not proof the model loaded — the worker
+logs which backend it actually resolved.
+
 ## Background sound — the room a caller hears behind the agent
 
 Ambience is mixed into the agent's outgoing audio for the whole call. Three
