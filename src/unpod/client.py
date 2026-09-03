@@ -16,6 +16,7 @@ from unpod.management.api_keys import ApiKeysResource
 from unpod.agents import AgentsNamespace
 from unpod.management.calls import CallsResource
 from unpod.management.domain_dictionaries import DomainDictionariesResource
+from unpod.management.tools import ToolsResource
 from unpod.management.numbers import NumbersResource
 from unpod.management.pipes import PipesResource
 from unpod.management.recordings import RecordingsResource
@@ -130,6 +131,8 @@ class AsyncClient:
         # one credential, or a tag can point at a dictionary the caller cannot
         # read back.
         self.domain_dictionaries = DomainDictionariesResource(self._http)
+        #: Discover tools, author your own, connect them to agents by id.
+        self.tools = ToolsResource(self._http)
         # Deprecated for one release; client.agents.voice is the documented
         # surface. Both write the same rows.
         self.pipes = PipesResource(self._http)
@@ -178,6 +181,7 @@ class Client:
         self.domain_dictionaries = _SyncResource(
             self._async_client.domain_dictionaries
         )
+        self.tools = _SyncResource(self._async_client.tools)
         self.pipes = _SyncResource(self._async_client.pipes)
         self.agent = _SyncAgentNamespace(self._async_client.agent)
         self.calls = _SyncResource(self._async_client.calls)
