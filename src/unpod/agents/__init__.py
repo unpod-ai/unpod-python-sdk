@@ -255,6 +255,7 @@ class Agent(BaseModel):
     #: Which inbound noise canceller this agent's calls run. ``None`` means the
     #: deployment's own default, not "no cancellation".
     noise_cancellation: str | None = None
+    cache_mode: str | None = None
 
 
 # ── resources ────────────────────────────────────────────────────────────────
@@ -473,6 +474,7 @@ class AgentsNamespace:
         background_sound_enabled: bool | None = None,
         background_sound_volume: float | None = None,
         noise_cancellation: NoiseCancellation | str | None = None,
+        cache_mode: str | None = None,
         first_speaker: str | None = None,
         recording: bool | None = None,
         max_call_duration_s: int | None = None,
@@ -493,6 +495,12 @@ class AgentsNamespace:
         the platform default once set — write the level you want. ``0.0`` is a
         silent bed, not the off switch; that is
         ``background_sound_enabled=False``, which keeps the chosen room.
+
+        ``cache_mode`` turns the response cache on for THIS agent only —
+        ``"active"`` serves cached replies, ``"shadow"`` measures without
+        serving, ``"off"`` disables it. Omitted leaves the agent deferring to
+        the deployment's ``CACHE_MODE`` env, which is a fleet-wide switch: this
+        field is what lets one agent run the cache while the pool does not.
 
         ``noise_cancellation`` behaves the same: omitted means unchanged. Once
         set there is no way back to the deployment default through this call —
@@ -526,6 +534,7 @@ class AgentsNamespace:
             ("background_sound_enabled", background_sound_enabled),
             ("background_sound_volume", check_background_volume(background_sound_volume)),
             ("noise_cancellation", noise_cancellation),
+            ("cache_mode", cache_mode),
             ("first_speaker", first_speaker),
             ("recording", recording),
             ("max_call_duration_s", max_call_duration_s),
