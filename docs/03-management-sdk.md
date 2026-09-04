@@ -38,7 +38,7 @@ flowchart LR
 
 | Namespace | HTTP client | Plane | Auth it accepts |
 |---|---|---|---|
-| `pipes`, `calls`, `numbers`, `trunks`, `sessions`, `recordings`, `transcripts`, `api_keys` | `_http` | Management (supervoice) | `Bearer` api key direct, or DRF token / JWT through the backend-core speech proxy |
+| `pipes`, `calls`, `numbers`, `trunks`, `sessions`, `recordings`, `transcripts`, `api_keys`, `domain_dictionaries`, `tools` | `_http` | Management (supervoice) | `Bearer` api key direct, or DRF token / JWT through the backend-core speech proxy |
 | `sessions.end` / `.transfer` / `.merge` | `_orch_http` | Management (supervoice), orchestrator base | same strategy as above |
 | `telephony.*`, `voice_profiles` | `_platform_http` | Platform (backend-core) | DRF token or JWT only — **never** a Bearer api key |
 
@@ -373,6 +373,91 @@ out of every other domain.
 The older `client.agent.voice.create(...)` surface takes `domain=` too, and for
 a playbook brain stamps it on the playbook document as well, so the authoring UI
 shows the same tag.
+
+## Tools — built-ins, tools you author, and attaching either
+
+`client.tools` (`management/tools.py`, supervoice `/v1/tools` and
+`/v1/custom-tools`). Two kinds of tool, one id-based verb for connecting
+either to an agent:
+
+| Kind | Who implements it | How it reaches an agent |
+|---|---|---|
+| built-in | the platform (`handover_tool`, `end_call`, …) | `attach` flips its `config_key` |
+| custom | you, as an HTTP call | stored once, referenced BY ID |
+
+```python
+catalog = await client.tools.list()
+for t in catalog.builtin:
+    print(t.name, t.availability, t.config_key)   # always | opt-in
+print(catalog.custom.methods, catalog.custom.max_timeout_s)
+```
+
+**A custom tool is stored once and attached by id**, the same author-once /
+attach-many shape as domain dictionaries. Editing the URL or headers later
+reaches every agent using it. Embedding the definition on each agent instead
+means a changed endpoint has to be rewritten on all of them, and the ones that
+get missed keep calling the old URL in silence.
+
+```python
+tool = await client.tools.create(
+    "check_order_status",                       # the name the MODEL calls
+    url="https://api.example.com/orders/{{ args.order_id }}",
+    description="Look up the status of a customer order by its id.",
+    method="GET",
+    headers={"Authorization": "Bearer {{ env.ORDERS_API_KEY }}"},
+    args={
+        "order_id": {
+            "type": "string",
+            "description": "The order number the caller reads out.",
+            "required": True,
+        }
+    },
+    timeout=8,
+)
+
+await client.tools.attach("check_order_status", agent_id)   # your own tool
+await client.tools.attach("handover_tool", agent_id)        # a built-in
+```
+
+`create` is create-or-**replace** (`PUT`) — a second call with the same
+`tool_id` overwrites the definition, it does not merge into it.
+
+Two template namespaces are expanded inside `url`, `headers` and `body`:
+
+| Template | Resolves to |
+|---|---|
+| `{{ args.NAME }}` | an argument the model supplied on the call |
+| `{{ env.NAME }}` | an environment variable **on the worker** |
+
+`env` deliberately does not read stored config. A credential held in the tool
+row would sit in the database in plaintext and travel into a worker process
+shared with other tenants — so an operator sets the variable on the deployment
+and the tool names it.
+
+`args` is `{name: {"type": …, "description": …, "required": …}}` and becomes the
+schema the model is offered. The description is the only thing the model has to
+decide *when* to call the tool, so write it for a reader who cannot see your
+API. `catalog.custom.arg_types` lists the types this deployment accepts.
+
+Rejected **on write, not at call time**: an unknown arg type, a private or
+reserved URL, and an id that shadows a built-in all raise from `create` — so a
+broken tool never reaches a live call as a silent no-op.
+
+```python
+for t in await client.tools.list_custom():
+    print(t.tool_id, t.method, t.url, t.agent_ids)
+
+await client.tools.detach("check_order_status", agent_id)
+await client.tools.delete("check_order_status")
+```
+
+`delete` removes the tool **and** detaches it from every agent. Both, because an
+id left attached to a tool that no longer exists makes those agents resolve
+nothing — which looks exactly like the model choosing not to call it.
+
+An always-on built-in (`end_call`) reports itself attached and changes nothing;
+`detach` on one answers **409**. `attach`/`detach` return the raw server payload
+(a `dict`), not a model.
 
 ## Noise cancellation — cleaning the caller's audio
 
@@ -741,6 +826,23 @@ spellings are also exposed as read-only properties.
 `byo_config_auth_username`, `byo_config_transport`, `created`, `modified`.
 `ApiKey`: `key_id`, `name`, `org_id`, `project_id`, `status`, `created`,
 `raw_key` (creation only).
+
+### `models/tool.py::BuiltinTool`, `CustomTool`, `ToolCatalog`
+
+Plain dataclasses, not pydantic models — so unlike the rest of this page they
+do **not** carry `extra="allow"`, and a server-side field the SDK does not
+declare is dropped on read.
+
+`BuiltinTool` is `name`, `description`, `availability` (`always` | `opt-in`),
+`config_key` (`None` when there is nothing to configure) and `parameters`.
+
+`CustomTool` is `tool_id`, `description`, `method`, `url`, `headers`, `body`,
+`args`, `timeout` and `agent_ids` (the agents it is attached to).
+
+`ToolCatalog` is `builtin: list[BuiltinTool]` plus `custom: CustomToolSupport`
+— `supported`, `config_key`, `arg_types`, `methods`, `default_timeout_s`,
+`max_timeout_s`, `notes`, `example`: what a tool of your own may look like on
+*this* deployment.
 
 ### Exported but returned by nothing here
 
