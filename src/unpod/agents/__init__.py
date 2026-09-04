@@ -340,6 +340,40 @@ class AgentVoiceResource:
         resp = await self._http.post(f"{_BASE}/{agent_id}/voices", json=body)
         return AgentVoice(**unwrap_data(resp))
 
+    async def update(
+        self,
+        agent_id: str,
+        voice_profile_id: str,
+        *,
+        greeting: str | None = None,
+        make_default: bool | None = None,
+    ) -> AgentVoice:
+        """Edit ONE voice of an agent.
+
+        Only what genuinely differs between voices. Everything else — brain,
+        ambience, noise cancellation, limits — is group-wide, so use
+        :meth:`AgentsNamespace.update`; setting it here would be reverted by the
+        next group update.
+
+        Without this a greeting could only be changed by removing the voice and
+        adding it back, which mints a NEW ``pipe_id`` — and every session, call
+        and number back-reference keyed on the old one stops joining. An edit
+        should not cost the agent its history.
+
+        ``make_default=True`` makes this the voice the resolver picks. There is
+        no ``False``: a group must always have exactly one default, so unseating
+        a voice means seating a different one, not clearing the flag.
+        """
+        body: dict[str, Any] = {}
+        if greeting is not None:
+            body["greeting"] = greeting
+        if make_default:
+            body["is_default"] = True
+        resp = await self._http.patch(
+            f"{_BASE}/{agent_id}/voices/{voice_profile_id}", json=body
+        )
+        return AgentVoice(**unwrap_data(resp))
+
     async def remove(self, agent_id: str, voice_profile_id: str) -> None:
         """Remove one voice. The agent keeps the rest."""
         await self._http.delete(f"{_BASE}/{agent_id}/voices/{voice_profile_id}")
@@ -439,6 +473,13 @@ class AgentsNamespace:
         background_sound_enabled: bool | None = None,
         background_sound_volume: float | None = None,
         noise_cancellation: NoiseCancellation | str | None = None,
+        first_speaker: str | None = None,
+        recording: bool | None = None,
+        max_call_duration_s: int | None = None,
+        max_concurrent: int | None = None,
+        llm_model: str | None = None,
+        mute_until_first_bot_complete: bool | None = None,
+        tools: dict[str, Any] | None = None,
         **fields: Any,
     ) -> Agent:
         """Update the agent. A brain change reaches every voice.
@@ -456,6 +497,22 @@ class AgentsNamespace:
         ``noise_cancellation`` behaves the same: omitted means unchanged. Once
         set there is no way back to the deployment default through this call —
         name the backend you want, or ``"none"`` for no cancellation at all.
+
+        ``llm_model`` pins the model this agent's brain runs on, as a resolver
+        URI — ``"openai/gpt-4.1-mini"``, ``"vllm/<model>@<api_base>"``. Unset
+        (the default) leaves the worker's own ``LLM_MODEL`` in charge, so the
+        agent follows the deployment. A BARE model name is rejected downstream:
+        the provider prefix is what routes the call.
+
+        ``mute_until_first_bot_complete`` holds the caller's audio until the
+        agent's first reply has finished. On by default, because a caller's
+        "hello" over the greeting was otherwise transcribed as a turn. Pass
+        ``False`` for an agent that must accept barge-in from the first word.
+
+        ``tools`` is the raw per-agent tool config. Prefer
+        ``client.tools.attach()`` for enabling a tool or connecting one of your
+        own — this is the way to reach settings those verbs do not cover, such
+        as ``{"handover": {"numbers": [...], "mode": "warm"}}``.
         """
         body: dict[str, Any] = dict(fields)
         if brain is not None:
@@ -469,6 +526,13 @@ class AgentsNamespace:
             ("background_sound_enabled", background_sound_enabled),
             ("background_sound_volume", check_background_volume(background_sound_volume)),
             ("noise_cancellation", noise_cancellation),
+            ("first_speaker", first_speaker),
+            ("recording", recording),
+            ("max_call_duration_s", max_call_duration_s),
+            ("max_concurrent", max_concurrent),
+            ("llm_model", llm_model),
+            ("mute_until_first_bot_complete", mute_until_first_bot_complete),
+            ("tools", tools),
         ):
             if value is not None:
                 body[key] = value
