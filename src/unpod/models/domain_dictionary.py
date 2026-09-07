@@ -17,6 +17,8 @@ what it inherited from what it typed.
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -29,17 +31,21 @@ class KVItem(BaseModel):
     value: str = ""
 
 
-class DomainDictionary(BaseModel):
-    """One domain's dictionary, seed and tenant rows merged."""
+class _MergedSections(BaseModel):
+    """The merged (seed ∪ tenant) sections both the listing and the document carry.
+
+    Shared so ``keyterms`` has one implementation: reading a listing row and
+    reading a fetched document must project the same STT terms, or the two
+    answers to "what does this domain boost?" drift apart. Every section defaults
+    to empty — a platform that predates the widened listing sends only the
+    identifying keys, and the SDK ships ahead of deployments.
+    """
 
     model_config = ConfigDict(extra="allow")
 
-    domain: str
     #: The bundled seed this domain resolved to, or ``None`` for a custom domain
     #: with no seed behind it.
     resolved_key: str | None = None
-    seed_vocabulary: list[KVItem] = Field(default_factory=list)
-    seed_pronunciation: list[KVItem] = Field(default_factory=list)
     #: What the runtime actually uses (seed ∪ tenant).
     vocabulary: list[KVItem] = Field(default_factory=list)
     pronunciation: list[KVItem] = Field(default_factory=list)
@@ -70,16 +76,31 @@ class DomainDictionary(BaseModel):
         return out
 
 
-class DomainListItem(BaseModel):
-    """One row of ``client.domain_dictionaries.list()``."""
-
-    model_config = ConfigDict(extra="allow")
+class DomainDictionary(_MergedSections):
+    """One domain's dictionary, seed and tenant rows merged."""
 
     domain: str
-    #: True when a bundled seed ships for this domain — a dictionary that works
-    #: with no tenant rows at all.
+    #: The bundled half, read-only — what this domain inherited rather than what
+    #: the tenant typed. Detail reads only; a listing omits it to stay small.
+    seed_vocabulary: list[KVItem] = Field(default_factory=list)
+    seed_pronunciation: list[KVItem] = Field(default_factory=list)
+
+
+class DomainListItem(_MergedSections):
+    """One row of ``client.domain_dictionaries.list()``.
+
+    Carries the merged content, so rendering a table of domains — with the words
+    each one boosts — takes one request rather than one per domain. The read-only
+    ``seed_*`` split stays on :class:`DomainDictionary`, where editing happens.
+    """
+
+    domain: str
+    #: True when a bundled seed file ships under exactly this name. It is a
+    #: filename check, so an ALIAS domain ("Medical", which resolves to the
+    #: hospital seed) reports ``False`` while still carrying seed words —
+    #: ``resolved_key`` is what names the seed behind them.
     seeded: bool = False
-    agent_ids: list[str] = Field(default_factory=list)
+    updated_at: datetime | None = None
 
 
 __all__ = ["DomainDictionary", "DomainListItem", "KVItem"]
