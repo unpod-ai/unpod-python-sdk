@@ -233,3 +233,90 @@ async def test_the_deprecated_pipes_route_tags_too() -> None:
         pipe = await res.create(name="n", agent_id="brain", domain="gamestop")
     assert http.calls[0][2]["domain"] == "gamestop"
     assert pipe.domain == "gamestop"
+
+
+@pytest.mark.anyio
+async def test_list_rows_expose_their_merged_content() -> None:
+    """A listing row carries the words, so a table needs no fetch per domain.
+
+    The server merges seed ∪ tenant for every row, including the seeded domains a
+    playbook is only ATTACHED to — those have no stored ``vocabulary`` at all, yet
+    their calls boost the seed's keyterms. Leaving the sections undeclared here
+    would hand callers raw dicts through ``extra="allow"`` instead of ``KVItem``.
+    """
+    res, http = _res(
+        {
+            "domains": [
+                {
+                    "domain": "Medical",
+                    "seeded": False,
+                    "resolved_key": "hospital",
+                    "agent_ids": ["support"],
+                    "vocabulary": [{"key": "OPD", "value": ""}],
+                    "pronunciation": [{"key": "OPD", "value": "oh-pee-dee"}],
+                    "fillers": [{"key": "en", "value": "One moment…"}],
+                    "settings": {"enabled": True, "selection": "llm"},
+                    "updated_by_user_id": "u_42",
+                    "updated_at": "2026-09-06T00:00:00Z",
+                }
+            ]
+        }
+    )
+    (row,) = await res.list()
+    assert http.calls == [("GET", _BASE, None)]
+    # `seeded` is a filename check, so an alias domain reports False while still
+    # carrying a seed's words — `resolved_key` is what names the seed behind them.
+    assert row.seeded is False
+    assert row.resolved_key == "hospital"
+    assert isinstance(row.vocabulary[0], KVItem)
+    assert row.vocabulary[0].key == "OPD"
+    assert row.pronunciation[0].value == "oh-pee-dee"
+    assert row.fillers[0].key == "en"
+    assert row.settings["enabled"] is True
+    assert row.updated_by_user_id == "u_42"
+    assert row.updated_at is not None
+
+
+@pytest.mark.anyio
+async def test_list_rows_report_keyterms_without_a_second_fetch() -> None:
+    """``keyterms`` works on a listing row, same projection as on a full document.
+
+    Checking what a domain boosts is the common reason to read a dictionary at
+    all; requiring a ``get()`` per row to do it defeats the point of the listing
+    carrying content.
+    """
+    res, _ = _res(
+        {
+            "domains": [
+                {
+                    "domain": "gamestop",
+                    "seeded": False,
+                    "vocabulary": [
+                        {"key": "PowerUp Rewards", "value": "power up rewords"},
+                        {"key": "GameStop", "value": "power up rewords"},
+                    ],
+                }
+            ]
+        }
+    )
+    (row,) = await res.list()
+    # Key AND variant both boost; a variant repeated across rows boosts once.
+    assert row.keyterms == ["PowerUp Rewards", "power up rewords", "GameStop"]
+
+
+@pytest.mark.anyio
+async def test_list_rows_from_an_older_platform_default_to_empty_sections() -> None:
+    """A platform that predates the widened listing still parses.
+
+    The SDK ships ahead of every deployment, so a row with only the original
+    three keys must give empty sections rather than raise.
+    """
+    res, _ = _res({"domains": [{"domain": "banking", "seeded": True}]})
+    (row,) = await res.list()
+    assert row.vocabulary == []
+    assert row.pronunciation == []
+    assert row.fillers == []
+    assert row.settings == {}
+    assert row.resolved_key is None
+    assert row.updated_at is None
+    assert row.keyterms == []

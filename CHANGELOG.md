@@ -8,8 +8,29 @@ While the SDK is pre-1.0, breaking changes ship in a **minor** bump.
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-09-04
+
 ### Added
 
+- **`client.tools` — the tool catalog, tools you author, and one verb to
+  connect either.** `list()` returns every built-in the deployment implements
+  plus a `CustomToolSupport` describing what a tool of your own may look like
+  here; `list_custom()`, `create()` and `delete()` manage this project's own
+  HTTP tools; `attach(tool_id, agent_id)` / `detach(...)` connect either kind to
+  an agent by id. Models live in `unpod.models.tool` (`BuiltinTool`,
+  `CustomTool`, `CustomToolSupport`, `ToolCatalog`).
+- A custom tool is stored **once and attached by id**, so editing its URL or
+  headers reaches every agent using it — the same author-once/attach-many shape
+  as domain dictionaries. `create` is create-or-replace (`PUT`), not a merge.
+- `{{ args.NAME }}` and `{{ env.NAME }}` expand inside `url`, `headers` and
+  `body`. `env` reads the **worker's** environment and deliberately not stored
+  config: a credential in the tool row would sit in the database in plaintext
+  and travel into a worker process shared with other tenants.
+- Bad definitions are rejected on write, not silently at call time — an unknown
+  arg type, a private/reserved URL, or an id shadowing a built-in all raise from
+  `create`. `delete` also detaches from every agent, because an id attached to a
+  tool that no longer exists resolves to nothing and looks identical to the
+  model choosing not to call it.
 - **Noise cancellation is settable per agent.** `noise_cancellation` on
   `client.agents.voice.create`, `client.agents.update`,
   `client.agent.voice.create` and `client.pipes.create`, plus a
@@ -34,7 +55,7 @@ While the SDK is pre-1.0, breaking changes ship in a **minor** bump.
   degrades to no filtering rather than failing the call, so a stored value is
   not by itself proof the model loaded.
 
-## [0.3.1] - 2026-09-02
+## [0.3.1] - 2026-09-02 (never published to PyPI; ships inside 0.3.2)
 
 ### Added
 
