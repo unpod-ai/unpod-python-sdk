@@ -136,7 +136,7 @@ class AnalyticsResource:
         return AnalyticsBlock(**resp)
 
     async def delete(self, block_id: str) -> None:
-        """Archive a block: it stops running, its results stay readable."""
+        """Delete a block and its agent attachments; past results stay readable."""
         await self._http.delete(f"/speech/v1/analytics-blocks/{block_id}")
 
     async def attach(self, block_id: str, agent_id: str) -> None:

@@ -127,7 +127,7 @@ async def test_update_sends_only_what_changed(client: AsyncClient):
 
 
 @pytest.mark.anyio
-async def test_delete_archives(client: AsyncClient):
+async def test_delete_removes_the_block(client: AsyncClient):
     with patch.object(
         client.analytics._http, "delete", new_callable=AsyncMock
     ) as mock_del:
