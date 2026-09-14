@@ -348,16 +348,41 @@ tag applies no keyterms and no fillers; that is the one silent failure here, and
 
 Reads are MERGED (seed ∪ tenant) — `vocabulary` is what the runtime will use,
 `seed_vocabulary` is the bundled half read-only, so you can tell what you
-inherited from what you typed. `DomainDictionary.keyterms` computes the exact
-keyterm list the recognizer receives (key AND variant, deduped).
+inherited from what you typed. `.keyterms` computes the exact keyterm list the
+recognizer receives (key AND variant, deduped).
+
+`list()` rows carry the same merged sections as `get()`, so auditing every
+domain takes one request:
 
 ```python
 for row in await client.domain_dictionaries.list():
-    print(row.domain, "seeded" if row.seeded else "custom", row.agent_ids)
+    print(row.domain, len(row.vocabulary), "terms →", row.keyterms)
+    print("  agents:", row.agent_ids, "| fillers:", [f.key for f in row.fillers])
 
 await client.domain_dictionaries.clone("banking", "acme-banking")  # 409 if it has rows
 await client.domain_dictionaries.delete("gamestop")
 ```
+
+A listing row reports what its agents actually boost, not only what you typed:
+tagging a playbook `domain="banking"` creates the tenant document with
+`agent_ids` and **no rows**, so a listing that echoed storage would say zero
+terms while every call boosts the seed's eight. Both `list()` and `get()` run
+the server's one merge (`domain_dictionary.resolve_dictionary`, the same call the
+runtime makes), so a seed shipped in a later release shows up with no migration.
+
+Two flags that are easy to misread on a listing row:
+
+- **`seeded`** is a *filename* check. An alias domain — `"Medical"`, which
+  resolves to the `hospital` seed — reports `seeded=False` while carrying that
+  seed's words. It answers "is there a `Medical.yaml`?", which is also what
+  `delete` branches on (reset vs. remove).
+- **`resolved_key`** names the seed behind the words (`"hospital"` for the row
+  above, `None` for a genuinely unseeded domain). This is the flag to read when
+  you want to know where a row's content came from.
+
+`list()` also carries `updated_by_user_id` / `updated_at` — who last edited the
+dictionary and when, for a "last modified" column. Rows from a platform that
+predates the widened listing parse fine: every section defaults to empty.
 
 `delete` means two different things by design: a **seeded** domain is *reset*
 (your overrides drop, the seed and the tags remain), a **custom** domain ceases

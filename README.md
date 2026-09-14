@@ -43,10 +43,7 @@ unpod
 
 ## Quick Example
 
-Configure once — the [Quickstart](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/01-quickstart.md)
-explains why the REST base is the **bare host** (`pipes`/`calls`/`numbers` spell
-the full `/api/v2/platform/speech/...` prefix inside their own request paths, so
-the derived `https://<host>/platform` base would double it):
+Configure once — the [Quickstart](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/01-quickstart.md) explains why the REST base is the **bare host** (`pipes`/`calls`/`numbers` spell the full `/api/v2/platform/speech/...` prefix inside their own request paths, so the derived `https://<host>/platform` base would double it):
 
 ```bash
 export UNPOD_BASE_URL="https://api.unpod.ai"          # one knob for the rest
@@ -86,9 +83,7 @@ async def entrypoint(ctx: CallContext) -> None:
 AgentRunner(entrypoint=entrypoint, agent_id="my-voice-agent").start()
 ```
 
-`voice_profiles` and `client.telephony.*` read the org-scoped platform plane, so
-they need `UNPOD_PLATFORM_TOKEN` + `UNPOD_ORG_HANDLE` — a Bearer `UNPOD_API_KEY`
-alone cannot reach them.
+`voice_profiles` and `client.telephony.*` read the org-scoped platform plane, so they need `UNPOD_PLATFORM_TOKEN` + `UNPOD_ORG_HANDLE` — a Bearer `UNPOD_API_KEY` alone cannot reach them.
 
 ## Documentation
 
@@ -103,14 +98,9 @@ alone cannot reach them.
 | [Deployment](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/06-deployment.md) | The three shipped ways an agent reaches traffic — LLM endpoint, voice agent, phone number |
 | [Browser quickstart](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/07-browser-quickstart.md) | Testing an agent in the browser with no phone number, via `examples/browser_playground/` |
 
-The old Architecture guide was archived on 2026-07-30 — package structure and
-data flow are now in Overview, concurrency and multi-replica in Run your agent
-and Connectivity SDK. It is kept, with a banner listing what did not survive a
-code check, at
-[docs/archive/05-architecture.md](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/archive/05-architecture.md).
+The old Architecture guide was archived on 2026-07-30 — package structure and data flow are now in Overview, concurrency and multi-replica in Run your agent and Connectivity SDK. It is kept, with a banner listing what did not survive a code check, at [docs/archive/05-architecture.md](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/archive/05-architecture.md).
 
-Full index, including the archive:
-[`docs/README.md`](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/README.md).
+Full index, including the archive: [`docs/README.md`](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/README.md).
 
 Full platform documentation: [docs.unpod.ai](https://docs.unpod.ai)
 
