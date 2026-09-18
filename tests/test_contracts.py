@@ -39,7 +39,8 @@ def test_runner_accepts_legacy_max_concurrent_calls_alias() -> None:
     runner = AgentRunner(
         entrypoint=entrypoint,
         agent_id="support-bot",
-        api_key="unpod_sk_test",
+        platform_token="unpod_sk_test",
+        org_handle="acme",
         max_concurrent_calls=7,
     )
 

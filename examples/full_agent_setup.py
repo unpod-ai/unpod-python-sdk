@@ -19,7 +19,8 @@ Run:
     #   cd supervoice && task queue-serve      # needs Redis (SUPERVOICE_REDIS_URL)
 
     # Terminal 2 — setup + runner
-    export UNPOD_API_KEY="sk_..."
+    export UNPOD_PLATFORM_TOKEN="..."   # your Unpod platform token
+    export UNPOD_ORG_HANDLE="your-org"  # the org the runner registers into
     export UNPOD_SERVICE_BASE_URL="http://localhost:8000/platform"
     export ANTHROPIC_API_KEY="..."
 
@@ -122,8 +123,9 @@ def run_agent() -> None:
         entrypoint=entrypoint,
         agent_id=RUNNER_AGENT_ID,
         max_concurrent_calls=1,
-        # base_url / api_key read from env: UNPOD_ORCHESTRATOR_URL (or
-        # UNPOD_BASE_URL) / UNPOD_API_KEY. No inbound port needed: the
+        # base_url read from env: UNPOD_ORCHESTRATOR_URL (or UNPOD_BASE_URL).
+        # platform_token / org_handle read from env: UNPOD_PLATFORM_TOKEN /
+        # UNPOD_ORG_HANDLE. No inbound port needed: the
         # runner dials OUT per call (dial_out transport, the default) —
         # a laptop behind NAT works with zero network setup.
     ).start()

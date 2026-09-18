@@ -17,7 +17,8 @@ Two terminals:
         uv run python examples/browser_agent.py [--setup] [--call +91XXXXXXXXXX]
 
 Required env vars:
-    UNPOD_API_KEY=sk_...                              (from POST /platform/v1/api-keys)
+    UNPOD_PLATFORM_TOKEN=...                          (your Unpod platform token)
+    UNPOD_ORG_HANDLE=your-org                         (the org to register into)
     UNPOD_SERVICE_BASE_URL=http://127.0.0.1:8000/platform  (default for local dev)
     ANTHROPIC_API_KEY or OPENAI_API_KEY
 """
@@ -154,5 +155,6 @@ if __name__ == "__main__":
         AgentRunner(
             entrypoint=entrypoint,
             agent_id="my-agent",
-            # base_url and api_key read from UNPOD_SERVICE_BASE_URL / UNPOD_API_KEY
+            # base_url read from UNPOD_SERVICE_BASE_URL; platform_token / org_handle
+            # read from UNPOD_PLATFORM_TOKEN / UNPOD_ORG_HANDLE
         ).start()

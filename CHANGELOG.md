@@ -8,6 +8,20 @@ While the SDK is pre-1.0, breaking changes ship in a **minor** bump.
 
 ## [Unreleased]
 
+### Changed — BREAKING
+- `AgentRunner` registers with your Unpod platform token instead of a supervoice
+  API key. Set `UNPOD_PLATFORM_TOKEN` and `UNPOD_ORG_HANDLE` (or pass
+  `platform_token=` / `org_handle=`). `api_key=` / `UNPOD_API_KEY` is no longer
+  accepted by `AgentRunner`; `Client` / `AsyncClient` are unchanged.
+  Requires an orchestrator that accepts `Authorization: Token` on
+  `/v1/internal/workers`.
+
+#### Migrating
+Replace `AgentRunner(..., api_key="sk_...")` with
+`AgentRunner(..., platform_token="...", org_handle="your-org")`, or swap
+`UNPOD_API_KEY` for `UNPOD_PLATFORM_TOKEN` + `UNPOD_ORG_HANDLE` in the runner's
+environment.
+
 ## [0.3.2] - 2026-09-04
 
 ### Added

@@ -120,7 +120,7 @@ def test_runner_derives_ws_base(monkeypatch: pytest.MonkeyPatch) -> None:
     from unpod import AgentRunner
 
     monkeypatch.setenv("UNPOD_BASE_URL", "example.dev")
-    runner = AgentRunner(entrypoint=_noop, agent_id="a", api_key="k")
+    runner = AgentRunner(entrypoint=_noop, agent_id="a", platform_token="k", org_handle="acme")
     assert runner._orchestrator_url.startswith("wss://example.dev")
 
 
@@ -131,7 +131,7 @@ def test_runner_orchestrator_override_wins(
 
     monkeypatch.setenv("UNPOD_BASE_URL", "example.dev")
     monkeypatch.setenv("UNPOD_ORCHESTRATOR_URL", "wss://other.dev")
-    runner = AgentRunner(entrypoint=_noop, agent_id="a", api_key="k")
+    runner = AgentRunner(entrypoint=_noop, agent_id="a", platform_token="k", org_handle="acme")
     assert runner._orchestrator_url.startswith("wss://other.dev")
 
 
@@ -140,5 +140,5 @@ def test_runner_default_without_any_env(
 ) -> None:
     from unpod import AgentRunner
 
-    runner = AgentRunner(entrypoint=_noop, agent_id="a", api_key="k")
+    runner = AgentRunner(entrypoint=_noop, agent_id="a", platform_token="k", org_handle="acme")
     assert runner._orchestrator_url.startswith("wss://api.unpod.ai")

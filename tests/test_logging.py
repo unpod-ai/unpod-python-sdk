@@ -83,7 +83,9 @@ def _runner(**kw):
     async def entrypoint(ctx):  # type: ignore[no-untyped-def]
         pass
 
-    return AgentRunner(entrypoint=entrypoint, agent_id="bot", api_key="k", **kw)
+    return AgentRunner(
+        entrypoint=entrypoint, agent_id="bot", platform_token="k", org_handle="acme", **kw
+    )
 
 
 class _FakeWS:
@@ -334,4 +336,4 @@ async def test_auth_close_is_fatal_and_logged(monkeypatch, caplog) -> None:
         with pytest.raises(RunnerAuthError):
             await r.run()
 
-    assert "UNPOD_API_KEY" in "\n".join(rec.getMessage() for rec in caplog.records)
+    assert "UNPOD_PLATFORM_TOKEN" in "\n".join(rec.getMessage() for rec in caplog.records)

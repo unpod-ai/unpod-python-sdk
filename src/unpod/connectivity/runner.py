@@ -89,7 +89,7 @@ class AgentRunner:
         self,
         entrypoint: Callable[[CallContext], Awaitable[None]],
         agent_id: str,
-        api_key: str | None = None,
+        platform_token: str | None = None,
         max_sessions: int = 50,
         max_concurrent_calls: int | None = None,
         permits_per_minute: int = 120,
@@ -99,16 +99,29 @@ class AgentRunner:
         serving_url: str | None = None,
         agent_secret: str | None = None,
         transport: str = "dial_out",
+        org_handle: str | None = None,
     ) -> None:
         if transport not in ("dial_out", "serve"):
-            raise ValueError(f"transport must be 'dial_out' or 'serve', got {transport!r}")
+            raise ValueError(
+                f"transport must be 'dial_out' or 'serve', got {transport!r}"
+            )
         self._transport = transport
         self._entrypoint = entrypoint
         self._agent_id = agent_id
         self._worker_id = f"{agent_id}#{uuid.uuid4().hex[:8]}"
-        self._api_key = api_key or os.environ.get("UNPOD_API_KEY")
-        if not self._api_key:
-            raise ValueError("api_key required (pass directly or set UNPOD_API_KEY)")
+        # The developer's Django platform token plus their org. The orchestrator
+        # verifies the pair by asking Django, so a runner needs no supervoice
+        # API key — the one credential a developer already has is enough.
+        self._platform_token = platform_token or os.environ.get("UNPOD_PLATFORM_TOKEN")
+        if not self._platform_token:
+            raise ValueError(
+                "platform_token required (pass directly or set UNPOD_PLATFORM_TOKEN)"
+            )
+        self._org_handle = org_handle or os.environ.get("UNPOD_ORG_HANDLE")
+        if not self._org_handle:
+            raise ValueError(
+                "org_handle required (pass directly or set UNPOD_ORG_HANDLE)"
+            )
         self._max_concurrent = (
             max_concurrent_calls if max_concurrent_calls is not None else max_sessions
         )
@@ -250,9 +263,7 @@ class AgentRunner:
                 )
                 async with websockets.connect(
                     self._orchestrator_url,
-                    additional_headers={
-                        "Authorization": f"Bearer {self._api_key}"
-                    },
+                    additional_headers=self._auth_headers(),
                 ) as ws:
                     attempt = 0  # connected: reset the backoff ladder
                     logger.info("control: connected worker_id=%s", self._worker_id)
@@ -276,7 +287,8 @@ class AgentRunner:
                     # instead of looping forever with nothing in the log.
                     logger.error(
                         "control: orchestrator refused the connection "
-                        "(close %d) — check UNPOD_API_KEY; not retrying",
+                        "(close %d) — check UNPOD_PLATFORM_TOKEN and "
+                        "UNPOD_ORG_HANDLE; not retrying",
                         code,
                     )
                     raise RunnerAuthError(
@@ -312,7 +324,7 @@ class AgentRunner:
         async with websockets.serve(self._bridge_handler, host, port):
             async with websockets.connect(
                 self._orchestrator_url,
-                additional_headers={"Authorization": f"Bearer {self._api_key}"},
+                additional_headers=self._auth_headers(),
             ) as ws:
                 register = Register(
                     worker_id=self._worker_id,
@@ -341,6 +353,13 @@ class AgentRunner:
     # v2 dial-out control plane
     # ------------------------------------------------------------------
 
+    def _auth_headers(self) -> dict[str, str]:
+        """Credentials for the control socket: platform token + the org it acts in."""
+        return {
+            "Authorization": f"Token {self._platform_token}",
+            "Org-Handle": self._org_handle,
+        }
+
     def _build_register(self) -> Register:
         """The v2 (dial_out) Register frame — no serving_url.
 
@@ -368,9 +387,7 @@ class AgentRunner:
 
     def _next_backoff(self, attempt: int) -> float:
         """Exponential backoff with +-50% jitter, capped AFTER jitter."""
-        base = min(
-            self._backoff_initial_s * (2 ** (attempt - 1)), self._backoff_max_s
-        )
+        base = min(self._backoff_initial_s * (2 ** (attempt - 1)), self._backoff_max_s)
         return min(base * (0.5 + random.random()), self._backoff_max_s)  # noqa: S311
 
     async def _control_session(self, ws: Any) -> None:
@@ -391,9 +408,7 @@ class AgentRunner:
                 "the register frame (check pool/agent_id and capabilities)",
                 getattr(frame, "type", type(frame).__name__),
             )
-            raise ConnectionError(
-                f"Expected Registered, got {type(frame).__name__}"
-            )
+            raise ConnectionError(f"Expected Registered, got {type(frame).__name__}")
         logger.info(
             "control: registered worker_id=%s heartbeat=%ds transport_ack=%s",
             self._worker_id,
@@ -530,7 +545,9 @@ class AgentRunner:
                         "bridge: giving up job_id=%s %s — the call has no "
                         "agent attached",
                         assign.job_id,
-                        "(shutting down)" if self._shutting_down else "after 3 attempts",
+                        "(shutting down)"
+                        if self._shutting_down
+                        else "after 3 attempts",
                     )
                     return
                 await asyncio.sleep(0.2 * (2 ** (attempt - 1)))
@@ -672,8 +689,7 @@ class AgentRunner:
         """
         self._shutting_down = True
         logger.info(
-            "shutdown requested worker_id=%s draining %d active call(s) "
-            "(timeout %ds)",
+            "shutdown requested worker_id=%s draining %d active call(s) (timeout %ds)",
             self._worker_id,
             len(self._active_calls),
             self._drain_timeout_s,

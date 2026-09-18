@@ -62,7 +62,9 @@ def _runner(**kw) -> AgentRunner:
     async def entrypoint(ctx):  # type: ignore[no-untyped-def]
         pass
 
-    return AgentRunner(entrypoint=entrypoint, agent_id="bot", api_key="k", **kw)
+    return AgentRunner(
+        entrypoint=entrypoint, agent_id="bot", platform_token="k", org_handle="acme", **kw
+    )
 
 
 def test_default_transport_is_dial_out() -> None:
