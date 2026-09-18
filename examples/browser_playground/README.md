@@ -41,7 +41,8 @@ agent in-process. Open the page, click **Connect**, allow the mic, and talk.
 | ----------------- | --------------------- | -------------------------------------------------- |
 | `SUPERVOICE_URL`  | `ws://127.0.0.1:9000` | Remote speech service + agent `base_url`.          |
 | `PLAYGROUND_PORT` | `9100`                | Local UI server port (kept off `:9000`).           |
-| `UNPOD_API_KEY`   | `dev-key`             | Agent registration key.                            |
+| `UNPOD_PLATFORM_TOKEN` | `dev-token`       | Agent registration: your Unpod platform token.     |
+| `UNPOD_ORG_HANDLE`     | —                 | Agent registration: the org to register into.      |
 | `AGENT_ID`        | `browser-playground`  | Agent identifier.                                  |
 | `OPENAI_API_KEY`  | —                     | LLM key (or `ANTHROPIC_API_KEY`).                  |
 | `FLOW_JSON_PATH`  | — (empty)             | Optional flow JSON → drives a `DialogMachine`.     |

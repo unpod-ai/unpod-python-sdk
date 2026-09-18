@@ -93,8 +93,8 @@ the voice-profile endpoints require an authenticated token but no org handle.
 | `UNPOD_SERVICE_BASE_URL` | Overrides the management base |
 | `UNPOD_PLATFORM_BASE_URL` | Overrides the platform (telephony / voice-profile) base — there is no constructor argument for this one |
 | `UNPOD_ORCHESTRATOR_BASE_URL` | Overrides the base used by `sessions.end` / `.transfer` / `.merge` |
-| `UNPOD_API_KEY` | Bearer api key (also read by `AgentRunner`) |
-| `UNPOD_PLATFORM_TOKEN` | DRF token; **wins over** `UNPOD_API_KEY` |
+| `UNPOD_API_KEY` | Bearer api key (`Client`/`AsyncClient` direct mode only — `AgentRunner` no longer reads it) |
+| `UNPOD_PLATFORM_TOKEN` | DRF token; **wins over** `UNPOD_API_KEY` for `Client`/`AsyncClient`, and is the only credential `AgentRunner` accepts (with `UNPOD_ORG_HANDLE`) |
 | `UNPOD_ORG_HANDLE` | The `Org-Handle` sent alongside the token |
 
 `UNPOD_ORCHESTRATOR_URL` is a different variable and belongs to the Agent

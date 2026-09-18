@@ -48,9 +48,9 @@ Configure once — the [Quickstart](https://github.com/unpod-ai/unpod-python-sdk
 ```bash
 export UNPOD_BASE_URL="https://api.unpod.ai"          # one knob for the rest
 export UNPOD_SERVICE_BASE_URL="https://api.unpod.ai"  # bare host: pipes/calls/numbers
-export UNPOD_PLATFORM_TOKEN="..."                     # org-scoped REST auth
+export UNPOD_PLATFORM_TOKEN="..."                     # org-scoped REST auth + AgentRunner registration
 export UNPOD_ORG_HANDLE="your-org"
-export UNPOD_API_KEY="sk_..."                         # AgentRunner (Bearer)
+export UNPOD_API_KEY="sk_..."                         # optional: legacy Bearer key for Client only
 ```
 
 ```python

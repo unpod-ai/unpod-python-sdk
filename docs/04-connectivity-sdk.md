@@ -32,8 +32,9 @@ AgentRunner(
     entrypoint=entrypoint,
     agent_id="my-voice-agent",
     max_concurrent_calls=1,
-    # api_key ← UNPOD_API_KEY, base_url ← UNPOD_BASE_URL. The runner dials
-    # OUT per call, so no inbound port and no public URL are needed.
+    # platform_token ← UNPOD_PLATFORM_TOKEN, org_handle ← UNPOD_ORG_HANDLE,
+    # base_url ← UNPOD_BASE_URL. The runner dials OUT per call, so no inbound
+    # port and no public URL are needed.
 ).start()
 ```
 
@@ -45,7 +46,8 @@ That is the shape `examples/full_agent_setup.py` runs.
 |---|---|---|---|
 | `entrypoint` | `Callable[[CallContext], Awaitable[None]]` | required | Awaited once per call, after the bridge handshake completes |
 | `agent_id` | `str` | required | The rendezvous key. Must equal the `agent_id` on the Pipe (and on the number attachment) that routes the call |
-| `api_key` | `str \| None` | `None` | Falls back to `UNPOD_API_KEY`; `ValueError` if neither is set |
+| `platform_token` | `str \| None` | `None` | Falls back to `UNPOD_PLATFORM_TOKEN`; `ValueError` if neither is set |
+| `org_handle` | `str \| None` | `None` | The org this token registers into. Falls back to `UNPOD_ORG_HANDLE`; `ValueError` if neither is set |
 | `max_sessions` | `int` | `50` | Capacity, *unless* `max_concurrent_calls` is passed |
 | `max_concurrent_calls` | `int \| None` | `None` | **Overrides `max_sessions` whenever it is not `None`.** The winning value is advertised as `max_concurrent` in `Register` and gates `job.ack` rejections |
 | `permits_per_minute` | `int` | `120` | Stored and never read — see [Known gaps](#known-gaps) |

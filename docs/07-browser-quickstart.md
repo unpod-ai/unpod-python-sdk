@@ -109,7 +109,8 @@ OPENAI_API_KEY=sk-...
 | `SUPERVOICE_URL` | `run.py`: this value, else `ws(s)://<UNPOD_BASE_URL host>`, else `ws://127.0.0.1:9000`. `agent.py`: this value, else `ws://127.0.0.1:9000` | The speech app base. `/connect` and `/ws/audio` are derived from it (`examples/browser_playground/_urls.py`) and it is the runner's `base_url` |
 | `PLAYGROUND_PORT` | `9100` | Port the UI server binds |
 | `AGENT_ID` | `browser-playground` | The `agent_id` the runner registers under |
-| `UNPOD_API_KEY` | `dev-key` | Bearer sent on the registration socket; the dev registry never reads it |
+| `UNPOD_PLATFORM_TOKEN` | `dev-token` | Sent on the registration socket as `Authorization: Token ...`; the dev registry never reads it |
+| `UNPOD_ORG_HANDLE` | `dev-org` | Sent alongside it as `Org-Handle`; the dev registry never reads it |
 | `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | — | Picks the LLM; `SUPERDIALOG_LLM` overrides the model string outright |
 | `FLOW_JSON_PATH` | unset | A path to a flow JSON runs a `DialogMachine` with a spoken greeting; unset runs a plain `LLMAgent` |
 | `EXTERNAL_AGENT` | `0` | `1` serves the UI only and leaves the runner to you |
@@ -141,7 +142,8 @@ return AgentRunner(
     entrypoint=entrypoint,
     agent_id=AGENT_ID,
     base_url=SUPERVOICE_URL,
-    api_key=os.getenv("UNPOD_API_KEY", "dev-key"),
+    platform_token=os.getenv("UNPOD_PLATFORM_TOKEN", "dev-token"),
+    org_handle=os.getenv("UNPOD_ORG_HANDLE", "dev-org"),
     transport="serve",                    # the dev speech app dials you
     serving_url="ws://127.0.0.1:8765",    # where it dials
 )

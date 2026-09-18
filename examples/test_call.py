@@ -15,7 +15,8 @@ Usage:
     uv run python examples/test_call.py --status <call_id>
 
 Required env vars:
-    UNPOD_API_KEY
+    UNPOD_PLATFORM_TOKEN
+    UNPOD_ORG_HANDLE
     UNPOD_SERVICE_BASE_URL   (e.g. http://localhost:8000/platform)
     UNPOD_ORCHESTRATOR_URL   (e.g. ws://localhost:8000)
     OPENAI_API_KEY           (used by the agent brain)

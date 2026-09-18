@@ -45,8 +45,9 @@ export UNPOD_API_KEY="sk_..."
 
 # Bare host: what pipes/calls/numbers need instead of the derived base URL.
 export UNPOD_SERVICE_BASE_URL="https://api.unpod.ai"   # no path segment
-# Org-scoped auth for the REST planes. (The AgentRunner in step 3 is the one
-# thing that still wants UNPOD_API_KEY: it sends it as a Bearer token.)
+# Org-scoped auth for the REST planes, and for the AgentRunner in step 3
+# (it sends these as Authorization: Token + Org-Handle; it no longer reads
+# UNPOD_API_KEY).
 export UNPOD_PLATFORM_TOKEN="..."                      # DRF token
 export UNPOD_ORG_HANDLE="your-org"
 ```
