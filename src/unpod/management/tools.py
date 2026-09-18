@@ -31,7 +31,7 @@ class ToolsResource:
 
     async def list(self) -> ToolCatalog:
         """Every built-in, plus what a tool of your own may look like."""
-        data = unwrap_data(await self._http.get("/tools"))
+        data = unwrap_data(await self._http.get("/v1/tools"))
         return ToolCatalog(
             builtin=[BuiltinTool(**t) for t in data.get("builtin", [])],
             custom=CustomToolSupport(**data.get("custom", {})),
@@ -39,7 +39,7 @@ class ToolsResource:
 
     async def list_custom(self) -> list[CustomTool]:
         """The tools this project has authored."""
-        data = unwrap_data(await self._http.get("/custom-tools"))
+        data = unwrap_data(await self._http.get("/v1/custom-tools"))
         return [CustomTool(**t) for t in data]
 
     async def create(
@@ -84,7 +84,9 @@ class ToolsResource:
         if timeout is not None:
             payload["timeout"] = timeout
         return CustomTool(
-            **unwrap_data(await self._http.put(f"/custom-tools/{_seg(tool_id)}", json=payload))
+            **unwrap_data(
+                await self._http.put(f"/v1/custom-tools/{_seg(tool_id)}", json=payload)
+            )
         )
 
     async def delete(self, tool_id: str) -> None:
@@ -94,7 +96,7 @@ class ToolsResource:
         those agents resolve nothing — which looks exactly like the model
         choosing not to call it.
         """
-        await self._http.delete(f"/custom-tools/{_seg(tool_id)}")
+        await self._http.delete(f"/v1/custom-tools/{_seg(tool_id)}")
 
     async def attach(self, tool_id: str, agent_id: str) -> dict[str, Any]:
         """Connect a tool to an agent, by id — built-in or your own.
@@ -109,7 +111,7 @@ class ToolsResource:
         """
         return unwrap_data(
             await self._http.post(
-                f"/tools/{_seg(tool_id)}/attach", json={"agent_id": agent_id}
+                f"/v1/tools/{_seg(tool_id)}/attach", json={"agent_id": agent_id}
             )
         )
 
@@ -117,7 +119,7 @@ class ToolsResource:
         """Disconnect a tool from an agent. Always-on built-ins refuse (409)."""
         return unwrap_data(
             await self._http.post(
-                f"/tools/{_seg(tool_id)}/detach", json={"agent_id": agent_id}
+                f"/v1/tools/{_seg(tool_id)}/detach", json={"agent_id": agent_id}
             )
         )
 
