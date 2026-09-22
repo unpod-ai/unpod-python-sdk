@@ -22,6 +22,13 @@ Replace `AgentRunner(..., api_key="sk_...")` with
 `UNPOD_API_KEY` for `UNPOD_PLATFORM_TOKEN` + `UNPOD_ORG_HANDLE` in the runner's
 environment.
 
+### Fixed
+- `client.tools` now addresses supervoice's real `/v1` routes. Every verb
+  (`list`, `list_custom`, `create`, `delete`, `attach`, `detach`) previously
+  resolved to `<base>/tools` or `<base>/custom-tools` and 404'd against
+  supervoice, which mounts its platform routes under `/v1`; the same calls now
+  return 200.
+
 ## [0.3.2] - 2026-09-04
 
 ### Added

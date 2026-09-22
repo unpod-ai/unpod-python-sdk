@@ -43,7 +43,8 @@ def test_runner_init() -> None:
     runner = AgentRunner(
         entrypoint=entrypoint,
         agent_id="kyc-bot",
-        platform_token="unpod_sk_test", org_handle="acme",
+        platform_token="unpod_sk_test",
+        org_handle="acme",
         max_concurrent_calls=50,
     )
     assert runner._agent_id == "kyc-bot"
@@ -82,7 +83,8 @@ def test_runner_stats_initial() -> None:
     runner = AgentRunner(
         entrypoint=entrypoint,
         agent_id="kyc-bot",
-        platform_token="unpod_sk_test", org_handle="acme",
+        platform_token="unpod_sk_test",
+        org_handle="acme",
     )
     stats = runner.stats()
     assert stats.in_flight == 0
@@ -96,7 +98,8 @@ def test_runner_active_calls_empty_before_any_connection() -> None:
     runner = AgentRunner(
         entrypoint=entrypoint,
         agent_id="kyc-bot",
-        platform_token="unpod_sk_test", org_handle="acme",
+        platform_token="unpod_sk_test",
+        org_handle="acme",
     )
     assert runner.active_calls() == []
 
@@ -112,7 +115,8 @@ async def test_runner_call_hooks_fire_on_real_call() -> None:
     runner = AgentRunner(
         entrypoint=entrypoint,
         agent_id="kyc-bot",
-        platform_token="unpod_sk_test", org_handle="acme",
+        platform_token="unpod_sk_test",
+        org_handle="acme",
     )
     starts: list[object] = []
     ends: list[tuple[object, str]] = []
@@ -144,7 +148,8 @@ async def test_runner_call_end_hook_final_state_failed_on_raise() -> None:
     runner = AgentRunner(
         entrypoint=entrypoint,
         agent_id="kyc-bot",
-        platform_token="unpod_sk_test", org_handle="acme",
+        platform_token="unpod_sk_test",
+        org_handle="acme",
     )
     ends: list[tuple[object, str]] = []
 
@@ -168,7 +173,8 @@ def test_runner_default_params() -> None:
     runner = AgentRunner(
         entrypoint=entrypoint,
         agent_id="bot",
-        platform_token="unpod_sk_test", org_handle="acme",
+        platform_token="unpod_sk_test",
+        org_handle="acme",
     )
     assert runner._max_concurrent == 50
     assert runner._permits_per_minute == 120
@@ -183,7 +189,8 @@ def test_runner_custom_params() -> None:
     runner = AgentRunner(
         entrypoint=entrypoint,
         agent_id="bot",
-        platform_token="unpod_sk_test", org_handle="acme",
+        platform_token="unpod_sk_test",
+        org_handle="acme",
         max_concurrent_calls=100,
         permits_per_minute=200,
         drain_timeout_s=30,
@@ -199,8 +206,18 @@ def test_runner_worker_id_is_unique_per_instance() -> None:
     async def entrypoint(ctx):  # type: ignore[no-untyped-def]
         pass
 
-    r1 = AgentRunner(entrypoint=entrypoint, agent_id="ag-support", platform_token="k", org_handle="acme")
-    r2 = AgentRunner(entrypoint=entrypoint, agent_id="ag-support", platform_token="k", org_handle="acme")
+    r1 = AgentRunner(
+        entrypoint=entrypoint,
+        agent_id="ag-support",
+        platform_token="k",
+        org_handle="acme",
+    )
+    r2 = AgentRunner(
+        entrypoint=entrypoint,
+        agent_id="ag-support",
+        platform_token="k",
+        org_handle="acme",
+    )
     assert r1._worker_id != r2._worker_id
     assert r1._worker_id.startswith("ag-support#")
     assert r1._agent_id == r2._agent_id == "ag-support"
@@ -213,7 +230,8 @@ def test_runner_pool_and_serving_url() -> None:
     r = AgentRunner(
         entrypoint=entrypoint,
         agent_id="ag-support",
-        platform_token="k", org_handle="acme",
+        platform_token="k",
+        org_handle="acme",
         serving_url="wss://agents.acme.com/support",
     )
     assert r._pool == "ag-support"
@@ -227,7 +245,8 @@ def test_runner_dev_mode_isolates_pool() -> None:
     r = AgentRunner(
         entrypoint=entrypoint,
         agent_id="ag-support",
-        platform_token="k", org_handle="acme",
+        platform_token="k",
+        org_handle="acme",
         serving_url="ws://localhost:8765/agent",
         dev_mode=True,
     )
@@ -239,7 +258,12 @@ def test_runner_serving_url_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
         pass
 
     monkeypatch.setenv("UNPOD_RUNNER_URL", "wss://from-env/agent")
-    r = AgentRunner(entrypoint=entrypoint, agent_id="ag-support", platform_token="k", org_handle="acme")
+    r = AgentRunner(
+        entrypoint=entrypoint,
+        agent_id="ag-support",
+        platform_token="k",
+        org_handle="acme",
+    )
     assert r._serving_url == "wss://from-env/agent"
 
 
@@ -250,7 +274,8 @@ def test_runner_register_capabilities_carry_agent_id_and_serving_url() -> None:
     r = AgentRunner(
         entrypoint=entrypoint,
         agent_id="ag-support",
-        platform_token="k", org_handle="acme",
+        platform_token="k",
+        org_handle="acme",
         serving_url="wss://r1/agent",
     )
     # The values that run() puts into Register(...):
@@ -270,7 +295,9 @@ def test_runner_no_longer_has_dispatch_loop() -> None:
     async def entrypoint(ctx):  # type: ignore[no-untyped-def]
         pass
 
-    r = AgentRunner(entrypoint=entrypoint, agent_id="bot", platform_token="k", org_handle="acme")
+    r = AgentRunner(
+        entrypoint=entrypoint, agent_id="bot", platform_token="k", org_handle="acme"
+    )
     assert not hasattr(r, "_dispatch_loop")
     assert not hasattr(r, "_handle_dispatch")
     assert not hasattr(r, "_context_from_dispatch")
@@ -280,7 +307,9 @@ def test_runner_serving_host_port_defaults() -> None:
     async def entrypoint(ctx):  # type: ignore[no-untyped-def]
         pass
 
-    r = AgentRunner(entrypoint=entrypoint, agent_id="bot", platform_token="k", org_handle="acme")
+    r = AgentRunner(
+        entrypoint=entrypoint, agent_id="bot", platform_token="k", org_handle="acme"
+    )
     assert r._serving_host_port() == ("0.0.0.0", 8765)
 
 
@@ -291,7 +320,8 @@ def test_runner_serving_host_port_parsed_from_url() -> None:
     r = AgentRunner(
         entrypoint=entrypoint,
         agent_id="bot",
-        platform_token="k", org_handle="acme",
+        platform_token="k",
+        org_handle="acme",
         serving_url="ws://0.0.0.0:9000/agent",
     )
     assert r._serving_host_port() == ("0.0.0.0", 9000)
@@ -306,7 +336,8 @@ def test_runner_serving_host_port_literal_ip_preserves_bind() -> None:
     r = AgentRunner(
         entrypoint=entrypoint,
         agent_id="bot",
-        platform_token="k", org_handle="acme",
+        platform_token="k",
+        org_handle="acme",
         serving_url="ws://127.0.0.1:8765",
     )
     assert r._serving_host_port() == ("127.0.0.1", 8765)
@@ -323,7 +354,8 @@ def test_runner_serving_host_port_hostname_binds_all_interfaces() -> None:
     r = AgentRunner(
         entrypoint=entrypoint,
         agent_id="bot",
-        platform_token="k", org_handle="acme",
+        platform_token="k",
+        org_handle="acme",
         serving_url="ws://supervoice-playground:8765",
     )
     # Bind: all interfaces (a hostname is not a bindable local address).
@@ -342,7 +374,9 @@ async def test_runner_bridge_handler_runs_entrypoint_and_counts() -> None:
         # in-flight count should reflect the live connection mid-call.
         observed.append(len(r._active_calls))
 
-    r = AgentRunner(entrypoint=entrypoint, agent_id="bot", platform_token="k", org_handle="acme")
+    r = AgentRunner(
+        entrypoint=entrypoint, agent_id="bot", platform_token="k", org_handle="acme"
+    )
 
     await r._bridge_handler(_FakeWS(_bridge_inbound()))
 
@@ -366,7 +400,9 @@ async def test_active_calls_tracks_live_connection() -> None:
         holder["is_same_ctx"] = live[0] is ctx
         holder["in_flight"] = r.stats().in_flight
 
-    r = AgentRunner(entrypoint=entrypoint, agent_id="bot", platform_token="k", org_handle="acme")
+    r = AgentRunner(
+        entrypoint=entrypoint, agent_id="bot", platform_token="k", org_handle="acme"
+    )
 
     # Empty before the connection.
     assert r.active_calls() == []
@@ -393,7 +429,9 @@ async def test_runner_heartbeat_reports_active_connections() -> None:
     async def entrypoint(ctx):  # type: ignore[no-untyped-def]
         pass
 
-    r = AgentRunner(entrypoint=entrypoint, agent_id="bot", platform_token="k", org_handle="acme")
+    r = AgentRunner(
+        entrypoint=entrypoint, agent_id="bot", platform_token="k", org_handle="acme"
+    )
     r._active_calls = {
         "a": object(),  # type: ignore[dict-item]
         "b": object(),  # type: ignore[dict-item]
@@ -426,7 +464,9 @@ async def test_runner_mean_duration_positive_after_completed_call() -> None:
     async def entrypoint(ctx):  # type: ignore[no-untyped-def]
         await asyncio.sleep(0.001)
 
-    r = AgentRunner(entrypoint=entrypoint, agent_id="bot", platform_token="k", org_handle="acme")
+    r = AgentRunner(
+        entrypoint=entrypoint, agent_id="bot", platform_token="k", org_handle="acme"
+    )
 
     await r._bridge_handler(_FakeWS(_bridge_inbound()))
 
@@ -444,7 +484,9 @@ async def test_runner_verify_false_counts_as_neither() -> None:
     async def entrypoint(ctx):  # type: ignore[no-untyped-def]
         ran["entrypoint"] = True
 
-    r = AgentRunner(entrypoint=entrypoint, agent_id="bot", platform_token="k", org_handle="acme")
+    r = AgentRunner(
+        entrypoint=entrypoint, agent_id="bot", platform_token="k", org_handle="acme"
+    )
     r._verify = lambda _ws: False
 
     ws = _FakeWS(_bridge_inbound())
@@ -466,7 +508,9 @@ async def test_runner_malformed_handshake_counts_as_neither() -> None:
     async def entrypoint(ctx):  # type: ignore[no-untyped-def]
         ran["entrypoint"] = True
 
-    r = AgentRunner(entrypoint=entrypoint, agent_id="bot", platform_token="k", org_handle="acme")
+    r = AgentRunner(
+        entrypoint=entrypoint, agent_id="bot", platform_token="k", org_handle="acme"
+    )
 
     # hello.ack arrives, then a bogus event instead of call.started.
     ws = _FakeWS(
@@ -495,7 +539,9 @@ async def test_runner_handshake_timeout_does_not_hang() -> None:
     async def entrypoint(ctx):  # type: ignore[no-untyped-def]
         pass
 
-    r = AgentRunner(entrypoint=entrypoint, agent_id="bot", platform_token="k", org_handle="acme")
+    r = AgentRunner(
+        entrypoint=entrypoint, agent_id="bot", platform_token="k", org_handle="acme"
+    )
 
     class _HangingWS(_FakeWS):
         async def recv(self) -> str:
@@ -537,7 +583,13 @@ def _make_runner(**kwargs):  # type: ignore[no-untyped-def]
     async def entrypoint(ctx):  # type: ignore[no-untyped-def]
         pass
 
-    return AgentRunner(entrypoint=entrypoint, agent_id="bot", platform_token="k", org_handle="acme", **kwargs)
+    return AgentRunner(
+        entrypoint=entrypoint,
+        agent_id="bot",
+        platform_token="k",
+        org_handle="acme",
+        **kwargs,
+    )
 
 
 def test_runner_no_secret_means_no_verify() -> None:
