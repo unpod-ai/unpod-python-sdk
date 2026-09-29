@@ -8,6 +8,27 @@ While the SDK is pre-1.0, breaking changes ship in a **minor** bump.
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-09-29
+
+### Added
+- `Call` declares every field supervoice's `GET /v1/calls` returns: `org_id`,
+  `user_id`, `provider_trunk_id`, `scheduled_at`, `initial_call_id`,
+  `latency_summary`, `latency_metrics`, `analytics` and `traces` (previously
+  only reachable as untyped extras, or not returned at all).
+- `Call.call_timings` — dial / connect / end in the LiveKit agent's shape
+  (`call_dialed_at`, `call_connected_at`, `call_ended_at`,
+  `ring_duration_seconds`, `talk_duration_seconds`), read from
+  `traces.call_timings`; `{}` against a server that predates it.
+
+### Changed
+- Documented the call vocabulary supervoice now writes, the LiveKit agent's:
+  terminal `status` is `connected` / `notConnected` / `failed` (older servers:
+  `completed` / `not_connected`) and `end_reason` a LiveKit `CallEndReason`
+  (`USER_DID_NOT_PICK_UP`, `USER_HUNG_UP_IN_CALL`, …). Both stay `str`, so no
+  code change is needed to read either.
+
+## [0.4.1] - 2026-09-28
+
 ### Changed — BREAKING
 - `AgentRunner` registers with your Unpod platform token instead of a supervoice
   API key. Set `UNPOD_PLATFORM_TOKEN` and `UNPOD_ORG_HANDLE` (or pass

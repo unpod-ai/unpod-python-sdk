@@ -191,3 +191,43 @@ def test_orchestrator_session_parses_orchestrator_shape():
     )
     assert s.state == "active"
     assert s.participants[0].participant_id == "p1"
+
+
+def test_call_reads_every_field_supervoice_returns():
+    """``GET /v1/calls/{id}`` fields are typed on Call, not left in extras."""
+    payload = {
+        "call_id": "SCL_1",
+        "org_id": "org_1",
+        "project_id": "proj_1",
+        "user_id": "u_1",
+        "provider_trunk_id": "ST_1",
+        "scheduled_at": "2026-09-26T12:00:00",
+        "initial_call_id": "SCL_0",
+        "status": "notConnected",
+        "end_reason": "USER_DID_NOT_PICK_UP",
+        "latency_summary": {"p50_ms": 800},
+        "latency_metrics": [{"turn": 1}],
+        "analytics": [{"block_id": "b"}],
+        "traces": {
+            "tokens": 500,
+            "supervoice_end_reason": "no_answer",
+            "call_timings": {
+                "call_dialed_at": "2026-09-26T12:08:46",
+                "call_connected_at": None,
+                "call_ended_at": "2026-09-26T12:09:17",
+                "ring_duration_seconds": 31,
+                "talk_duration_seconds": None,
+            },
+        },
+    }
+
+    c = Call.model_validate(payload)
+
+    assert c.model_extra == {}
+    assert c.traces["tokens"] == 500
+    assert c.call_timings == payload["traces"]["call_timings"]
+    assert c.status == "notConnected"
+
+
+def test_call_timings_is_empty_on_an_old_server():
+    assert Call(call_id="SCL_1").call_timings == {}
