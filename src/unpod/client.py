@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import threading
 from typing import Any
 
 from dotenv import load_dotenv
@@ -222,11 +223,20 @@ class _SyncAgentNamespace:
         self.voice = _SyncResource(async_namespace.voice)
 
 
+# One loop per thread, reused by every blocking call: the pooled httpx
+# connections bind to the loop that opened them, so a fresh ``asyncio.run``
+# per call left the second call on a closed loop ("Event loop is closed").
+_THREAD_LOOP = threading.local()
+
+
 def _run_blocking(coro: Any) -> Any:
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(coro)
+        loop = getattr(_THREAD_LOOP, "loop", None)
+        if loop is None or loop.is_closed():
+            loop = _THREAD_LOOP.loop = asyncio.new_event_loop()
+        return loop.run_until_complete(coro)
     raise RuntimeError(
         "Client cannot be used from a running event loop; use AsyncClient"
     )
