@@ -574,3 +574,43 @@ connectivity runtime (`connectivity/metrics.py::MetricsTracker.live`,
   the REST one.
 - [00-overview.md](00-overview.md) — the planes, the terminology canon, and what
   Unpod owns versus what you own.
+
+## Autonomous agents (flows and journeys)
+
+Drive Unpod's autonomous agents the same way you make calls. Requests go to the
+backend's `/api/v2/platform/journey/v1/…` proxy, which checks your org and space
+and forwards to the journey engine.
+
+```python
+from unpod import Client
+
+client = Client()  # UNPOD_API_KEY, or a platform token + UNPOD_ORG_HANDLE
+
+client.journeys.ping()                                    # {"ok": True, "checks": [...]} — setup check
+flow = client.flows.create("my-space", {"name": "Support", "steps": [...]})
+client.flows.activate(flow.flow_id)
+client.journeys.set_approval("my-space", "autonomous")    # let the agent send without review
+
+[started] = client.journeys.start(flow.flow_id, participant_id="em-ankit",
+                                  contact={"email": "ankit@example.com", "name": "Ankit"})
+journey = client.journeys.get(started.journey_id)
+for message in client.journeys.conversation(journey):
+    print(message.direction, message.text)
+client.journeys.cancel(journey.journey_id)
+```
+
+| Method | What it does |
+|---|---|
+| `flows.create(space_id, flow)` · `validate(space_id, flow)` | create a flow · check it without saving |
+| `flows.update(flow_id, flow)` · `get(flow_id, version=None)` · `list(space_id)` · `versions(flow_id)` | edit (a new version) · read |
+| `flows.activate(flow_id)` · `pause(flow_id)` · `archive(flow_id)` | on · off (running journeys finish) · retire |
+| `journeys.start(flow_id, participant_id, contact)` or `start(flow_id, participants=[...])` | start for one or many contacts; one result each (`started` / `invalid` / …) |
+| `journeys.get(journey_id)` · `list(space_id, flow_id=, participant_id=, status=)` · `cancel(journey_id)` | read · filter · stop |
+| `journeys.send_event(journey_id, type, outcome, summary, content, channel)` | signal a running journey (a reply, an approval) |
+| `journeys.conversation(journey)` | the inbox thread, oldest first (`[]` before one exists) |
+| `journeys.set_approval(space_id, level)` | `autonomous` · `human_review` (default) · `shadow` · `blocked`; owners/editors only |
+| `journeys.ping()` | can this org reach the journey engine? |
+
+`participant_id` must match `^[a-z0-9_-]+$`. Models (`Flow`, `Journey`,
+`JourneyStartResult`, `ConversationMessage`) keep unknown fields, so a newer
+engine never breaks an older SDK.
