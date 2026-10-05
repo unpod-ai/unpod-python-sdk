@@ -8,6 +8,22 @@ While the SDK is pre-1.0, breaking changes ship in a **minor** bump.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-05
+
+### Added
+- `client.numbers.agent.change(number, agent_id)` — move an attached number to another agent of your organization without detaching.
+- `client.agents.update(..., number=)` — attach or move a number to the agent in the same call; the returned `Agent` is re-read after the move, so its `number` is current.
+- Direct-supervoice mode (`BearerAuth` / `UNPOD_API_KEY`): `numbers.list()`, `delete()`, `release()` and `numbers.agent.change()` call supervoice's own `/v1/numbers` routes. `change()` there is `PATCH /v1/numbers/{id}` and rebinds `sv_numbers` only — inbound routing moves only through the proxy, where Django owns the dispatch rule.
+
+### Changed — BREAKING (behaviour)
+- `client.numbers.list()` now returns your organization's numbers instead of the shared pool. Code that picked a free number from this list must use the pool listing instead.
+
+### Fixed
+- `client.numbers.delete()` / `release()` call routes that exist and remove the number everywhere.
+
+### Requires
+- In proxy mode, `numbers.agent.change()` and `agents.update(number=)` need the backend-core proxy's `PUT speech/v1/numbers/{id}/attach` reassign route; deploy that Django change before upgrading, or these calls 404/405.
+
 ## [0.4.2] - 2026-09-29
 
 ### Added

@@ -33,6 +33,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Any
 
+import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
 from unpod.management._http import AsyncHTTPClient, unwrap_data
@@ -482,9 +483,15 @@ class AgentsNamespace:
         llm_model: str | None = None,
         mute_until_first_bot_complete: bool | None = None,
         tools: dict[str, Any] | None = None,
+        number: str | None = None,
         **fields: Any,
     ) -> Agent:
         """Update the agent. A brain change reaches every voice.
+
+        ``number`` moves that number (id or E.164) to this agent — attaching it
+        first when it is free in your organization. Only your organization's
+        numbers. The agent edit is applied first and is NOT rolled back if the
+        number step then fails.
 
         ``domain`` retags which dictionary the agent speaks with and reaches
         every voice; pass ``""`` to detach it from its dictionary entirely.
@@ -545,8 +552,42 @@ class AgentsNamespace:
         ):
             if value is not None:
                 body[key] = value
-        resp = await self._http.put(f"{_BASE}/{agent_id}", json=body)
+        if body:
+            resp = await self._http.put(f"{_BASE}/{agent_id}", json=body)
+        else:
+            resp = await self._http.get(f"{_BASE}/{agent_id}")
+        if number is not None:
+            await self._move_number(number, agent_id)
+            # The response above predates the move; read the agent back so
+            # the returned ``number`` is the one it now answers on.
+            resp = await self._http.get(f"{_BASE}/{agent_id}")
         return Agent(**unwrap_data(resp))
+
+    async def _numbers_change(self, number: str, agent_id: str) -> dict[str, Any]:
+        from unpod.management.numbers import NumberAgentResource
+
+        return await NumberAgentResource(self._http).change(number, agent_id)
+
+    async def _numbers_attach(self, number: str, agent_id: str) -> Any:
+        from unpod.management.numbers import NumbersResource
+
+        return await NumbersResource(self._http).attach(
+            number, agent_id, number=number if number.startswith("+") else None
+        )
+
+    async def _move_number(self, number: str, agent_id: str) -> None:
+        try:
+            await self._numbers_change(number, agent_id)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code != 409:
+                raise
+            try:
+                code = (exc.response.json() or {}).get("code")
+            except ValueError:
+                code = None
+            if code != "not_attached":
+                raise
+            await self._numbers_attach(number, agent_id)
 
     async def delete(self, agent_id: str) -> None:
         """Delete the agent and every voice it speaks with."""

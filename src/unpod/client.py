@@ -177,6 +177,9 @@ class Client:
         self.voice_profiles = _SyncResource(self._async_client.voice_profiles)
         self.trunks = _SyncResource(self._async_client.trunks)
         self.numbers = _SyncResource(self._async_client.numbers)
+        # Nested resource: _SyncResource only wraps callables, so the
+        # sub-resource needs its own blocking facade.
+        self.numbers.agent = _SyncResource(self._async_client.numbers.agent)
         self.agents = _SyncAgentsNamespace(self._async_client.agents)
         self.domain_dictionaries = _SyncResource(
             self._async_client.domain_dictionaries

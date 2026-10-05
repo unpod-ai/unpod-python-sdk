@@ -29,6 +29,7 @@ async def test_numbers_list(client: AsyncClient):
         numbers = await client.numbers.list()
         assert len(numbers) == 1
         assert numbers[0].number == "+919800000001"
+        # Bearer client = direct-supervoice mode: the native route.
         mock_get.assert_called_once_with("/v1/numbers", params=None)
 
 
@@ -38,6 +39,7 @@ async def test_numbers_release(client: AsyncClient):
         client.numbers._http, "delete", new_callable=AsyncMock
     ) as mock_del:
         await client.numbers.release("num_1")
+        # Bearer client = direct-supervoice mode: the native route.
         mock_del.assert_called_once_with("/v1/numbers/num_1")
 
 
