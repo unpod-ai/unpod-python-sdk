@@ -1,7 +1,7 @@
 """Flows resource: autonomous-agent campaigns.
 
 Every path is the backend's ``/api/v2/platform/journey/v1`` proxy, which
-forwards to the journey engine with the caller's org and space checked — the
+forwards to the autonomous-agent service with the caller's org and space checked — the
 same entry style as ``calls`` (``/api/v2/platform/speech/v1``).
 """
 

@@ -106,7 +106,7 @@ class JourneysResource:
         return [ConversationMessage(**b) for b in _blocks(resp)]
 
     async def ping(self) -> dict[str, Any]:
-        """Can this org reach the journey engine? ``{ok, checks[], hint}``."""
+        """Can this org reach the autonomous-agent service? ``{ok, checks[], hint}``."""
         return unwrap_data(await self._http.get("/api/v2/platform/journey/connection/", params=None))
 
     async def set_approval(self, space_id: str, approval: str) -> dict[str, Any]:

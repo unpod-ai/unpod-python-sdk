@@ -1,9 +1,10 @@
-"""client.flows / client.journeys → Django /api/v2/platform/journey/v1 → superbook /api/v1."""
+"""client.flows / client.journeys → Unpod /api/v2/platform/journey/v1 (mocked HTTP)."""
 
 import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
+
 from unpod import AsyncClient, Client
 from unpod.models import ConversationMessage, Flow, Journey, JourneyStartResult
 
@@ -26,7 +27,7 @@ def test_models_parse_and_keep_unknown_fields():
     assert flow.agentic_follow_ups is False and flow.model_extra["brand_new_field"] == 7
     assert Journey(**J).inbox_thread_id == "710"
     assert JourneyStartResult(participant_id=None, result="invalid").journey_id is None
-    m = ConversationMessage(**{"direction": "outbound", "data": {"content": "Hi", "subject": "Re: City"}})
+    m = ConversationMessage(direction="outbound", data={"content": "Hi", "subject": "Re: City"})
     assert (m.text, m.subject) == ("Hi", "Re: City")
 
 

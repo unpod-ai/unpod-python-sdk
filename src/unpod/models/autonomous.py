@@ -1,4 +1,4 @@
-"""Autonomous-agent (superbook journey engine) models.
+"""Autonomous-agent models (flows and journeys).
 
 Developer-facing fields only; ``extra="allow"`` keeps everything else, so a
 newer engine never breaks an older SDK.

@@ -579,7 +579,7 @@ connectivity runtime (`connectivity/metrics.py::MetricsTracker.live`,
 
 Drive Unpod's autonomous agents the same way you make calls. Requests go to the
 backend's `/api/v2/platform/journey/v1/…` proxy, which checks your org and space
-and forwards to the journey engine.
+and forwards to the autonomous-agent service.
 
 ```python
 from unpod import Client
@@ -609,7 +609,7 @@ client.journeys.cancel(journey.journey_id)
 | `journeys.send_event(journey_id, type, outcome, summary, content, channel)` | signal a running journey (a reply, an approval) |
 | `journeys.conversation(journey)` | the inbox thread, oldest first (`[]` before one exists) |
 | `journeys.set_approval(space_id, level)` | `autonomous` · `human_review` (default) · `shadow` · `blocked`; owners/editors only |
-| `journeys.ping()` | can this org reach the journey engine? |
+| `journeys.ping()` | can this org reach the autonomous-agent service? |
 
 `participant_id` must match `^[a-z0-9_-]+$`. Models (`Flow`, `Journey`,
 `JourneyStartResult`, `ConversationMessage`) keep unknown fields, so a newer
