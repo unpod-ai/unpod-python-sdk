@@ -587,7 +587,9 @@ from unpod import Client
 client = Client()  # UNPOD_API_KEY, or a platform token + UNPOD_ORG_HANDLE
 
 client.journeys.ping()                                    # {"ok": True, "checks": [...]} — setup check
-flow = client.flows.create("my-space", {"name": "Support", "steps": [...]})
+client.flows.channels("my-space")                         # accounts a step can send from (account_id)
+client.flows.agentic_profiles()                           # values for a flow's agentic_profile
+flow = client.flows.create("my-space", {"name": "Support", "steps": [...]})  # flow_id picked for you
 client.flows.activate(flow.flow_id)
 client.journeys.set_approval("my-space", "autonomous")    # let the agent send without review
 
@@ -601,7 +603,10 @@ client.journeys.cancel(journey.journey_id)
 
 | Method | What it does |
 |---|---|
-| `flows.create(space_id, flow)` · `validate(space_id, flow)` | create a flow · check it without saving |
+| `flows.create(space_id, flow)` · `validate(space_id, flow)` | create a flow (leave out `flow_id` and one is picked and returned) · check it without saving |
+| `flows.templates()` · `create_from_template(space_id, template_id, name=, flow_id=)` | ready-made flows · a new draft from one |
+| `flows.channels(space_id)` · `agentic_profiles()` | the space's connected accounts (use `account_id` in a step's `connector_account_ids`) · values for `agentic_profile` |
+| `flows.status(flow_id)` | `{flow_id, status, version, journeys: {status: count}}` |
 | `flows.update(flow_id, flow)` · `get(flow_id, version=None)` · `list(space_id)` · `versions(flow_id)` | edit (a new version) · read |
 | `flows.activate(flow_id)` · `pause(flow_id)` · `archive(flow_id)` | on · off (running journeys finish) · retire |
 | `journeys.start(flow_id, participant_id, contact)` or `start(flow_id, participants=[...])` | start for one or many contacts; one result each (`started` / `invalid` / …) |
@@ -610,6 +615,21 @@ client.journeys.cancel(journey.journey_id)
 | `journeys.conversation(journey)` | the inbox thread, oldest first (`[]` before one exists) |
 | `journeys.set_approval(space_id, level)` | `autonomous` · `human_review` (default) · `shadow` · `blocked`; owners/editors only |
 | `journeys.ping()` | can this org reach the autonomous-agent service? |
+
+A flow the service refuses raises `FlowValidationError` (from `create`,
+`validate`, `update`, `create_from_template`, `activate`, and `journeys.start`
+on a flow that is off). `status_code` is 422 (the definition) or 409 (its
+state), and `problems` lists one readable line per issue:
+
+```python
+from unpod import FlowValidationError
+
+try:
+    client.flows.validate("my-space", draft)
+except FlowValidationError as err:
+    for problem in err.problems:
+        print(problem)    # step 'step_1': fixed email content needs a body; ...
+```
 
 `participant_id` must match `^[a-z0-9_-]+$`. Models (`Flow`, `Journey`,
 `JourneyStartResult`, `ConversationMessage`) keep unknown fields, so a newer

@@ -19,7 +19,8 @@ class Flow(BaseModel):
 
     model_config = _CONFIG
 
-    flow_id: str
+    #: Left out on create, the service picks one; always set on a stored flow.
+    flow_id: str | None = None
     space_id: str = ""
     name: str = ""
     version: int = 1

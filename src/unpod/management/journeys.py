@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from unpod.management._http import AsyncHTTPClient, unwrap_data
-from unpod.management.flows import JOURNEY_BASE
+from unpod.management.flows import JOURNEY_BASE, refused_as_validation
 from unpod.models import ConversationMessage, Journey, JourneyStartResult
 
 #: The levels the backend accepts for a space's agent (``human_review`` is the default).
@@ -36,6 +36,8 @@ class JourneysResource:
     ) -> list[JourneyStartResult]:
         """Start the flow for one contact (``participant_id`` + ``contact``) or many.
 
+        Raises ``FlowValidationError`` when the flow is off or no longer validates.
+
         ``participant_id`` must match ``^[a-z0-9_-]+$``; an invalid one comes
         back as a per-contact ``"invalid"`` result.
         """
@@ -44,7 +46,9 @@ class JourneysResource:
                 raise ValueError("journeys.start needs a participant_id or participants")
             participants = [{"participant_id": participant_id, **(contact or {})}]
         resp = unwrap_data(
-            await self._http.post(f"{JOURNEY_BASE}/flows/{flow_id}/journeys", json={"participants": participants})
+            await refused_as_validation(
+                self._http.post(f"{JOURNEY_BASE}/flows/{flow_id}/journeys", json={"participants": participants})
+            )
         )
         return [JourneyStartResult(**r) for r in resp.get("results", [])]
 

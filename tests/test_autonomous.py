@@ -3,9 +3,10 @@
 import asyncio
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
 
-from unpod import AsyncClient, Client
+from unpod import AsyncClient, Client, FlowValidationError
 from unpod.models import ConversationMessage, Flow, Journey, JourneyStartResult
 
 BASE = "/api/v2/platform/journey/v1"
@@ -75,15 +76,90 @@ async def test_flows_status_switches(client, method, path):
     post.assert_awaited_once_with(f"{BASE}/flows/f1/{path}", json=None)
 
 
-@pytest.mark.anyio
-async def test_flows_create_surfaces_validation_errors(client):
-    class Http422(Exception):
-        pass
+def _http_error(status: int, body: object) -> httpx.HTTPStatusError:
+    request = httpx.Request("POST", "https://api.example.test/x")
+    response = httpx.Response(status, json=body, request=request)
+    return httpx.HTTPStatusError(f"{status}", request=request, response=response)
 
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("status", "body", "problems"),
+    [
+        (422, {"detail": ["step 'a': fixed content needs a body or a template", "no steps"]},
+         ["step 'a': fixed content needs a body or a template", "no steps"]),
+        (422, {"detail": "agentic_tools references unknown connector(s): ['x']"},
+         ["agentic_tools references unknown connector(s): ['x']"]),
+        (422, {"detail": [{"loc": ["body", "steps", 0, "id"], "msg": "Field required"}]},
+         ["body.steps.0.id: Field required"]),
+        (409, {"detail": "flow 'f1' exists; PUT /flows/f1 to create a new version"},
+         ["flow 'f1' exists; PUT /flows/f1 to create a new version"]),
+    ],
+)
+async def test_flow_refusals_become_typed_errors(client, status, body, problems):
     with patch.object(client.flows._http, "post", new_callable=AsyncMock) as post:
-        post.side_effect = Http422("422: fixed content needs a body or a template")
-        with pytest.raises(Http422, match="fixed content needs"):
-            await client.flows.create("s1", {"steps": [{"id": "step_1"}]})
+        post.side_effect = _http_error(status, body)
+        with pytest.raises(FlowValidationError) as caught:
+            await client.flows.create("s1", {"steps": []})
+    assert caught.value.status_code == status
+    assert caught.value.problems == problems
+
+
+@pytest.mark.anyio
+async def test_other_http_errors_pass_through(client):
+    with patch.object(client.flows._http, "post", new_callable=AsyncMock) as post:
+        post.side_effect = _http_error(503, {"detail": "down"})
+        with pytest.raises(httpx.HTTPStatusError):
+            await client.flows.activate("f1")
+
+
+@pytest.mark.anyio
+async def test_start_on_an_inactive_flow_is_a_typed_error(client):
+    with patch.object(client.journeys._http, "post", new_callable=AsyncMock) as post:
+        post.side_effect = _http_error(409, {"detail": "flow is 'off', not active"})
+        with pytest.raises(FlowValidationError, match="not active"):
+            await client.journeys.start("f1", "c1")
+
+
+@pytest.mark.anyio
+async def test_templates_profiles_and_channels(client):
+    with patch.object(client.flows._http, "get", new_callable=AsyncMock) as get, \
+         patch.object(client.flows._http, "post", new_callable=AsyncMock) as post:
+        get.return_value = [{"template_id": "t1", "name": "Intro"}]
+        assert (await client.flows.templates())[0]["template_id"] == "t1"
+        get.assert_awaited_with(f"{BASE}/flows/templates", params=None)
+        get.return_value = [{"profile_id": "sdr", "name": "sdr", "description": "Sales"}]
+        assert (await client.flows.agentic_profiles())[0]["profile_id"] == "sdr"
+        get.assert_awaited_with(f"{BASE}/agentic-profiles", params=None)
+        get.return_value = [{"account_id": "a1", "connector_type": "email", "status": "connected"}]
+        assert (await client.flows.channels("s1"))[0]["account_id"] == "a1"
+        get.assert_awaited_with(f"{BASE}/spaces/s1/connectors", params=None)
+        post.return_value = FLOW
+        flow = await client.flows.create_from_template("s1", "t1", name="Support")
+        post.assert_awaited_once_with(
+            f"{BASE}/spaces/s1/flows/from-template", json={"template_id": "t1", "name": "Support"}
+        )
+        assert flow.flow_id == "f1"
+
+
+@pytest.mark.anyio
+async def test_flow_status_counts_its_journeys(client):
+    with patch.object(client.flows._http, "get", new_callable=AsyncMock) as get:
+        get.side_effect = [
+            {**FLOW, "status": "on", "version": 3},
+            [J, {**J, "journey_id": "j2"}, {**J, "journey_id": "j3", "status": "completed"}],
+        ]
+        status = await client.flows.status("f1")
+    assert status == {
+        "flow_id": "f1", "status": "on", "version": 3,
+        "journeys": {"active": 2, "completed": 1},
+    }
+    assert get.await_args_list[1].args == (f"{BASE}/journeys",)
+    assert get.await_args_list[1].kwargs == {"params": {"space_id": "s1", "flow_id": "f1"}}
+
+
+def test_a_flow_may_leave_its_id_to_the_server():
+    assert Flow(name="New").flow_id is None
 
 
 # ── journeys ──────────────────────────────────────────────────────────────
