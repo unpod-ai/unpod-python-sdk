@@ -39,6 +39,11 @@ class FlowValidationError(Exception):
         self.problems = problems
 
 
+def _idempotency(key: str | None) -> dict[str, Any]:
+    """``post`` kwargs carrying a create's ``Idempotency-Key``, or none."""
+    return {"headers": {"Idempotency-Key": key}} if key else {}
+
+
 def _problem(item: Any) -> str:
     if isinstance(item, dict):
         loc = ".".join(str(part) for part in item.get("loc") or [])
@@ -81,12 +86,21 @@ class FlowsResource:
     def __init__(self, http: AsyncHTTPClient) -> None:
         self._http = http
 
-    async def create(self, space_id: str, flow: Flow | dict[str, Any]) -> Flow:
+    async def create(
+        self, space_id: str, flow: Flow | dict[str, Any], idempotency_key: str | None = None
+    ) -> Flow:
         """Save a new flow, created off. Leave out ``flow_id`` and the service
-        picks one (returned on the result). Raises ``FlowValidationError``."""
+        picks one (returned on the result). Raises ``FlowValidationError``.
+
+        ``idempotency_key``: retrying with the same key returns the flow the
+        first attempt made instead of a second one (use one key per flow, e.g.
+        a uuid, when a create may time out and be retried).
+        """
         resp = unwrap_data(
             await refused_as_validation(
-                self._http.post(f"{JOURNEY_BASE}/spaces/{space_id}/flows", json=_body(flow))
+                self._http.post(
+                    f"{JOURNEY_BASE}/spaces/{space_id}/flows", json=_body(flow), **_idempotency(idempotency_key)
+                )
             )
         )
         return Flow(**resp)
@@ -97,14 +111,16 @@ class FlowsResource:
         template_id: str,
         name: str | None = None,
         flow_id: str | None = None,
+        idempotency_key: str | None = None,
     ) -> Flow:
-        """A new draft flow from one of ``templates()``."""
+        """A new draft flow from one of ``templates()`` (``idempotency_key`` as on ``create``)."""
         body = {"template_id": template_id, "name": name, "flow_id": flow_id}
         resp = unwrap_data(
             await refused_as_validation(
                 self._http.post(
                     f"{JOURNEY_BASE}/spaces/{space_id}/flows/from-template",
                     json={k: v for k, v in body.items() if v is not None},
+                    **_idempotency(idempotency_key),
                 )
             )
         )

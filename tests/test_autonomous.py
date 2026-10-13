@@ -272,3 +272,30 @@ async def test_flow_agents_lists_pilots_and_sdk_agents_in_one(client):
         {"agent_id": "sv:agt_1", "name": "Asha", "kind": "agent", "brain": "prompt"},
         {"agent_id": "sv:agt_2", "name": "Book", "kind": "agent", "brain": "playbook"},
     ]
+
+
+@pytest.mark.anyio
+async def test_a_create_can_carry_an_idempotency_key(client):
+    with patch.object(client.flows._http, "post", new_callable=AsyncMock) as post:
+        post.return_value = FLOW
+        await client.flows.create("s1", {"name": "New"}, idempotency_key="idem-1")
+        post.assert_awaited_once_with(
+            f"{BASE}/spaces/s1/flows", json={"name": "New"}, headers={"Idempotency-Key": "idem-1"}
+        )
+        post.reset_mock()
+        await client.flows.create_from_template("s1", "t1", idempotency_key="idem-2")
+        assert post.await_args.kwargs["headers"] == {"Idempotency-Key": "idem-2"}
+
+
+@pytest.mark.anyio
+async def test_http_post_merges_extra_headers():
+    from unpod.management._auth import BearerAuth
+    from unpod.management._http import AsyncHTTPClient
+
+    http = AsyncHTTPClient(BearerAuth("unpod_sk_test"), base_url="https://api.example.test")
+    fake = AsyncMock()
+    fake.post.return_value = httpx.Response(201, json={}, request=httpx.Request("POST", "https://x"))
+    with patch.object(http, "_ensure_client", AsyncMock(return_value=fake)):
+        await http.post("/api/x", json={}, headers={"Idempotency-Key": "k"})
+    sent = fake.post.await_args.kwargs["headers"]
+    assert sent["Idempotency-Key"] == "k" and "Authorization" in sent
