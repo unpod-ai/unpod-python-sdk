@@ -250,10 +250,9 @@ def test_sync_client_exposes_both():
 
 @pytest.mark.anyio
 async def test_flow_agents_lists_pilots_and_sdk_agents_in_one(client):
-    pilots = {"message": "ok", "count": 3, "data": [
-        {"handle": "sales-bot", "name": "Sales Bot", "type": "Voice"},
-        {"handle": "agt_synced", "name": "Synced", "type": "Message"},
-        {"handle": "lookup", "name": "Lookup", "type": "Tool"},
+    pilots = {"message": "ok", "count": 2, "data": [
+        {"handle": "sales-bot", "name": "Sales Bot", "type": "Pilot"},
+        {"handle": "agt_synced", "name": "Synced", "type": "Pilot"},
     ]}
     sdk_agents = [
         {"agent_id": "agt_1", "name": "Asha", "brain": {"type": "prompt", "ref": "You are Asha."}},
@@ -268,27 +267,8 @@ async def test_flow_agents_lists_pilots_and_sdk_agents_in_one(client):
         "/api/v2/platform/agents/", "/api/v2/platform/speech/v1/agents",
     ]
     assert agents == [
-        {"agent_id": "sales-bot", "name": "Sales Bot", "kind": "pilot", "type": "Voice"},
-        {"agent_id": "agt_synced", "name": "Synced", "kind": "pilot", "type": "Message"},
+        {"agent_id": "sales-bot", "name": "Sales Bot", "kind": "pilot"},
+        {"agent_id": "agt_synced", "name": "Synced", "kind": "pilot"},
         {"agent_id": "sv:agt_1", "name": "Asha", "kind": "agent", "brain": "prompt"},
         {"agent_id": "sv:agt_2", "name": "Book", "kind": "agent", "brain": "playbook"},
     ]
-
-
-@pytest.mark.anyio
-async def test_flow_agents_filters_by_pilot_type_and_search(client):
-    pilots = {"data": [
-        {"handle": "sales-bot", "name": "Sales Bot", "type": "Voice"},
-        {"handle": "mail-bot", "name": "Mail Bot", "type": "Message"},
-    ]}
-    sdk_agents = [
-        {"agent_id": "agt_1", "name": "Asha", "brain": {"type": "prompt"}},
-        {"agent_id": "agt_2", "name": "Mailer", "brain": {"type": "prompt"}},
-    ]
-    with patch.object(client.flows._http, "get", new_callable=AsyncMock) as get:
-        get.side_effect = [pilots, sdk_agents]
-        by_type = await client.flows.agents(pilot_type="message")
-        get.side_effect = [pilots, sdk_agents]
-        by_search = await client.flows.agents(search="MAIL")
-    assert [a["agent_id"] for a in by_type] == ["mail-bot", "sv:agt_1", "sv:agt_2"]
-    assert [a["agent_id"] for a in by_search] == ["mail-bot", "sv:agt_2"]

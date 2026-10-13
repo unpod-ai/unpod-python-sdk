@@ -126,7 +126,7 @@ class FlowsResource:
         """
         return unwrap_data(await self._http.get(f"{JOURNEY_BASE}/spaces/{space_id}/connectors", params=None))
 
-    async def agents(self, pilot_type: str | None = None, search: str | None = None) -> list[dict[str, Any]]:
+    async def agents(self) -> list[dict[str, Any]]:
         """Every agent a flow step can use: the org's pilots and its SDK agents.
 
         Each item's ``agent_id`` goes straight into a step's ``agent_id``: a
@@ -134,20 +134,13 @@ class FlowsResource:
         ``client.agents``. SDK agents are listed when their brain can answer a
         message (``prompt`` or ``playbook``) and are not already a pilot.
         ``sv:`` agents answer message steps only, not ``call`` steps.
-
-        ``pilot_type`` keeps only pilots of that type (``message`` for email or
-        WhatsApp steps, ``voice`` for calls); ``search`` matches the name or id,
-        case-insensitively. Tool pilots are never listed: they are not agents.
         """
         resp = await self._http.get(_PILOTS_PATH, params=None)
         pilots = resp.get("data", []) if isinstance(resp, dict) else resp
         voice_agents = unwrap_data(await self._http.get(_SDK_AGENTS_PATH, params=None))
         handles = {p["handle"] for p in pilots}
         listed: list[dict[str, Any]] = [
-            {"agent_id": p["handle"], "name": p.get("name", ""), "kind": "pilot", "type": p.get("type", "")}
-            for p in pilots
-            if str(p.get("type", "")).lower() != "tool"
-            and (not pilot_type or str(p.get("type", "")).lower() == pilot_type.lower())
+            {"agent_id": p["handle"], "name": p.get("name", ""), "kind": "pilot"} for p in pilots
         ]
         for agent in voice_agents:
             brain = (agent.get("brain") or {}).get("type")
@@ -155,9 +148,6 @@ class FlowsResource:
                 listed.append(
                     {"agent_id": f"sv:{agent['agent_id']}", "name": agent.get("name", ""), "kind": "agent", "brain": brain}
                 )
-        if search:
-            needle = search.lower()
-            listed = [a for a in listed if needle in a["name"].lower() or needle in a["agent_id"].lower()]
         return listed
 
     async def validate(self, space_id: str, flow: Flow | dict[str, Any]) -> dict[str, Any]:
