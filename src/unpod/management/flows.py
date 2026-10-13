@@ -20,6 +20,11 @@ JOURNEY_BASE = "/api/v2/platform/journey/v1"
 
 _T = TypeVar("_T")
 
+_PILOTS_PATH = "/api/v2/platform/agents/"
+_SDK_AGENTS_PATH = "/api/v2/platform/speech/v1/agents"
+#: Brains that can answer a message turn; ``endpoint`` and ``runner`` cannot.
+_MESSAGE_BRAINS = frozenset({"prompt", "playbook"})
+
 
 class FlowValidationError(Exception):
     """The service refused a flow (422), or a flow's state refused the call (409).
@@ -120,6 +125,30 @@ class FlowsResource:
         Accounts are connected in the Unpod app.
         """
         return unwrap_data(await self._http.get(f"{JOURNEY_BASE}/spaces/{space_id}/connectors", params=None))
+
+    async def agents(self) -> list[dict[str, Any]]:
+        """Every agent a flow step can use: the org's pilots and its SDK agents.
+
+        Each item's ``agent_id`` goes straight into a step's ``agent_id``: a
+        pilot's handle, or ``sv:<agent_id>`` for an agent from
+        ``client.agents``. SDK agents are listed when their brain can answer a
+        message (``prompt`` or ``playbook``) and are not already a pilot.
+        ``sv:`` agents answer message steps only, not ``call`` steps.
+        """
+        resp = await self._http.get(_PILOTS_PATH, params=None)
+        pilots = resp.get("data", []) if isinstance(resp, dict) else resp
+        voice_agents = unwrap_data(await self._http.get(_SDK_AGENTS_PATH, params=None))
+        handles = {p["handle"] for p in pilots}
+        listed: list[dict[str, Any]] = [
+            {"agent_id": p["handle"], "name": p.get("name", ""), "kind": "pilot"} for p in pilots
+        ]
+        for agent in voice_agents:
+            brain = (agent.get("brain") or {}).get("type")
+            if brain in _MESSAGE_BRAINS and agent["agent_id"] not in handles:
+                listed.append(
+                    {"agent_id": f"sv:{agent['agent_id']}", "name": agent.get("name", ""), "kind": "agent", "brain": brain}
+                )
+        return listed
 
     async def validate(self, space_id: str, flow: Flow | dict[str, Any]) -> dict[str, Any]:
         """Check a flow without saving it. Raises ``FlowValidationError``."""

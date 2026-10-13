@@ -605,6 +605,7 @@ client.journeys.cancel(journey.journey_id)
 |---|---|
 | `flows.create(space_id, flow)` · `validate(space_id, flow)` | create a flow (leave out `flow_id` and one is picked and returned) · check it without saving |
 | `flows.templates()` · `create_from_template(space_id, template_id, name=, flow_id=)` | ready-made flows · a new draft from one |
+| `flows.agents()` | every agent a step can use, pilots and `client.agents` agents in one list; each `agent_id` goes straight into a step |
 | `flows.channels(space_id)` · `agentic_profiles()` | the space's connected accounts (use `account_id` in a step's `connector_account_ids`) · values for `agentic_profile` |
 | `flows.status(flow_id)` | `{flow_id, status, version, journeys: {status: count}}` |
 | `flows.update(flow_id, flow)` · `get(flow_id, version=None)` · `list(space_id)` · `versions(flow_id)` | edit (a new version) · read |

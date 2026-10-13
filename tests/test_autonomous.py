@@ -246,3 +246,29 @@ def test_sync_client_exposes_both():
         assert hasattr(c.flows, name)
     for name in ("start", "conversation", "set_approval", "ping"):
         assert hasattr(c.journeys, name)
+
+
+@pytest.mark.anyio
+async def test_flow_agents_lists_pilots_and_sdk_agents_in_one(client):
+    pilots = {"message": "ok", "count": 2, "data": [
+        {"handle": "sales-bot", "name": "Sales Bot", "type": "Pilot"},
+        {"handle": "agt_synced", "name": "Synced", "type": "Pilot"},
+    ]}
+    sdk_agents = [
+        {"agent_id": "agt_1", "name": "Asha", "brain": {"type": "prompt", "ref": "You are Asha."}},
+        {"agent_id": "agt_2", "name": "Book", "brain": {"type": "playbook", "ref": "PB_1"}},
+        {"agent_id": "agt_3", "name": "Relay", "brain": {"type": "endpoint", "ref": "https://x"}},
+        {"agent_id": "agt_synced", "name": "Synced", "brain": {"type": "prompt", "ref": "x"}},
+    ]
+    with patch.object(client.flows._http, "get", new_callable=AsyncMock) as get:
+        get.side_effect = [pilots, sdk_agents]
+        agents = await client.flows.agents()
+    assert [c.args[0] for c in get.await_args_list] == [
+        "/api/v2/platform/agents/", "/api/v2/platform/speech/v1/agents",
+    ]
+    assert agents == [
+        {"agent_id": "sales-bot", "name": "Sales Bot", "kind": "pilot"},
+        {"agent_id": "agt_synced", "name": "Synced", "kind": "pilot"},
+        {"agent_id": "sv:agt_1", "name": "Asha", "kind": "agent", "brain": "prompt"},
+        {"agent_id": "sv:agt_2", "name": "Book", "kind": "agent", "brain": "playbook"},
+    ]
