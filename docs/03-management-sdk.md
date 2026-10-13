@@ -631,6 +631,19 @@ except FlowValidationError as err:
         print(problem)    # step 'step_1': fixed email content needs a body; ...
 ```
 
+**Which agent a step uses.** A step's `agent_id` is a pilot handle from the
+Unpod app, or `sv:<agent_id>` for an agent from `client.agents.list()`, so an
+agent you built with this SDK can answer a flow's messages:
+
+```python
+step = {"id": "step_1", "order": 1, "action": "email",
+        "agent_id": "sv:agt_123", "agentic": {"enabled": True}, ...}
+```
+
+The agent's prompt brain becomes the turn's instructions and its `llm_model`
+its model; a playbook brain keeps the flow's own profile. `sv:` agents answer
+message steps only: a `call` step still needs a pilot (a 422 says so).
+
 `participant_id` must match `^[a-z0-9_-]+$`. Models (`Flow`, `Journey`,
 `JourneyStartResult`, `ConversationMessage`) keep unknown fields, so a newer
 engine never breaks an older SDK.
