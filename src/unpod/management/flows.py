@@ -21,6 +21,8 @@ JOURNEY_BASE = "/api/v2/platform/journey/v1"
 _T = TypeVar("_T")
 
 _PILOTS_PATH = "/api/v2/platform/agents/"
+#: How many journeys ``GET journeys`` returns at most (the service's default).
+_JOURNEY_LIST_CAP = 100
 _SDK_AGENTS_PATH = "/api/v2/platform/speech/v1/agents"
 #: Brains that can answer a message turn; ``endpoint`` and ``runner`` cannot.
 _MESSAGE_BRAINS = frozenset({"prompt", "playbook"})
@@ -151,6 +153,9 @@ class FlowsResource:
         message (``prompt`` or ``playbook``) and are not already a pilot.
         ``sv:`` agents answer message steps only, not ``call`` steps.
         """
+        if "Org-Handle" not in self._http._headers():
+            # Pilots are listed per org; without the header the route 400s.
+            raise ValueError("flows.agents needs an org: set UNPOD_ORG_HANDLE (platform-token mode)")
         resp = await self._http.get(_PILOTS_PATH, params=None)
         pilots = resp.get("data", []) if isinstance(resp, dict) else resp
         voice_agents = unwrap_data(await self._http.get(_SDK_AGENTS_PATH, params=None))
@@ -200,19 +205,26 @@ class FlowsResource:
         )
 
     async def status(self, flow_id: str) -> dict[str, Any]:
-        """``{flow_id, status, version, journeys: {status: count}}`` for the latest version."""
+        """``{flow_id, status, version, journeys, truncated}`` for the flow.
+
+        ``status``/``version`` are the latest version's; ``journeys`` counts by
+        status the flow's journeys of every version, newest first, up to the
+        list's cap of ``_JOURNEY_LIST_CAP`` -- ``truncated`` is True when the
+        cap was reached and the counts are a lower bound.
+        """
         flow = await self.get(flow_id)
         journeys = unwrap_data(
             await self._http.get(
                 f"{JOURNEY_BASE}/journeys", params={"space_id": flow.space_id, "flow_id": flow.flow_id}
             )
         )
-        # ponytail: counts the rows the list returns; a summary endpoint per flow if flows outgrow it.
+        # ponytail: counts the rows the list returns; a per-flow count endpoint if flows outgrow it.
         return {
             "flow_id": flow.flow_id,
             "status": flow.status,
             "version": flow.version,
             "journeys": dict(Counter(j.get("status", "") for j in journeys)),
+            "truncated": len(journeys) >= _JOURNEY_LIST_CAP,
         }
 
     async def pause(self, flow_id: str) -> dict[str, Any]:

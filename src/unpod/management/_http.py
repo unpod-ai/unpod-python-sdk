@@ -154,7 +154,7 @@ class AsyncHTTPClient:
         """Send a POST request and return parsed JSON response. ``headers`` add to
         (never replace) the auth and request-id headers."""
         client = await self._ensure_client()
-        resp = await client.post(self._url(path), headers={**self._headers(), **(headers or {})}, json=json)
+        resp = await client.post(self._url(path), headers={**(headers or {}), **self._headers()}, json=json)
         self._log_response(resp)
         resp.raise_for_status()
         return self._json_or_empty(resp)  # type: ignore[no-any-return]

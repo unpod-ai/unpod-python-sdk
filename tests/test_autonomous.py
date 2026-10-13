@@ -20,6 +20,14 @@ def client():
     return AsyncClient(api_key="unpod_sk_test", base_url="https://api.example.test")
 
 
+@pytest.fixture
+def org_client():
+    """Platform-token mode, as the SDK reaches org-scoped routes (pilots)."""
+    from unpod import TokenAuth
+
+    return AsyncClient(auth=TokenAuth("t", org_handle="acme"), base_url="https://api.example.test")
+
+
 # ── models ────────────────────────────────────────────────────────────────
 
 
@@ -152,7 +160,7 @@ async def test_flow_status_counts_its_journeys(client):
         status = await client.flows.status("f1")
     assert status == {
         "flow_id": "f1", "status": "on", "version": 3,
-        "journeys": {"active": 2, "completed": 1},
+        "journeys": {"active": 2, "completed": 1}, "truncated": False,
     }
     assert get.await_args_list[1].args == (f"{BASE}/journeys",)
     assert get.await_args_list[1].kwargs == {"params": {"space_id": "s1", "flow_id": "f1"}}
@@ -249,7 +257,8 @@ def test_sync_client_exposes_both():
 
 
 @pytest.mark.anyio
-async def test_flow_agents_lists_pilots_and_sdk_agents_in_one(client):
+async def test_flow_agents_lists_pilots_and_sdk_agents_in_one(org_client):
+    client = org_client
     pilots = {"message": "ok", "count": 2, "data": [
         {"handle": "sales-bot", "name": "Sales Bot", "type": "Pilot"},
         {"handle": "agt_synced", "name": "Synced", "type": "Pilot"},
@@ -299,3 +308,35 @@ async def test_http_post_merges_extra_headers():
         await http.post("/api/x", json={}, headers={"Idempotency-Key": "k"})
     sent = fake.post.await_args.kwargs["headers"]
     assert sent["Idempotency-Key"] == "k" and "Authorization" in sent
+
+
+
+@pytest.mark.anyio
+async def test_flow_status_says_when_the_count_hit_the_list_cap(client):
+    with patch.object(client.flows._http, "get", new_callable=AsyncMock) as get:
+        get.side_effect = [FLOW, [{**J, "journey_id": f"j{i}"} for i in range(100)]]
+        status = await client.flows.status("f1")
+    assert status["truncated"] is True and status["journeys"] == {"active": 100}
+
+
+@pytest.mark.anyio
+async def test_flow_agents_needs_an_org_handle():
+    bare = AsyncClient(api_key="unpod_sk_test", base_url="https://api.example.test")
+    with patch.object(bare.flows._http, "get", new_callable=AsyncMock) as get, \
+         pytest.raises(ValueError, match="UNPOD_ORG_HANDLE"):
+        await bare.flows.agents()
+    get.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_extra_headers_never_replace_auth():
+    from unpod.management._auth import BearerAuth
+    from unpod.management._http import AsyncHTTPClient
+
+    http = AsyncHTTPClient(BearerAuth("unpod_sk_test"), base_url="https://api.example.test")
+    fake = AsyncMock()
+    fake.post.return_value = httpx.Response(201, json={}, request=httpx.Request("POST", "https://x"))
+    with patch.object(http, "_ensure_client", AsyncMock(return_value=fake)):
+        await http.post("/api/x", json={}, headers={"Authorization": "Bearer evil", "Idempotency-Key": "k"})
+    sent = fake.post.await_args.kwargs["headers"]
+    assert sent["Authorization"] == "Bearer unpod_sk_test" and sent["Idempotency-Key"] == "k"
