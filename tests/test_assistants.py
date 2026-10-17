@@ -56,7 +56,7 @@ async def test_send_uses_the_turn_timeout_and_returns_the_reply(client):
         reply = await client.assistants.send("s1", "asst_1", "thr_1", "hi")
     assert post.await_args.args[0] == f"{A}/asst_1/threads/thr_1/messages"
     assert post.await_args.kwargs["json"] == {"text": "hi"}
-    assert post.await_args.kwargs["timeout"] == TURN_TIMEOUT == 150.0
+    assert post.await_args.kwargs["timeout"] == TURN_TIMEOUT == 165.0
     assert reply.reply == "Hi Ravi" and not reply.awaiting_approval
 
 
@@ -168,3 +168,33 @@ def test_public_sdk_never_names_the_internal_service():
     for path in [*root.joinpath("src").rglob("*.py"), Path(__file__)]:
         text = path.read_text().lower()
         assert "super" + "book" not in text, path
+
+
+# ---- P5 review fixes ----
+
+
+@pytest.mark.anyio
+async def test_a_timed_out_send_is_retried_with_the_same_key(client):
+    # Review I1: a fresh key on the caller's retry ran the turn twice.
+    with patch.object(client.assistants._http, "post", new_callable=AsyncMock) as post:
+        post.side_effect = [httpx.ReadTimeout("slow"), _http_error(504, {}), REPLY]
+        reply = await client.assistants.send("s1", "asst_1", "thr_1", "hi")
+    keys = {c.kwargs["headers"]["Idempotency-Key"] for c in post.await_args_list}
+    assert reply.reply == "Hi Ravi" and post.await_count == 3 and len(keys) == 1
+
+
+@pytest.mark.anyio
+async def test_the_sdk_waits_longer_than_the_proxy():
+    # Review I2: equal timeouts surfaced a bare client timeout, not the 504.
+    from unpod.management.assistants import PROXY_TURN_TIMEOUT
+
+    assert TURN_TIMEOUT > PROXY_TURN_TIMEOUT == 150.0
+
+
+@pytest.mark.anyio
+async def test_decide_sends_an_idempotency_key(client):
+    # Review I3: the docstring promised it.
+    with patch.object(client.assistants._http, "post", new_callable=AsyncMock) as post:
+        post.return_value = REPLY
+        await client.assistants.decide("s1", "asst_1", "thr_1", "apr_1", approve=False)
+    assert post.await_args.kwargs["headers"]["Idempotency-Key"] == "apr_1:deny"

@@ -30,7 +30,15 @@ from unpod.models.assistants import (
 
 _T = TypeVar("_T")
 
-TURN_TIMEOUT = 150.0
+# How long the platform proxy waits for a turn. The SDK waits a little longer
+# so a slow turn surfaces as the proxy's clean 504, not a bare client timeout.
+PROXY_TURN_TIMEOUT = 150.0
+TURN_TIMEOUT = 165.0
+# A turn that timed out or got 503/504 is retried with the SAME
+# Idempotency-Key: the service answers the retry with the first turn's reply
+# (waiting for it if still running) instead of running a second turn.
+_TURN_ATTEMPTS = 3
+_RETRY_STATUS = (503, 504)
 
 
 class AssistantValidationError(Exception):
@@ -143,6 +151,26 @@ class AssistantsResource:
         )
         return Thread(**unwrap_data(resp))
 
+    async def _turn(self, path: str, body: dict[str, Any], key: str) -> Reply:
+        for attempt in range(_TURN_ATTEMPTS):
+            try:
+                resp = await _refused(
+                    self._http.post(
+                        path,
+                        json=body,
+                        headers={"Idempotency-Key": key},
+                        timeout=TURN_TIMEOUT,
+                    )
+                )
+                return Reply(**unwrap_data(resp))
+            except (httpx.TimeoutException, httpx.HTTPStatusError) as exc:
+                retryable = isinstance(exc, httpx.TimeoutException) or (
+                    exc.response.status_code in _RETRY_STATUS
+                )
+                if not retryable or attempt == _TURN_ATTEMPTS - 1:
+                    raise
+        raise AssertionError("unreachable")
+
     async def send(
         self,
         space_id: str,
@@ -151,16 +179,17 @@ class AssistantsResource:
         text: str,
         idempotency_key: str | None = None,
     ) -> Reply:
-        """Send a message; the reply (or a pending approval) comes back."""
-        resp = await _refused(
-            self._http.post(
-                f"{self._a(space_id)}/{assistant_id}/threads/{thread_id}/messages",
-                json={"text": text},
-                headers={"Idempotency-Key": idempotency_key or uuid.uuid4().hex},
-                timeout=TURN_TIMEOUT,
-            )
+        """Send a message; the reply (or a pending approval) comes back.
+
+        Pass your own ``idempotency_key`` if you may call ``send`` again for the
+        same message later (e.g. after a crash); within this call, timeouts and
+        503/504 are retried automatically with the same key.
+        """
+        return await self._turn(
+            f"{self._a(space_id)}/{assistant_id}/threads/{thread_id}/messages",
+            {"text": text},
+            idempotency_key or uuid.uuid4().hex,
         )
-        return Reply(**unwrap_data(resp))
 
     async def decide(
         self,
@@ -171,14 +200,12 @@ class AssistantsResource:
         approve: bool,
     ) -> Reply:
         """Approve or deny the tool call a turn paused on; returns the resumed reply."""
-        resp = await _refused(
-            self._http.post(
-                f"{self._a(space_id)}/{assistant_id}/threads/{thread_id}/approvals/{approval_id}",
-                json={"decision": "approve" if approve else "deny"},
-                timeout=TURN_TIMEOUT,
-            )
+        decision = "approve" if approve else "deny"
+        return await self._turn(
+            f"{self._a(space_id)}/{assistant_id}/threads/{thread_id}/approvals/{approval_id}",
+            {"decision": decision},
+            f"{approval_id}:{decision}",
         )
-        return Reply(**unwrap_data(resp))
 
     async def messages(
         self, space_id: str, assistant_id: str, thread_id: str
