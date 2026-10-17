@@ -16,6 +16,7 @@ from unpod.management.agent import AgentNamespace
 from unpod.management.api_keys import ApiKeysResource
 from unpod.agents import AgentsNamespace
 from unpod.management.calls import CallsResource
+from unpod.management.assistants import AssistantsResource
 from unpod.management.flows import FlowsResource
 from unpod.management.journeys import JourneysResource
 from unpod.management.numbers import NumbersResource
@@ -133,6 +134,7 @@ class AsyncClient:
         self.agent = AgentNamespace(self._http)
         self.calls = CallsResource(self._http)
         self.flows = FlowsResource(self._http)
+        self.assistants = AssistantsResource(self._http)
         self.journeys = JourneysResource(self._http)
         self.sessions = SessionsResource(self._http, orch_http=self._orch_http)
         self.recordings = RecordingsResource(self._http)
@@ -178,6 +180,7 @@ class Client:
         self.agent = _SyncAgentNamespace(self._async_client.agent)
         self.calls = _SyncResource(self._async_client.calls)
         self.flows = _SyncResource(self._async_client.flows)
+        self.assistants = _SyncResource(self._async_client.assistants)
         self.journeys = _SyncResource(self._async_client.journeys)
         self.sessions = _SyncResource(self._async_client.sessions)
         self.recordings = _SyncResource(self._async_client.recordings)

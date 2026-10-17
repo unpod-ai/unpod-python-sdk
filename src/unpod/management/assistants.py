@@ -1,0 +1,202 @@
+"""``client.assistants``: build, deploy and chat with assistants.
+
+Same transport as ``client.flows``: the platform's journey proxy, org-scoped by
+the caller's token. A chat turn runs the model (and maybe several tool steps)
+before it answers, so ``send``/``decide`` wait up to ``TURN_TIMEOUT`` and always
+carry an ``Idempotency-Key``: retrying the same call returns the first reply
+instead of running the turn twice.
+"""
+
+from __future__ import annotations
+
+import builtins
+import uuid
+from collections.abc import Awaitable
+from typing import Any, TypeVar
+
+import httpx
+
+from unpod.management._http import AsyncHTTPClient, unwrap_data
+from unpod.management.flows import JOURNEY_BASE, _problems
+from unpod.models.assistants import (
+    Assistant,
+    AssistantVersion,
+    EndUser,
+    MemoryBlock,
+    Message,
+    Reply,
+    Thread,
+)
+
+_T = TypeVar("_T")
+
+TURN_TIMEOUT = 150.0
+
+
+class AssistantValidationError(Exception):
+    """The service refused the request (409 state conflict or 422 invalid)."""
+
+    def __init__(self, status_code: int, problems: builtins.list[str]):
+        self.status_code = status_code
+        self.problems = problems
+        super().__init__(f"{status_code}: {'; '.join(problems) or 'refused'}")
+
+
+async def _refused(call: Awaitable[_T]) -> _T:
+    try:
+        return await call
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code not in (409, 422):
+            raise
+        try:
+            body = exc.response.json()
+        except ValueError:
+            body = exc.response.text
+        detail = (
+            body.get("detail", body.get("message")) if isinstance(body, dict) else body
+        )
+        raise AssistantValidationError(
+            exc.response.status_code, _problems(detail)
+        ) from exc
+
+
+class AssistantsResource:
+    def __init__(self, http: AsyncHTTPClient) -> None:
+        self._http = http
+
+    def _a(self, space_id: str) -> str:
+        return f"{JOURNEY_BASE}/spaces/{space_id}/assistants"
+
+    # ------------------------------------------------------------- build
+
+    async def validate(self, space_id: str, definition: dict[str, Any]) -> bool:
+        """Dry-run: True if the definition is valid; raises with the problems."""
+        await _refused(
+            self._http.post(f"{self._a(space_id)}/validate", json=definition)
+        )
+        return True
+
+    async def create(self, space_id: str, definition: dict[str, Any]) -> Assistant:
+        """Save a new assistant as a draft (not live until ``deploy``)."""
+        resp = await _refused(self._http.post(self._a(space_id), json=definition))
+        return Assistant(**unwrap_data(resp))
+
+    async def list(self, space_id: str) -> builtins.list[Assistant]:
+        resp = unwrap_data(await self._http.get(self._a(space_id)))
+        return [Assistant(**a) for a in resp]
+
+    async def get(self, space_id: str, assistant_id: str) -> Assistant:
+        return Assistant(
+            **unwrap_data(await self._http.get(f"{self._a(space_id)}/{assistant_id}"))
+        )
+
+    async def update(
+        self, space_id: str, assistant_id: str, definition: dict[str, Any]
+    ) -> Assistant:
+        """Replace the draft. Running threads keep the version they started on."""
+        resp = await _refused(
+            self._http.put(f"{self._a(space_id)}/{assistant_id}", json=definition)
+        )
+        return Assistant(**unwrap_data(resp))
+
+    async def deploy(self, space_id: str, assistant_id: str) -> AssistantVersion:
+        """Freeze the draft as the next version and turn the assistant on."""
+        resp = await _refused(
+            self._http.post(f"{self._a(space_id)}/{assistant_id}/deploy")
+        )
+        return AssistantVersion(**unwrap_data(resp))
+
+    async def off(self, space_id: str, assistant_id: str) -> Assistant:
+        resp = await _refused(
+            self._http.post(f"{self._a(space_id)}/{assistant_id}/off")
+        )
+        return Assistant(**unwrap_data(resp))
+
+    async def versions(
+        self, space_id: str, assistant_id: str
+    ) -> builtins.list[AssistantVersion]:
+        resp = unwrap_data(
+            await self._http.get(f"{self._a(space_id)}/{assistant_id}/versions")
+        )
+        return [AssistantVersion(**v) for v in resp]
+
+    # -------------------------------------------------------------- chat
+
+    async def end_user(
+        self, space_id: str, assistant_id: str, external_id: str, name: str = ""
+    ) -> EndUser:
+        """Get or create the end user for your own user id ``external_id``."""
+        resp = await self._http.post(
+            f"{self._a(space_id)}/{assistant_id}/end_users",
+            json={"external_id": external_id, "name": name},
+        )
+        return EndUser(**unwrap_data(resp))
+
+    async def open_thread(
+        self, space_id: str, assistant_id: str, end_user_id: str
+    ) -> Thread:
+        """A new conversation, pinned to the live version (409 if not on)."""
+        resp = await _refused(
+            self._http.post(
+                f"{self._a(space_id)}/{assistant_id}/end_users/{end_user_id}/threads"
+            )
+        )
+        return Thread(**unwrap_data(resp))
+
+    async def send(
+        self,
+        space_id: str,
+        assistant_id: str,
+        thread_id: str,
+        text: str,
+        idempotency_key: str | None = None,
+    ) -> Reply:
+        """Send a message; the reply (or a pending approval) comes back."""
+        resp = await _refused(
+            self._http.post(
+                f"{self._a(space_id)}/{assistant_id}/threads/{thread_id}/messages",
+                json={"text": text},
+                headers={"Idempotency-Key": idempotency_key or uuid.uuid4().hex},
+                timeout=TURN_TIMEOUT,
+            )
+        )
+        return Reply(**unwrap_data(resp))
+
+    async def decide(
+        self,
+        space_id: str,
+        assistant_id: str,
+        thread_id: str,
+        approval_id: str,
+        approve: bool,
+    ) -> Reply:
+        """Approve or deny the tool call a turn paused on; returns the resumed reply."""
+        resp = await _refused(
+            self._http.post(
+                f"{self._a(space_id)}/{assistant_id}/threads/{thread_id}/approvals/{approval_id}",
+                json={"decision": "approve" if approve else "deny"},
+                timeout=TURN_TIMEOUT,
+            )
+        )
+        return Reply(**unwrap_data(resp))
+
+    async def messages(
+        self, space_id: str, assistant_id: str, thread_id: str
+    ) -> builtins.list[Message]:
+        resp = unwrap_data(
+            await self._http.get(
+                f"{self._a(space_id)}/{assistant_id}/threads/{thread_id}/messages"
+            )
+        )
+        return [Message(**m) for m in resp]
+
+    async def memory(
+        self, space_id: str, assistant_id: str, end_user_id: str
+    ) -> builtins.list[MemoryBlock]:
+        """What the assistant remembers about this end user."""
+        resp = unwrap_data(
+            await self._http.get(
+                f"{self._a(space_id)}/{assistant_id}/end_users/{end_user_id}/memory"
+            )
+        )
+        return [MemoryBlock(**b) for b in resp]
