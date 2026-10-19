@@ -87,3 +87,24 @@ class MemoryBlock(BaseModel):
     value: str = ""
     limit: int | None = None
     editable_by_agent: bool = True
+
+
+class RoutineRun(BaseModel):
+    """One routine fire (scheduled or manual). ``ts`` is its last change: a run
+    that resumed after an approval comes back with its new status."""
+
+    model_config = _CONFIG
+
+    run_id: str
+    end_user_id: str = ""
+    thread_id: str = ""
+    routine_id: str = ""
+    trigger: str = ""  # schedule | manual
+    status: str  # succeeded | failed | awaiting_approval
+    reply: str = ""
+    approval: Approval | None = None
+    ts: str | None = None
+
+    @property
+    def awaiting_approval(self) -> bool:
+        return self.status == "awaiting_approval"

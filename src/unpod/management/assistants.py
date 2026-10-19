@@ -26,6 +26,7 @@ from unpod.models.assistants import (
     MemoryBlock,
     Message,
     Reply,
+    RoutineRun,
     Thread,
 )
 
@@ -152,7 +153,7 @@ class AssistantsResource:
         )
         return Thread(**unwrap_data(resp))
 
-    async def _turn(self, path: str, body: dict[str, Any], key: str) -> Reply:
+    async def _turn(self, path: str, body: dict[str, Any] | None, key: str) -> Reply:
         for attempt in range(_TURN_ATTEMPTS):
             try:
                 resp = await _refused(
@@ -207,6 +208,45 @@ class AssistantsResource:
             {"decision": decision},
             f"{approval_id}:{decision}",
         )
+
+    async def run_routine(
+        self,
+        space_id: str,
+        assistant_id: str,
+        end_user_id: str,
+        routine_id: str,
+        idempotency_key: str | None = None,
+    ) -> Reply:
+        """Run a routine now as the end user's next turn; the reply (or a
+        pending approval) comes back. Retried like ``send``, with the same key."""
+        return await self._turn(
+            f"{self._a(space_id)}/{assistant_id}/end_users/{end_user_id}"
+            f"/routines/{routine_id}/run",
+            None,
+            idempotency_key or uuid.uuid4().hex,
+        )
+
+    async def routine_runs(
+        self,
+        space_id: str,
+        assistant_id: str,
+        since: str | None = None,
+        limit: int = 100,
+    ) -> builtins.list[RoutineRun]:
+        """Routine runs changed at or after ``since`` (ISO time), oldest first.
+
+        ``since`` is inclusive: when polling, skip a ``(run_id, ts)`` you have
+        already handled.
+        """
+        params = {"limit": str(limit)}
+        if since is not None:
+            params = {"since": since, **params}
+        resp = unwrap_data(
+            await self._http.get(
+                f"{self._a(space_id)}/{assistant_id}/routine_runs", params=params
+            )
+        )
+        return [RoutineRun(**r) for r in resp]
 
     async def messages(
         self, space_id: str, assistant_id: str, thread_id: str

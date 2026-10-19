@@ -225,3 +225,46 @@ async def test_decide_sends_an_idempotency_key(client):
         post.return_value = REPLY
         await client.assistants.decide("s1", "asst_1", "thr_1", "apr_1", approve=False)
     assert post.await_args.kwargs["headers"]["Idempotency-Key"] == "apr_1:deny"
+
+
+# ---- routines ----
+
+
+@pytest.mark.anyio
+async def test_run_routine_is_a_turn_with_a_key_the_timeout_and_retries(client):
+    with patch.object(client.assistants._http, "post", new_callable=AsyncMock) as post:
+        post.side_effect = [httpx.ReadTimeout("slow"), {**REPLY, "message_id": "rt:1"}]
+        reply = await client.assistants.run_routine("s1", "asst_1", "eu_1", "daily")
+    first, second = post.await_args_list
+    assert first.args[0] == f"{A}/asst_1/end_users/eu_1/routines/daily/run"
+    assert first.kwargs["timeout"] == TURN_TIMEOUT
+    keys = {c.kwargs["headers"]["Idempotency-Key"] for c in (first, second)}
+    assert len(keys) == 1 and reply.message_id == "rt:1"
+
+
+@pytest.mark.anyio
+async def test_routine_runs_passes_since_and_limit_and_keeps_extra_fields(client):
+    run = {
+        "run_id": "rt:daily:eu_1:x",
+        "end_user_id": "eu_1",
+        "thread_id": "thr_1",
+        "routine_id": "daily",
+        "trigger": "schedule",
+        "status": "awaiting_approval",
+        "reply": "May I?",
+        "approval": {"approval_id": "apr_1", "tool": "t", "args": {}, "reason": "r"},
+        "ts": "2026-10-19T09:00:00Z",
+        "new_field": 1,
+    }
+    with patch.object(client.assistants._http, "get", new_callable=AsyncMock) as get:
+        get.return_value = [run]
+        runs = await client.assistants.routine_runs(
+            "s1", "asst_1", since="2026-10-19T08:00:00Z", limit=5
+        )
+        await client.assistants.routine_runs("s1", "asst_1")
+    first, second = get.await_args_list
+    assert first.args[0] == f"{A}/asst_1/routine_runs"
+    assert first.kwargs["params"] == {"since": "2026-10-19T08:00:00Z", "limit": "5"}
+    assert second.kwargs["params"] == {"limit": "100"}
+    assert runs[0].approval is not None and runs[0].approval.approval_id == "apr_1"
+    assert runs[0].awaiting_approval and runs[0].new_field == 1
