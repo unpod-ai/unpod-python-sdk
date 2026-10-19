@@ -65,6 +65,20 @@ class Approval(BaseModel):
     tool: str
     args: dict[str, Any] = {}
     reason: str = ""
+    # Set by ``pending_approvals`` (the assistant-wide list): where it waits.
+    thread_id: str | None = None
+    end_user_id: str | None = None
+    created: str | None = None
+
+
+class ToolTestResult(BaseModel):
+    """One test call of a draft tool: ``ok`` False means the tool answered
+    with an error (its text is in ``content``)."""
+
+    model_config = _CONFIG
+
+    ok: bool
+    content: str = ""
 
 
 class Reply(BaseModel):

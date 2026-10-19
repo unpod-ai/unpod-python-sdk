@@ -28,6 +28,7 @@ from unpod.models.assistants import (
     Reply,
     RoutineRun,
     Thread,
+    ToolTestResult,
 )
 
 _T = TypeVar("_T")
@@ -130,7 +131,65 @@ class AssistantsResource:
         )
         return [AssistantVersion(**v) for v in resp]
 
+    async def version(
+        self, space_id: str, assistant_id: str, version: int
+    ) -> AssistantVersion:
+        """One deployed version, with its frozen ``definition``."""
+        resp = unwrap_data(
+            await self._http.get(
+                f"{self._a(space_id)}/{assistant_id}/versions/{version}"
+            )
+        )
+        return AssistantVersion(**resp)
+
+    async def test_tool(
+        self, space_id: str, assistant_id: str, name: str, args: dict[str, Any]
+    ) -> ToolTestResult:
+        """Make one real call of the DRAFT's http tool ``name`` with ``args``
+        (no deploy needed). Bad args raise ``AssistantValidationError`` (422),
+        as does a tool that cannot be tested (409)."""
+        resp = await _refused(
+            self._http.post(
+                f"{self._a(space_id)}/{assistant_id}/tools/{name}/test",
+                json={"args": args},
+            )
+        )
+        return ToolTestResult(**unwrap_data(resp))
+
     # -------------------------------------------------------------- chat
+
+    async def end_users(
+        self, space_id: str, assistant_id: str
+    ) -> builtins.list[EndUser]:
+        """The assistant's end users, newest first."""
+        resp = unwrap_data(
+            await self._http.get(f"{self._a(space_id)}/{assistant_id}/end_users")
+        )
+        return [EndUser(**e) for e in resp]
+
+    async def threads(
+        self, space_id: str, assistant_id: str, end_user_id: str
+    ) -> builtins.list[Thread]:
+        """The end user's threads, newest first."""
+        resp = unwrap_data(
+            await self._http.get(
+                f"{self._a(space_id)}/{assistant_id}/end_users/{end_user_id}/threads"
+            )
+        )
+        return [Thread(**t) for t in resp]
+
+    async def pending_approvals(
+        self, space_id: str, assistant_id: str
+    ) -> builtins.list[Approval]:
+        """Pending approvals across all the assistant's threads, newest first;
+        each has ``thread_id``, ``end_user_id`` and ``created``."""
+        resp = unwrap_data(
+            await self._http.get(
+                f"{self._a(space_id)}/{assistant_id}/approvals",
+                params={"status": "pending"},
+            )
+        )
+        return [Approval(**a) for a in resp]
 
     async def end_user(
         self, space_id: str, assistant_id: str, external_id: str, name: str = ""

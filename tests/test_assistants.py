@@ -268,3 +268,76 @@ async def test_routine_runs_passes_since_and_limit_and_keeps_extra_fields(client
     assert second.kwargs["params"] == {"limit": "100"}
     assert runs[0].approval is not None and runs[0].approval.approval_id == "apr_1"
     assert runs[0].awaiting_approval and runs[0].new_field == 1
+
+
+# ---- builder UI reads + tool test ----
+
+
+@pytest.mark.anyio
+async def test_version_gets_one_frozen_version_with_its_definition(client):
+    with patch.object(client.assistants._http, "get", new_callable=AsyncMock) as get:
+        get.return_value = {"version": 2, "definition": {"name": "Maya"}}
+        v = await client.assistants.version("s1", "asst_1", 2)
+    get.assert_awaited_once_with(f"{A}/asst_1/versions/2")
+    assert v.version == 2 and v.definition == {"name": "Maya"}
+
+
+@pytest.mark.anyio
+async def test_end_users_lists_the_assistants_end_users(client):
+    with patch.object(client.assistants._http, "get", new_callable=AsyncMock) as get:
+        get.return_value = [{"end_user_id": "eu_2", "external_id": "u2"}]
+        got = await client.assistants.end_users("s1", "asst_1")
+    get.assert_awaited_once_with(f"{A}/asst_1/end_users")
+    assert [e.end_user_id for e in got] == ["eu_2"]
+
+
+@pytest.mark.anyio
+async def test_threads_lists_an_end_users_threads(client):
+    with patch.object(client.assistants._http, "get", new_callable=AsyncMock) as get:
+        get.return_value = [{"thread_id": "thr_2", "end_user_id": "eu_1", "version": 1}]
+        got = await client.assistants.threads("s1", "asst_1", "eu_1")
+    get.assert_awaited_once_with(f"{A}/asst_1/end_users/eu_1/threads")
+    assert [t.thread_id for t in got] == ["thr_2"]
+
+
+@pytest.mark.anyio
+async def test_pending_approvals_lists_across_threads_with_where_they_wait(client):
+    with patch.object(client.assistants._http, "get", new_callable=AsyncMock) as get:
+        get.return_value = [
+            {
+                "approval_id": "apr_1",
+                "tool": "run_flow",
+                "args": {"email": "a@b.co"},
+                "reason": "run_flow needs your approval",
+                "thread_id": "thr_1",
+                "end_user_id": "eu_1",
+                "created": "2026-10-19T06:00:00Z",
+            }
+        ]
+        got = await client.assistants.pending_approvals("s1", "asst_1")
+    assert get.await_args.args[0] == f"{A}/asst_1/approvals"
+    assert get.await_args.kwargs["params"] == {"status": "pending"}
+    assert got[0].thread_id == "thr_1" and got[0].end_user_id == "eu_1"
+    assert got[0].created == "2026-10-19T06:00:00Z"
+
+
+@pytest.mark.anyio
+async def test_test_tool_posts_args_and_returns_the_result(client):
+    with patch.object(client.assistants._http, "post", new_callable=AsyncMock) as post:
+        post.return_value = {"ok": True, "content": '{"temp": 31}'}
+        got = await client.assistants.test_tool(
+            "s1", "asst_1", "get_weather", {"city": "Pune"}
+        )
+    post.assert_awaited_once_with(
+        f"{A}/asst_1/tools/get_weather/test", json={"args": {"city": "Pune"}}
+    )
+    assert got.ok is True and got.content == '{"temp": 31}'
+
+
+@pytest.mark.anyio
+async def test_test_tool_bad_args_raise_validation_error(client):
+    with patch.object(client.assistants._http, "post", new_callable=AsyncMock) as post:
+        post.side_effect = _http_error(422, {"detail": "city: required"})
+        with pytest.raises(AssistantValidationError) as e:
+            await client.assistants.test_tool("s1", "asst_1", "get_weather", {})
+    assert e.value.status_code == 422
