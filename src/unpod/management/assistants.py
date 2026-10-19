@@ -19,6 +19,7 @@ import httpx
 from unpod.management._http import AsyncHTTPClient, unwrap_data
 from unpod.management.flows import JOURNEY_BASE, _problems
 from unpod.models.assistants import (
+    Approval,
     Assistant,
     AssistantVersion,
     EndUser,
@@ -216,6 +217,18 @@ class AssistantsResource:
             )
         )
         return [Message(**m) for m in resp]
+
+    async def approvals(
+        self, space_id: str, assistant_id: str, thread_id: str
+    ) -> builtins.list[Approval]:
+        """Pending approvals of a thread (at most one in practice), newest first."""
+        resp = unwrap_data(
+            await self._http.get(
+                f"{self._a(space_id)}/{assistant_id}/threads/{thread_id}/approvals",
+                params={"status": "pending"},
+            )
+        )
+        return [Approval(**a) for a in resp]
 
     async def memory(
         self, space_id: str, assistant_id: str, end_user_id: str

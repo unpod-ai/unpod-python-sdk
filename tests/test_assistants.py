@@ -138,6 +138,32 @@ async def test_reads_build_models(client):
 
 
 @pytest.mark.anyio
+async def test_approvals_lists_a_threads_pending_approvals(client):
+    with patch.object(client.assistants._http, "get", new_callable=AsyncMock) as get:
+        get.return_value = [
+            {
+                "approval_id": "apr_2",
+                "tool": "memory.core_replace",
+                "args": {"label": "user_profile", "value": "Likes coffee"},
+                "reason": "rewrites core memory",
+            }
+        ]
+        pending = await client.assistants.approvals("s1", "asst_1", "thr_1")
+    assert get.await_args.args[0] == f"{A}/asst_1/threads/thr_1/approvals"
+    assert get.await_args.kwargs["params"] == {"status": "pending"}
+    assert [a.approval_id for a in pending] == ["apr_2"]
+    assert pending[0].tool == "memory.core_replace"
+    assert pending[0].args["value"] == "Likes coffee"
+
+
+@pytest.mark.anyio
+async def test_approvals_is_empty_when_nothing_is_pending(client):
+    with patch.object(client.assistants._http, "get", new_callable=AsyncMock) as get:
+        get.return_value = []
+        assert await client.assistants.approvals("s1", "asst_1", "thr_1") == []
+
+
+@pytest.mark.anyio
 async def test_post_forwards_a_per_call_timeout():
     from unpod.management._auth import BearerAuth
     from unpod.management._http import AsyncHTTPClient
@@ -161,6 +187,7 @@ async def test_post_forwards_a_per_call_timeout():
 def test_the_sync_client_exposes_assistants():
     c = Client(api_key="unpod_sk_test", base_url="https://api.example.test")
     assert callable(c.assistants.send)
+    assert callable(c.assistants.approvals)
 
 
 def test_public_sdk_never_names_the_internal_service():
