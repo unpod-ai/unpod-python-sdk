@@ -26,6 +26,8 @@ _JOURNEY_LIST_CAP = 100
 _SDK_AGENTS_PATH = "/api/v2/platform/speech/v1/agents"
 #: Brains that can answer a message turn; ``endpoint`` and ``runner`` cannot.
 _MESSAGE_BRAINS = frozenset({"prompt", "playbook"})
+#: Where a flow's leads come from: a Space, a CSV upload, an API push, or a mailbox.
+LEAD_SOURCE_TYPES = frozenset({"space", "csv", "api_push", "email"})
 
 
 class FlowValidationError(Exception):
@@ -233,3 +235,70 @@ class FlowsResource:
 
     async def archive(self, flow_id: str) -> dict[str, Any]:
         return unwrap_data(await self._http.post(f"{JOURNEY_BASE}/flows/{flow_id}/archive", json=None))
+
+    # ── lead sources: where a flow's contacts come from ───────────────────
+
+    async def lead_sources(self, flow_id: str) -> list[dict[str, Any]]:
+        return unwrap_data(await self._http.get(f"{JOURNEY_BASE}/flows/{flow_id}/lead-sources", params=None))
+
+    async def add_lead_source(
+        self,
+        flow_id: str,
+        type: str,
+        mode: str = "manual",
+        account_id: str | None = None,
+        label: str | None = None,
+    ) -> dict[str, Any]:
+        """Add a lead source. An ``api_push`` source returns its push token ONCE: keep it.
+
+        ``email`` needs the mailbox's ``account_id`` (see ``channels``).
+        """
+        if type not in LEAD_SOURCE_TYPES:
+            raise ValueError(f"type must be one of: {', '.join(sorted(LEAD_SOURCE_TYPES))}")
+        body: dict[str, Any] = {"type": type, "mode": mode}
+        if account_id:
+            body["account_id"] = account_id
+        if label:
+            body["label"] = label
+        return unwrap_data(await self._http.post(f"{JOURNEY_BASE}/flows/{flow_id}/lead-sources", json=body))
+
+    async def enroll_leads(self, flow_id: str, source_id: str, leads: list[dict[str, Any]]) -> dict[str, Any]:
+        """Start the flow for a batch of leads (rows of a CSV), e.g. ``[{"email": ..., "name": ...}]``."""
+        return unwrap_data(
+            await refused_as_validation(
+                self._http.post(
+                    f"{JOURNEY_BASE}/flows/{flow_id}/lead-sources/{source_id}/enroll", json={"leads": leads}
+                )
+            )
+        )
+
+    async def _lead_source_action(self, flow_id: str, source_id: str, action: str) -> dict[str, Any]:
+        return unwrap_data(
+            await refused_as_validation(
+                self._http.post(f"{JOURNEY_BASE}/flows/{flow_id}/lead-sources/{source_id}/{action}", json=None)
+            )
+        )
+
+    async def fetch_leads_now(self, flow_id: str, source_id: str) -> dict[str, Any]:
+        """Read a Space source's contacts now instead of waiting for its schedule."""
+        return await self._lead_source_action(flow_id, source_id, "fetch-now")
+
+    async def pause_lead_source(self, flow_id: str, source_id: str) -> dict[str, Any]:
+        return await self._lead_source_action(flow_id, source_id, "pause")
+
+    async def regenerate_lead_source_token(self, flow_id: str, source_id: str) -> dict[str, Any]:
+        """A new push token for an ``api_push`` source (returned once; the old one stops working)."""
+        return await self._lead_source_action(flow_id, source_id, "regenerate-token")
+
+    async def delete_lead_source(self, flow_id: str, source_id: str) -> None:
+        await self._http.delete(f"{JOURNEY_BASE}/flows/{flow_id}/lead-sources/{source_id}")
+
+    async def test_connection(self, space_id: str, account_id: str) -> dict[str, Any]:
+        """Check a connected account (mailbox, number) live: ``{ok, probed, status|reason}``.
+
+        A passing check also clears an account the service marked as failing,
+        so flows that use it can be turned on again.
+        """
+        return unwrap_data(
+            await self._http.post(f"{JOURNEY_BASE}/spaces/{space_id}/connectors/{account_id}/test", json=None)
+        )

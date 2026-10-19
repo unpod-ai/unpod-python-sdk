@@ -616,6 +616,18 @@ client.journeys.cancel(journey.journey_id)
 | `journeys.conversation(journey)` | the inbox thread, oldest first (`[]` before one exists) |
 | `journeys.set_approval(space_id, level)` | `autonomous` · `human_review` (default) · `shadow` · `blocked`; owners/editors only |
 | `journeys.ping()` | can this org reach the autonomous-agent service? |
+| `flows.lead_sources(flow_id)` · `add_lead_source(flow_id, type, mode=, account_id=, label=)` | where contacts come from: `space` · `csv` · `api_push` · `email` (an `api_push` token is returned once) |
+| `flows.enroll_leads(flow_id, source_id, leads)` · `fetch_leads_now(...)` · `pause_lead_source(...)` · `regenerate_lead_source_token(...)` · `delete_lead_source(...)` | start a batch (CSV rows) · read a Space source now · pause · new push token · remove |
+| `flows.test_connection(space_id, account_id)` | check a connected account live; a pass also clears one marked as failing |
+| `journeys.draft(journey_id)` · `approve(journey_id, approved=True, response_text=)` | the draft held for review (`human_review`) · send or reject it |
+| `journeys.reply(journey_id, text, subject=, request_id=, pause_agent=True)` | reply as a person; the agent stays paused until `release` |
+| `journeys.takeover(journey_id)` · `release(journey_id)` · `resume(journey_id)` | a person takes the conversation · hands it back to the agent · resume a paused journey |
+| `journeys.opt_out(journey_id, channel=None)` · `reactivate(journey_id)` | the contact opted out of everything (or one channel) · start an ended journey again |
+| `journeys.alerts(space_id)` · `stuck_tasks(space_id)` | possible opt-outs for a person to decide · sends that never finished (never resent automatically) |
+
+`approve` and `reply` count as a person's send, so the service must be able to
+name the user acting (platform-token mode with `UNPOD_ORG_HANDLE`); otherwise it
+answers 403.
 
 A flow the service refuses raises `FlowValidationError` (from `create`,
 `validate`, `update`, `create_from_template`, `activate`, and `journeys.start`

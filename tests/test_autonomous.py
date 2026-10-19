@@ -340,3 +340,117 @@ async def test_extra_headers_never_replace_auth():
         await http.post("/api/x", json={}, headers={"Authorization": "Bearer evil", "Idempotency-Key": "k"})
     sent = fake.post.await_args.kwargs["headers"]
     assert sent["Authorization"] == "Bearer unpod_sk_test" and sent["Idempotency-Key"] == "k"
+
+
+# ── operator actions (the inbox, from code) ─────────────────────────────────
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("call", "path", "body"),
+    [
+        (lambda j: j.approve("j1"), "approve", {"approved": True}),
+        (lambda j: j.approve("j1", approved=False, response_text="no", decision_id="d1"), "approve",
+         {"approved": False, "response_text": "no", "decision_id": "d1"}),
+        (lambda j: j.reply("j1", "Hi there"), "reply", {"text": "Hi there", "pause_agent": True}),
+        (lambda j: j.reply("j1", "Hi", subject="Re: x", request_id="r-1", pause_agent=False), "reply",
+         {"text": "Hi", "subject": "Re: x", "request_id": "r-1", "pause_agent": False}),
+        (lambda j: j.takeover("j1", operator="ana", reason="vip"), "takeover", {"operator": "ana", "reason": "vip"}),
+        (lambda j: j.release("j1"), "release", {"operator": "", "reason": ""}),
+        (lambda j: j.resume("j1"), "resume", None),
+        (lambda j: j.opt_out("j1"), "opt-out", {"scope": "contact"}),
+        (lambda j: j.opt_out("j1", channel="email"), "opt-out", {"scope": "channel", "channel": "email"}),
+        (lambda j: j.reactivate("j1"), "reactivate", None),
+    ],
+)
+async def test_journey_operator_actions(client, call, path, body):
+    with patch.object(client.journeys._http, "post", new_callable=AsyncMock) as post:
+        post.return_value = {"ok": True}
+        assert (await call(client.journeys)) == {"ok": True}
+    post.assert_awaited_once_with(f"{BASE}/journeys/j1/{path}", json=body)
+
+
+@pytest.mark.anyio
+async def test_journey_reply_refuses_blank_text(client):
+    with patch.object(client.journeys._http, "post", new_callable=AsyncMock) as post, \
+         pytest.raises(ValueError, match="text"):
+        await client.journeys.reply("j1", "   ")
+    post.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_journey_draft_alerts_and_stuck_tasks(client):
+    with patch.object(client.journeys._http, "get", new_callable=AsyncMock) as get:
+        get.return_value = {"draft": {"text": "Hi"}}
+        assert (await client.journeys.draft("j1"))["draft"]["text"] == "Hi"
+        get.assert_awaited_with(f"{BASE}/journeys/j1/draft", params=None)
+        get.return_value = [{"alert_id": "a1"}]
+        assert await client.journeys.alerts("s1") == [{"alert_id": "a1"}]
+        get.assert_awaited_with(f"{BASE}/spaces/s1/alerts", params={"kind": "possible_opt_out", "limit": 100})
+        await client.journeys.alerts("s1", limit=5, before="2026-10-19T00:00:00Z", before_id="a" * 24)
+        get.assert_awaited_with(
+            f"{BASE}/spaces/s1/alerts",
+            params={"kind": "possible_opt_out", "limit": 5, "before": "2026-10-19T00:00:00Z", "before_id": "a" * 24},
+        )
+        get.return_value = [{"task_id": "t1"}]
+        assert await client.journeys.stuck_tasks("s1") == [{"task_id": "t1"}]
+        get.assert_awaited_with(f"{BASE}/spaces/s1/tasks/stuck", params={"older_than_minutes": 15})
+
+
+def test_journey_opt_out_rejects_an_unknown_channel(client):
+    with pytest.raises(ValueError, match="channel"):
+        asyncio.run(client.journeys.opt_out("j1", channel="fax"))
+
+
+# ── lead sources and connectors ─────────────────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_flow_lead_sources(client):
+    src = f"{BASE}/flows/f1/lead-sources"
+    with patch.object(client.flows._http, "get", new_callable=AsyncMock) as get, \
+         patch.object(client.flows._http, "post", new_callable=AsyncMock) as post, \
+         patch.object(client.flows._http, "delete", new_callable=AsyncMock) as delete:
+        get.return_value = [{"source_id": "ls1"}]
+        assert await client.flows.lead_sources("f1") == [{"source_id": "ls1"}]
+        get.assert_awaited_with(src, params=None)
+
+        post.return_value = {"source_id": "ls1", "push_token": "once"}
+        await client.flows.add_lead_source("f1", "api_push")
+        post.assert_awaited_with(src, json={"type": "api_push", "mode": "manual"})
+        await client.flows.add_lead_source("f1", "email", mode="auto", account_id="acc", label="Inbox")
+        post.assert_awaited_with(src, json={"type": "email", "mode": "auto", "account_id": "acc", "label": "Inbox"})
+
+        post.return_value = {"enrolled": 1}
+        assert (await client.flows.enroll_leads("f1", "ls1", [{"email": "a@b.co"}]))["enrolled"] == 1
+        post.assert_awaited_with(f"{src}/ls1/enroll", json={"leads": [{"email": "a@b.co"}]})
+        for method, path in (("fetch_leads_now", "fetch-now"), ("pause_lead_source", "pause"),
+                             ("regenerate_lead_source_token", "regenerate-token")):
+            await getattr(client.flows, method)("f1", "ls1")
+            post.assert_awaited_with(f"{src}/ls1/{path}", json=None)
+
+        assert await client.flows.delete_lead_source("f1", "ls1") is None
+        delete.assert_awaited_once_with(f"{src}/ls1")
+
+
+def test_flow_add_lead_source_rejects_an_unknown_type(client):
+    with pytest.raises(ValueError, match="type"):
+        asyncio.run(client.flows.add_lead_source("f1", "fax"))
+
+
+@pytest.mark.anyio
+async def test_flow_test_connection(client):
+    with patch.object(client.flows._http, "post", new_callable=AsyncMock) as post:
+        post.return_value = {"ok": True, "probed": True, "status": 200}
+        assert (await client.flows.test_connection("s1", "acct-1"))["ok"] is True
+    post.assert_awaited_once_with(f"{BASE}/spaces/s1/connectors/acct-1/test", json=None)
+
+
+def test_blocking_client_exposes_the_new_steps():
+    c = Client(api_key="unpod_sk_test", base_url="https://api.example.test")
+    for name in ("approve", "reply", "takeover", "release", "resume", "opt_out", "reactivate",
+                 "draft", "alerts", "stuck_tasks"):
+        assert callable(getattr(c.journeys, name))
+    for name in ("lead_sources", "add_lead_source", "enroll_leads", "fetch_leads_now",
+                 "pause_lead_source", "regenerate_lead_source_token", "delete_lead_source", "test_connection"):
+        assert callable(getattr(c.flows, name))

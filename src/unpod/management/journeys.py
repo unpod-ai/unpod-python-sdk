@@ -10,6 +10,8 @@ from unpod.models import ConversationMessage, Journey, JourneyStartResult
 
 #: The levels the backend accepts for a space's agent (``human_review`` is the default).
 APPROVAL_LEVELS = frozenset({"autonomous", "human_review", "shadow", "blocked"})
+#: Channels a contact can opt out of one at a time (``opt_out(channel=...)``).
+OPT_OUT_CHANNELS = frozenset({"email", "whatsapp", "sms", "call", "linkedin"})
 
 
 def _blocks(resp: Any) -> list[dict[str, Any]]:
@@ -94,6 +96,108 @@ class JourneysResource:
         if task_id:
             body["task_id"] = task_id
         return unwrap_data(await self._http.post(f"{JOURNEY_BASE}/journeys/{journey_id}/events", json=body))
+
+    # ── operator actions: what the inbox does, from code ──────────────────
+
+    async def _act(self, journey_id: str, action: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
+        return unwrap_data(await self._http.post(f"{JOURNEY_BASE}/journeys/{journey_id}/{action}", json=body))
+
+    async def draft(self, journey_id: str) -> dict[str, Any]:
+        """The message the agent wrote and is holding for review (``human_review``)."""
+        return unwrap_data(await self._http.get(f"{JOURNEY_BASE}/journeys/{journey_id}/draft", params=None))
+
+    async def approve(
+        self,
+        journey_id: str,
+        approved: bool = True,
+        response_text: str | None = None,
+        decision_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Send (or reject) the held draft. ``response_text`` replaces its text.
+
+        Counts as a person's send, so it needs a signed-in user (platform-token mode).
+        """
+        body: dict[str, Any] = {"approved": approved}
+        if response_text is not None:
+            body["response_text"] = response_text
+        if decision_id:
+            body["decision_id"] = decision_id
+        return await self._act(journey_id, "approve", body)
+
+    async def reply(
+        self,
+        journey_id: str,
+        text: str,
+        subject: str | None = None,
+        request_id: str | None = None,
+        pause_agent: bool = True,
+    ) -> dict[str, Any]:
+        """Send a reply as a person on the journey's channel.
+
+        ``pause_agent`` (default) holds the agent until ``release``. Reuse a
+        ``request_id`` to retry the same reply without sending it twice. Needs
+        a signed-in user (platform-token mode).
+        """
+        if not text.strip():
+            raise ValueError("journeys.reply needs non-blank text")
+        body: dict[str, Any] = {"text": text}
+        if subject is not None:
+            body["subject"] = subject
+        if request_id:
+            body["request_id"] = request_id
+        body["pause_agent"] = pause_agent
+        return await self._act(journey_id, "reply", body)
+
+    async def takeover(self, journey_id: str, operator: str = "", reason: str = "") -> dict[str, Any]:
+        """Pause the agent so a person handles the conversation."""
+        return await self._act(journey_id, "takeover", {"operator": operator, "reason": reason})
+
+    async def release(self, journey_id: str, operator: str = "", reason: str = "") -> dict[str, Any]:
+        """Hand the conversation back to the agent (ends a takeover or a needs-a-person hold)."""
+        return await self._act(journey_id, "release", {"operator": operator, "reason": reason})
+
+    async def resume(self, journey_id: str) -> dict[str, Any]:
+        """Resume a paused journey."""
+        return await self._act(journey_id, "resume")
+
+    async def opt_out(self, journey_id: str, channel: str | None = None) -> dict[str, Any]:
+        """Record that the contact opted out: of everything, or of one ``channel``."""
+        if channel is None:
+            return await self._act(journey_id, "opt-out", {"scope": "contact"})
+        if channel not in OPT_OUT_CHANNELS:
+            raise ValueError(f"channel must be one of: {', '.join(sorted(OPT_OUT_CHANNELS))}")
+        return await self._act(journey_id, "opt-out", {"scope": "channel", "channel": channel})
+
+    async def reactivate(self, journey_id: str) -> dict[str, Any]:
+        """Start an ended journey again for the same contact (a new cycle)."""
+        return await self._act(journey_id, "reactivate")
+
+    async def alerts(
+        self,
+        space_id: str,
+        kind: str = "possible_opt_out",
+        limit: int = 100,
+        before: str | None = None,
+        before_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """The space's alerts for a person to decide, newest first.
+
+        Next page: pass the last row's ``at`` as ``before`` and its ``alert_id`` as ``before_id``.
+        """
+        params: dict[str, Any] = {"kind": kind, "limit": limit}
+        if before:
+            params["before"] = before
+        if before_id:
+            params["before_id"] = before_id
+        return unwrap_data(await self._http.get(f"{JOURNEY_BASE}/spaces/{space_id}/alerts", params=params))
+
+    async def stuck_tasks(self, space_id: str, older_than_minutes: int = 15) -> list[dict[str, Any]]:
+        """Sends that started but never finished. Never resent automatically: check, then act."""
+        return unwrap_data(
+            await self._http.get(
+                f"{JOURNEY_BASE}/spaces/{space_id}/tasks/stuck", params={"older_than_minutes": older_than_minutes}
+            )
+        )
 
     async def conversation(self, journey: Journey | str, limit: int = 200) -> list[ConversationMessage]:
         """The journey's inbox thread, oldest first; ``[]`` before a thread exists."""
