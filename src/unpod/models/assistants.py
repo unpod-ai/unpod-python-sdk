@@ -81,6 +81,17 @@ class ToolTestResult(BaseModel):
     content: str = ""
 
 
+class McpToolInfo(BaseModel):
+    """One tool an MCP server lists (``discover_mcp``). ``description`` is
+    the server's own text."""
+
+    model_config = _CONFIG
+
+    name: str
+    description: str = ""
+    input_schema: dict[str, Any] = {}
+
+
 class Reply(BaseModel):
     model_config = _CONFIG
 

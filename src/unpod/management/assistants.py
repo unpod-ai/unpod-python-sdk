@@ -23,6 +23,7 @@ from unpod.models.assistants import (
     Assistant,
     AssistantVersion,
     EndUser,
+    McpToolInfo,
     MemoryBlock,
     Message,
     Reply,
@@ -155,6 +156,18 @@ class AssistantsResource:
             )
         )
         return ToolTestResult(**unwrap_data(resp))
+
+    async def discover_mcp(
+        self, space_id: str, assistant_id: str, alias: str
+    ) -> builtins.list[McpToolInfo]:
+        """Every tool the DRAFT's MCP server ``alias`` lists (``allow`` is
+        not applied; it filters at deploy). A missing secret raises
+        ``AssistantValidationError`` (409); an unreachable or non-MCP server
+        is a 503 / 502 error."""
+        resp = await _refused(
+            self._http.post(f"{self._a(space_id)}/{assistant_id}/mcp/{alias}/discover")
+        )
+        return [McpToolInfo(**t) for t in unwrap_data(resp)]
 
     # -------------------------------------------------------------- chat
 

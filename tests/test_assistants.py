@@ -341,3 +341,36 @@ async def test_test_tool_bad_args_raise_validation_error(client):
         with pytest.raises(AssistantValidationError) as e:
             await client.assistants.test_tool("s1", "asst_1", "get_weather", {})
     assert e.value.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_discover_mcp_lists_the_servers_tools(client):
+    from unpod.models.assistants import McpToolInfo
+
+    tools = [
+        {
+            "name": "get_weather",
+            "description": "Weather.",
+            "input_schema": {"type": "object"},
+            "annotations": {"x": 1},
+        }
+    ]
+    with patch.object(client.assistants._http, "post", new_callable=AsyncMock) as post:
+        post.return_value = tools
+        got = await client.assistants.discover_mcp("s1", "asst_1", "crm")
+    post.assert_awaited_once_with(f"{A}/asst_1/mcp/crm/discover")
+    assert got == [McpToolInfo(**tools[0])]
+    assert got[0].name == "get_weather" and got[0].input_schema == {"type": "object"}
+
+
+@pytest.mark.anyio
+async def test_discover_mcp_missing_secret_raises_validation_error(client):
+    with patch.object(client.assistants._http, "post", new_callable=AsyncMock) as post:
+        post.side_effect = _http_error(409, {"detail": "secret 'k' is not configured"})
+        with pytest.raises(AssistantValidationError):
+            await client.assistants.discover_mcp("s1", "asst_1", "crm")
+
+
+def test_sync_client_has_discover_mcp():
+    c = Client(api_key="unpod_sk_test", base_url="https://api.example.test")
+    assert callable(c.assistants.discover_mcp)
