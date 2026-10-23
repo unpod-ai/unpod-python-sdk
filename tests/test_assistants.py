@@ -298,6 +298,15 @@ async def test_threads_lists_an_end_users_threads(client):
         got = await client.assistants.threads("s1", "asst_1", "eu_1")
     get.assert_awaited_once_with(f"{A}/asst_1/end_users/eu_1/threads")
     assert [t.thread_id for t in got] == ["thr_2"]
+    assert got[0].summary is None
+
+
+@pytest.mark.anyio
+async def test_threads_carry_the_rolling_summary(client):
+    with patch.object(client.assistants._http, "get", new_callable=AsyncMock) as get:
+        get.return_value = [{"thread_id": "thr_2", "summary": "Ravi moved to Delhi."}]
+        got = await client.assistants.threads("s1", "asst_1", "eu_1")
+    assert got[0].summary == "Ravi moved to Delhi."
 
 
 @pytest.mark.anyio

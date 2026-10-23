@@ -47,6 +47,8 @@ class Thread(BaseModel):
     thread_id: str
     end_user_id: str = ""
     version: int | None = None
+    # Rolling summary of the conversation, kept while the end user is idle.
+    summary: str | None = None
 
 
 class Message(BaseModel):
