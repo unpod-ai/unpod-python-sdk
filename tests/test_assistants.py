@@ -463,3 +463,129 @@ def test_sync_client_has_the_harness_reads():
     assert callable(c.assistants.followups)
     assert callable(c.assistants.cancel_followup)
     assert callable(c.assistants.tasks)
+
+
+RUN = {
+    "run_id": "run_msg_1",
+    "thread_id": "thr_1",
+    "status": "succeeded",
+    "trigger": "chat",
+    "harness_version": 3,
+    "tokens": {"in": 5, "out": 2},
+    "trace": [
+        {"kind": "llm", "name": "assistant_llm_call", "decision": "tools"},
+        {"kind": "tool", "name": "lookup", "args_redacted": "{}", "new": 1},
+    ],
+    "new_server_field": 1,
+}
+EVAL = {
+    "eval_id": "ev_1",
+    "name": "books",
+    "turns": [{"user": "book it", "approve": True}],
+    "checks": [{"type": "reply_contains", "value": "booked"}],
+}
+EVAL_RUN = {
+    "run_id": "evr_1",
+    "target": "draft",
+    "status": "running",
+    "eval_ids": ["ev_1"],
+    "results": [],
+    "draft_hash": "abc",
+}
+
+
+@pytest.mark.anyio
+async def test_runs_and_run_read_the_inspector(client):
+    with patch.object(client.assistants._http, "get", new_callable=AsyncMock) as get:
+        get.return_value = [RUN]
+        (run,) = await client.assistants.runs("s1", "asst_1", "thr_1", limit=5)
+        get.assert_awaited_once_with(
+            f"{A}/asst_1/threads/thr_1/runs", params={"limit": "5"}
+        )
+        assert [s.kind for s in run.trace] == ["llm", "tool"]
+        assert run.tokens == {"in": 5, "out": 2}
+        assert run.model_extra == {"new_server_field": 1}
+        get.return_value = RUN
+        one = await client.assistants.run("s1", "asst_1", "run_msg_1")
+        assert get.await_args.args[0] == f"{A}/asst_1/runs/run_msg_1"
+        assert one.harness_version == 3
+
+
+@pytest.mark.anyio
+async def test_eval_crud(client):
+    http = client.assistants._http
+    with (
+        patch.object(http, "get", new_callable=AsyncMock) as get,
+        patch.object(http, "post", new_callable=AsyncMock) as post,
+        patch.object(http, "put", new_callable=AsyncMock) as put,
+        patch.object(http, "delete", new_callable=AsyncMock) as delete,
+    ):
+        get.return_value = [EVAL]
+        post.return_value = EVAL
+        put.return_value = {**EVAL, "name": "renamed"}
+        body = {k: EVAL[k] for k in ("name", "turns", "checks")}
+        assert [e.eval_id for e in await client.assistants.evals("s1", "asst_1")] == [
+            "ev_1"
+        ]
+        created = await client.assistants.create_eval("s1", "asst_1", body)
+        assert post.await_args.args[0] == f"{A}/asst_1/evals"
+        assert post.await_args.kwargs["json"] == body and created.eval_id == "ev_1"
+        changed = await client.assistants.update_eval("s1", "asst_1", "ev_1", body)
+        assert put.await_args.args[0] == f"{A}/asst_1/evals/ev_1"
+        assert changed.name == "renamed"
+        assert await client.assistants.delete_eval("s1", "asst_1", "ev_1") is None
+        delete.assert_awaited_once_with(f"{A}/asst_1/evals/ev_1")
+
+
+@pytest.mark.anyio
+async def test_create_eval_refused_is_a_validation_error(client):
+    with patch.object(client.assistants._http, "post", new_callable=AsyncMock) as post:
+        post.side_effect = _http_error(
+            409, {"detail": "an assistant has at most 50 evals"}
+        )
+        with pytest.raises(AssistantValidationError):
+            await client.assistants.create_eval("s1", "asst_1", {})
+
+
+@pytest.mark.anyio
+async def test_run_evals_and_read_runs(client):
+    http = client.assistants._http
+    with (
+        patch.object(http, "post", new_callable=AsyncMock) as post,
+        patch.object(http, "get", new_callable=AsyncMock) as get,
+    ):
+        post.return_value = EVAL_RUN
+        run = await client.assistants.run_evals("s1", "asst_1")
+        assert post.await_args.args[0] == f"{A}/asst_1/evals/run"
+        assert post.await_args.kwargs["json"] == {"target": "draft"}
+        assert run.status == "running" and not run.done
+        await client.assistants.run_evals(
+            "s1", "asst_1", target="version", eval_ids=["ev_1"]
+        )
+        assert post.await_args.kwargs["json"] == {
+            "target": "version",
+            "eval_ids": ["ev_1"],
+        }
+        get.return_value = [{**EVAL_RUN, "status": "passed"}]
+        (done,) = await client.assistants.eval_runs("s1", "asst_1", limit=3)
+        get.assert_awaited_once_with(f"{A}/asst_1/eval_runs", params={"limit": "3"})
+        assert done.done
+        get.return_value = EVAL_RUN
+        await client.assistants.eval_run("s1", "asst_1", "evr_1")
+        assert get.await_args.args[0] == f"{A}/asst_1/eval_runs/evr_1"
+
+
+def test_sync_client_has_the_eval_methods():
+    c = Client(api_key="unpod_sk_test", base_url="https://api.example.test")
+    for name in (
+        "runs",
+        "run",
+        "evals",
+        "create_eval",
+        "update_eval",
+        "delete_eval",
+        "run_evals",
+        "eval_runs",
+        "eval_run",
+    ):
+        assert callable(getattr(c.assistants, name))

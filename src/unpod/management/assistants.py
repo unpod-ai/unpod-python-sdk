@@ -23,12 +23,15 @@ from unpod.models.assistants import (
     Assistant,
     AssistantVersion,
     EndUser,
+    Eval,
+    EvalRun,
     Followup,
     McpToolInfo,
     MemoryBlock,
     Message,
     Reply,
     RoutineRun,
+    Run,
     TaskItem,
     Thread,
     ToolTestResult,
@@ -389,6 +392,90 @@ class AssistantsResource:
             )
         )
         return [TaskItem(**t) for t in resp]
+
+    async def runs(
+        self, space_id: str, assistant_id: str, thread_id: str, limit: int = 20
+    ) -> builtins.list[Run]:
+        """The thread's runs with their step traces, newest first."""
+        resp = unwrap_data(
+            await self._http.get(
+                f"{self._a(space_id)}/{assistant_id}/threads/{thread_id}/runs",
+                params={"limit": str(limit)},
+            )
+        )
+        return [Run(**r) for r in resp]
+
+    async def run(self, space_id: str, assistant_id: str, run_id: str) -> Run:
+        resp = unwrap_data(
+            await self._http.get(f"{self._a(space_id)}/{assistant_id}/runs/{run_id}")
+        )
+        return Run(**resp)
+
+    async def evals(self, space_id: str, assistant_id: str) -> builtins.list[Eval]:
+        resp = unwrap_data(
+            await self._http.get(f"{self._a(space_id)}/{assistant_id}/evals")
+        )
+        return [Eval(**e) for e in resp]
+
+    async def create_eval(
+        self, space_id: str, assistant_id: str, eval: dict[str, Any]
+    ) -> Eval:
+        """``eval``: ``{name, turns: [{user, approve?}], checks: [{type,
+        value?, rubric?, turn?}]}``. Invalid or over the limit raises
+        ``AssistantValidationError``."""
+        resp = await _refused(
+            self._http.post(f"{self._a(space_id)}/{assistant_id}/evals", json=eval)
+        )
+        return Eval(**unwrap_data(resp))
+
+    async def update_eval(
+        self, space_id: str, assistant_id: str, eval_id: str, eval: dict[str, Any]
+    ) -> Eval:
+        resp = await _refused(
+            self._http.put(
+                f"{self._a(space_id)}/{assistant_id}/evals/{eval_id}", json=eval
+            )
+        )
+        return Eval(**unwrap_data(resp))
+
+    async def delete_eval(self, space_id: str, assistant_id: str, eval_id: str) -> None:
+        await self._http.delete(f"{self._a(space_id)}/{assistant_id}/evals/{eval_id}")
+
+    async def run_evals(
+        self,
+        space_id: str,
+        assistant_id: str,
+        target: str = "draft",
+        eval_ids: builtins.list[str] | None = None,
+    ) -> EvalRun:
+        """Start a run (``target``: "draft" or "version"); it answers at once
+        with status ``running`` — poll ``eval_run`` until ``done``."""
+        body: dict[str, Any] = {"target": target}
+        if eval_ids is not None:
+            body["eval_ids"] = eval_ids
+        resp = await _refused(
+            self._http.post(f"{self._a(space_id)}/{assistant_id}/evals/run", json=body)
+        )
+        return EvalRun(**unwrap_data(resp))
+
+    async def eval_runs(
+        self, space_id: str, assistant_id: str, limit: int = 20
+    ) -> builtins.list[EvalRun]:
+        resp = unwrap_data(
+            await self._http.get(
+                f"{self._a(space_id)}/{assistant_id}/eval_runs",
+                params={"limit": str(limit)},
+            )
+        )
+        return [EvalRun(**r) for r in resp]
+
+    async def eval_run(self, space_id: str, assistant_id: str, run_id: str) -> EvalRun:
+        resp = unwrap_data(
+            await self._http.get(
+                f"{self._a(space_id)}/{assistant_id}/eval_runs/{run_id}"
+            )
+        )
+        return EvalRun(**resp)
 
     async def memory(
         self, space_id: str, assistant_id: str, end_user_id: str

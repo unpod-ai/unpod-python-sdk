@@ -163,3 +163,78 @@ class TaskItem(BaseModel):
     id: str
     title: str = ""
     status: str  # todo | doing | done | dropped
+
+
+class RunStep(BaseModel):
+    """One step of a run: an LLM call, a tool call, a reflection or a
+    grounding check. ``args_redacted`` never carries credential values."""
+
+    model_config = _CONFIG
+
+    kind: str  # llm | tool | reflection | verify
+    name: str = ""
+    decision: str | None = None
+    rule: str | None = None
+    ok: bool | None = None
+    ms: int | None = None
+    input_chars: int | None = None
+    tokens_in: int | None = None
+    tokens_out: int | None = None
+    args_redacted: str | None = None
+    result_excerpt: str | None = None
+    stubbed: bool = False
+
+
+class Run(BaseModel):
+    """One turn (or memory reflection) of a thread, with its step trace."""
+
+    model_config = _CONFIG
+
+    run_id: str
+    thread_id: str = ""
+    message_id: str | None = None
+    status: str = ""
+    trigger: str | None = None  # chat | routine | followup | eval | reflection
+    model: str | None = None
+    harness_version: int | None = None
+    tainted: bool = False
+    wrapped_up: bool = False
+    verified: bool | str | None = None
+    total_ms: int | None = None
+    tokens: dict[str, int] | None = None
+    trace: list[RunStep] = []
+    created: str | None = None
+
+
+class Eval(BaseModel):
+    """A scripted scenario: user turns (each may approve/deny what it raises)
+    and checks on the result."""
+
+    model_config = _CONFIG
+
+    eval_id: str
+    name: str = ""
+    turns: list[dict[str, Any]] = []
+    checks: list[dict[str, Any]] = []
+    created: str | None = None
+    modified: str | None = None
+
+
+class EvalRun(BaseModel):
+    """One run of an assistant's evals against its draft or live version."""
+
+    model_config = _CONFIG
+
+    run_id: str
+    target: str = "draft"
+    version: int | None = None
+    draft_hash: str | None = None
+    status: str = ""  # running | passed | failed | error
+    eval_ids: list[str] = []
+    results: list[dict[str, Any]] = []
+    started: str | None = None
+    finished: str | None = None
+
+    @property
+    def done(self) -> bool:
+        return self.status != "running"
