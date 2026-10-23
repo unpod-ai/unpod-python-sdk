@@ -37,6 +37,8 @@ class EndUser(BaseModel):
     end_user_id: str
     external_id: str = ""
     name: str = ""
+    # IANA zone; None = the assistant's own timezone applies.
+    timezone: str | None = None
 
 
 class Thread(BaseModel):
@@ -133,3 +135,29 @@ class RoutineRun(BaseModel):
     @property
     def awaiting_approval(self) -> bool:
         return self.status == "awaiting_approval"
+
+
+class Followup(BaseModel):
+    """A follow-up the assistant scheduled for itself: at ``at`` it gets a turn
+    in ``thread_id`` with ``note``. ``tainted`` means it was scheduled after the
+    assistant read outside content (it still runs, for the same end user)."""
+
+    model_config = _CONFIG
+
+    fu_id: str
+    at: str
+    note: str = ""
+    status: str  # scheduled | fired | cancelled | failed
+    created: str | None = None
+    tainted: bool = False
+    thread_id: str = ""
+
+
+class TaskItem(BaseModel):
+    """One step of the assistant's plan for a thread."""
+
+    model_config = _CONFIG
+
+    id: str
+    title: str = ""
+    status: str  # todo | doing | done | dropped

@@ -23,11 +23,13 @@ from unpod.models.assistants import (
     Assistant,
     AssistantVersion,
     EndUser,
+    Followup,
     McpToolInfo,
     MemoryBlock,
     Message,
     Reply,
     RoutineRun,
+    TaskItem,
     Thread,
     ToolTestResult,
 )
@@ -205,12 +207,22 @@ class AssistantsResource:
         return [Approval(**a) for a in resp]
 
     async def end_user(
-        self, space_id: str, assistant_id: str, external_id: str, name: str = ""
+        self,
+        space_id: str,
+        assistant_id: str,
+        external_id: str,
+        name: str = "",
+        timezone: str | None = None,
     ) -> EndUser:
-        """Get or create the end user for your own user id ``external_id``."""
-        resp = await self._http.post(
-            f"{self._a(space_id)}/{assistant_id}/end_users",
-            json={"external_id": external_id, "name": name},
+        """Get or create the end user for your own user id ``external_id``.
+
+        ``timezone`` (IANA, e.g. ``"Asia/Kolkata"``) sets the end user's own
+        clock; leaving it out keeps the stored one."""
+        body: dict[str, Any] = {"external_id": external_id, "name": name}
+        if timezone is not None:
+            body["timezone"] = timezone
+        resp = await _refused(
+            self._http.post(f"{self._a(space_id)}/{assistant_id}/end_users", json=body)
         )
         return EndUser(**unwrap_data(resp))
 
@@ -341,6 +353,42 @@ class AssistantsResource:
             )
         )
         return [Approval(**a) for a in resp]
+
+    async def followups(
+        self, space_id: str, assistant_id: str, end_user_id: str
+    ) -> builtins.list[Followup]:
+        """The follow-ups the assistant scheduled for this end user (every
+        status), newest first."""
+        resp = unwrap_data(
+            await self._http.get(
+                f"{self._a(space_id)}/{assistant_id}/end_users/{end_user_id}/followups"
+            )
+        )
+        return [Followup(**f) for f in resp]
+
+    async def cancel_followup(
+        self, space_id: str, assistant_id: str, end_user_id: str, fu_id: str
+    ) -> Followup:
+        """Cancel a scheduled follow-up (safe to repeat). One that already
+        fired raises ``AssistantValidationError`` (409)."""
+        resp = await _refused(
+            self._http.post(
+                f"{self._a(space_id)}/{assistant_id}/end_users/{end_user_id}"
+                f"/followups/{fu_id}/cancel"
+            )
+        )
+        return Followup(**unwrap_data(resp))
+
+    async def tasks(
+        self, space_id: str, assistant_id: str, thread_id: str
+    ) -> builtins.list[TaskItem]:
+        """The assistant's plan for this thread, as it last wrote it."""
+        resp = unwrap_data(
+            await self._http.get(
+                f"{self._a(space_id)}/{assistant_id}/threads/{thread_id}/tasks"
+            )
+        )
+        return [TaskItem(**t) for t in resp]
 
     async def memory(
         self, space_id: str, assistant_id: str, end_user_id: str

@@ -374,3 +374,83 @@ async def test_discover_mcp_missing_secret_raises_validation_error(client):
 def test_sync_client_has_discover_mcp():
     c = Client(api_key="unpod_sk_test", base_url="https://api.example.test")
     assert callable(c.assistants.discover_mcp)
+
+
+FU = {
+    "fu_id": "fu_1",
+    "thread_id": "thr_1",
+    "at": "2026-10-24T08:30:00Z",
+    "note": "ask about the hotel",
+    "status": "scheduled",
+    "created": "2026-10-23T10:00:00Z",
+    "tainted": False,
+    "new_server_field": 1,
+}
+
+
+@pytest.mark.anyio
+async def test_followups_lists_an_end_users_followups(client):
+    with patch.object(client.assistants._http, "get", new_callable=AsyncMock) as get:
+        get.return_value = [FU]
+        got = await client.assistants.followups("s1", "asst_1", "eu_1")
+    get.assert_awaited_once_with(f"{A}/asst_1/end_users/eu_1/followups")
+    (fu,) = got
+    assert (fu.fu_id, fu.status, fu.tainted, fu.thread_id) == (
+        "fu_1",
+        "scheduled",
+        False,
+        "thr_1",
+    )
+    assert fu.model_extra == {"new_server_field": 1}
+
+
+@pytest.mark.anyio
+async def test_cancel_followup_posts_and_returns_it(client):
+    with patch.object(client.assistants._http, "post", new_callable=AsyncMock) as post:
+        post.return_value = {**FU, "status": "cancelled"}
+        fu = await client.assistants.cancel_followup("s1", "asst_1", "eu_1", "fu_1")
+    assert post.await_args.args[0] == f"{A}/asst_1/end_users/eu_1/followups/fu_1/cancel"
+    assert fu.status == "cancelled"
+
+
+@pytest.mark.anyio
+async def test_cancelling_a_fired_followup_is_a_validation_error(client):
+    with patch.object(client.assistants._http, "post", new_callable=AsyncMock) as post:
+        post.side_effect = _http_error(409, {"detail": "follow-up fu_1 already fired"})
+        with pytest.raises(AssistantValidationError):
+            await client.assistants.cancel_followup("s1", "asst_1", "eu_1", "fu_1")
+
+
+@pytest.mark.anyio
+async def test_tasks_lists_a_threads_plan(client):
+    with patch.object(client.assistants._http, "get", new_callable=AsyncMock) as get:
+        get.return_value = [{"id": "hotel", "title": "Book hotel", "status": "doing"}]
+        got = await client.assistants.tasks("s1", "asst_1", "thr_1")
+    get.assert_awaited_once_with(f"{A}/asst_1/threads/thr_1/tasks")
+    assert [(t.id, t.title, t.status) for t in got] == [
+        ("hotel", "Book hotel", "doing")
+    ]
+
+
+@pytest.mark.anyio
+async def test_end_user_passes_a_timezone_only_when_given(client):
+    with patch.object(client.assistants._http, "post", new_callable=AsyncMock) as post:
+        post.return_value = {"end_user_id": "eu_1", "timezone": "Asia/Kolkata"}
+        eu = await client.assistants.end_user(
+            "s1", "asst_1", "u1", timezone="Asia/Kolkata"
+        )
+        assert post.await_args.kwargs["json"] == {
+            "external_id": "u1",
+            "name": "",
+            "timezone": "Asia/Kolkata",
+        }
+        assert eu.timezone == "Asia/Kolkata"
+        await client.assistants.end_user("s1", "asst_1", "u1")
+        assert "timezone" not in post.await_args.kwargs["json"]
+
+
+def test_sync_client_has_the_harness_reads():
+    c = Client(api_key="unpod_sk_test", base_url="https://api.example.test")
+    assert callable(c.assistants.followups)
+    assert callable(c.assistants.cancel_followup)
+    assert callable(c.assistants.tasks)
