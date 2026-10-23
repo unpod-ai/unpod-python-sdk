@@ -477,6 +477,20 @@ class AssistantsResource:
         )
         return EvalRun(**resp)
 
+    async def mark_memory_reviewed(
+        self, space_id: str, assistant_id: str, end_user_id: str
+    ) -> builtins.list[MemoryBlock]:
+        """You have read this end user's memory: lines written after the
+        assistant read outside content stop marking their turns as tainted.
+        The memory itself is unchanged and returned."""
+        resp = await _refused(
+            self._http.post(
+                f"{self._a(space_id)}/{assistant_id}/end_users/{end_user_id}"
+                "/memory/reviewed"
+            )
+        )
+        return [MemoryBlock(**b) for b in unwrap_data(resp)]
+
     async def memory(
         self, space_id: str, assistant_id: str, end_user_id: str
     ) -> builtins.list[MemoryBlock]:

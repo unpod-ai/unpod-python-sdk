@@ -589,3 +589,21 @@ def test_sync_client_has_the_eval_methods():
         "eval_run",
     ):
         assert callable(getattr(c.assistants, name))
+
+
+@pytest.mark.anyio
+async def test_mark_memory_reviewed_posts_and_returns_the_blocks(client):
+    with patch.object(client.assistants._http, "post", new_callable=AsyncMock) as post:
+        post.return_value = [
+            {
+                "label": "user_profile",
+                "value": "x",
+                "limit": 2000,
+                "editable_by_agent": True,
+            }
+        ]
+        blocks = await client.assistants.mark_memory_reviewed("s1", "asst_1", "eu_1")
+    assert post.await_args.args[0] == f"{A}/asst_1/end_users/eu_1/memory/reviewed"
+    assert [b.label for b in blocks] == ["user_profile"]
+    c = Client(api_key="unpod_sk_test", base_url="https://api.example.test")
+    assert callable(c.assistants.mark_memory_reviewed)
