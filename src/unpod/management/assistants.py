@@ -12,7 +12,7 @@ from __future__ import annotations
 import builtins
 import uuid
 from collections.abc import Awaitable
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar
 
 import httpx
 
@@ -219,14 +219,29 @@ class AssistantsResource:
         external_id: str,
         name: str = "",
         timezone: str | None = None,
+        quiet_hours: dict[str, str] | Literal[False] | None = None,
+        max_proactive_per_day: int | Literal[False] | None = None,
     ) -> EndUser:
         """Get or create the end user for your own user id ``external_id``.
 
         ``timezone`` (IANA, e.g. ``"Asia/Kolkata"``) sets the end user's own
-        clock; leaving it out keeps the stored one."""
+        clock; leaving it out keeps the stored one.
+
+        ``quiet_hours`` (``{"start": "22:00", "end": "08:00"}``, their local
+        time) holds scheduled routine messages until the window ends;
+        ``max_proactive_per_day`` caps scheduled routine messages per day
+        (0 = none). Follow-ups the user asked for are never held. ``None``
+        (default) keeps the stored value; ``False`` clears it so the
+        assistant's ``defaults`` apply."""
         body: dict[str, Any] = {"external_id": external_id, "name": name}
         if timezone is not None:
             body["timezone"] = timezone
+        for key, value in (
+            ("quiet_hours", quiet_hours),
+            ("max_proactive_per_day", max_proactive_per_day),
+        ):
+            if value is not None:
+                body[key] = None if value is False else value
         resp = await _refused(
             self._http.post(f"{self._a(space_id)}/{assistant_id}/end_users", json=body)
         )

@@ -39,6 +39,9 @@ class EndUser(BaseModel):
     name: str = ""
     # IANA zone; None = the assistant's own timezone applies.
     timezone: str | None = None
+    # None = the assistant's ``defaults`` apply (off unless set there).
+    quiet_hours: dict[str, str] | None = None
+    max_proactive_per_day: int | None = None
 
 
 class Thread(BaseModel):

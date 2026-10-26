@@ -696,3 +696,32 @@ async def test_grants_and_revoke(client):
     c = Client(api_key="unpod_sk_test", base_url="https://api.example.test")
     for name in ("export_memory", "forget_memory_line", "grants", "revoke_grant"):
         assert callable(getattr(c.assistants, name))
+
+
+@pytest.mark.anyio
+async def test_end_user_sends_quiet_hours_and_cap_only_when_given(client):
+    quiet = {"start": "22:00", "end": "08:00"}
+    with patch.object(client.assistants._http, "post", new_callable=AsyncMock) as post:
+        post.return_value = {
+            "end_user_id": "eu_1",
+            "quiet_hours": quiet,
+            "max_proactive_per_day": 0,
+        }
+        eu = await client.assistants.end_user(
+            "s1", "asst_1", "u1", quiet_hours=quiet, max_proactive_per_day=0
+        )
+        assert post.await_args.kwargs["json"] == {
+            "external_id": "u1",
+            "name": "",
+            "quiet_hours": quiet,
+            "max_proactive_per_day": 0,
+        }
+        assert eu.quiet_hours == quiet and eu.max_proactive_per_day == 0
+        await client.assistants.end_user("s1", "asst_1", "u1")
+        assert set(post.await_args.kwargs["json"]) == {"external_id", "name"}
+        # False clears: sent as null, the assistant's defaults apply again.
+        await client.assistants.end_user(
+            "s1", "asst_1", "u1", quiet_hours=False, max_proactive_per_day=False
+        )
+        sent = post.await_args.kwargs["json"]
+        assert sent["quiet_hours"] is None and sent["max_proactive_per_day"] is None
