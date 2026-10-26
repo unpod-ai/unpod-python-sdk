@@ -194,6 +194,16 @@ class AsyncHTTPClient:
         self._log_response(resp)
         resp.raise_for_status()
 
+    async def delete_json(self, path: str, json: dict) -> dict:
+        """Send a DELETE request with a JSON body; return the parsed response."""
+        client = await self._ensure_client()
+        resp = await client.request(
+            "DELETE", self._url(path), headers=self._headers(), json=json
+        )
+        self._log_response(resp)
+        resp.raise_for_status()
+        return self._json_or_empty(resp)  # type: ignore[no-any-return]
+
     async def delete_with_response(self, path: str) -> dict:
         """Send a DELETE request and return parsed JSON response."""
         client = await self._ensure_client()

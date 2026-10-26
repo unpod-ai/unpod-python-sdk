@@ -607,3 +607,92 @@ async def test_mark_memory_reviewed_posts_and_returns_the_blocks(client):
     assert [b.label for b in blocks] == ["user_profile"]
     c = Client(api_key="unpod_sk_test", base_url="https://api.example.test")
     assert callable(c.assistants.mark_memory_reviewed)
+
+
+# ---- memory transparency and approval grants ----
+
+_BLOCK = {
+    "label": "notes",
+    "value": "Likes tea",
+    "limit": 2000,
+    "editable_by_agent": True,
+}
+
+
+@pytest.mark.anyio
+async def test_export_memory_gets_every_block(client):
+    with patch.object(client.assistants._http, "get", new_callable=AsyncMock) as get:
+        get.return_value = {
+            "assistant_id": "asst_1",
+            "end_user_id": "eu_1",
+            "exported_at": "2026-10-26T10:00:00Z",
+            "blocks": [_BLOCK],
+        }
+        out = await client.assistants.export_memory("s1", "asst_1", "eu_1")
+    assert get.await_args.args[0] == f"{A}/asst_1/end_users/eu_1/memory/export"
+    assert out.end_user_id == "eu_1" and out.blocks[0].value == "Likes tea"
+
+
+@pytest.mark.anyio
+async def test_forget_memory_line_deletes_with_the_text(client):
+    with patch.object(
+        client.assistants._http, "delete_json", new_callable=AsyncMock
+    ) as delete:
+        delete.return_value = {
+            "removed": [{"label": "notes", "line": "Moving to Pune"}],
+            "blocks": [_BLOCK],
+        }
+        out = await client.assistants.forget_memory_line("s1", "asst_1", "eu_1", "Pune")
+    delete.assert_awaited_once_with(
+        f"{A}/asst_1/end_users/eu_1/memory/lines", json={"text": "Pune"}
+    )
+    assert [r.line for r in out.removed] == ["Moving to Pune"]
+
+
+@pytest.mark.anyio
+async def test_decide_always_sends_approve_always(client):
+    with patch.object(client.assistants._http, "post", new_callable=AsyncMock) as post:
+        post.return_value = REPLY
+        await client.assistants.decide(
+            "s1", "asst_1", "thr_1", "apr_1", approve=True, always=True
+        )
+    assert post.await_args.kwargs["json"] == {"decision": "approve_always"}
+    assert (
+        post.await_args.kwargs["headers"]["Idempotency-Key"] == "apr_1:approve_always"
+    )
+
+
+@pytest.mark.anyio
+async def test_always_without_approve_is_refused(client):
+    with pytest.raises(ValueError):
+        await client.assistants.decide(
+            "s1", "asst_1", "thr_1", "apr_1", approve=False, always=True
+        )
+
+
+@pytest.mark.anyio
+async def test_grants_and_revoke(client):
+    with patch.object(client.assistants._http, "get", new_callable=AsyncMock) as get:
+        get.return_value = [
+            {
+                "tool": "memory.core_append",
+                "end_user_id": "eu_1",
+                "approval_id": "apr_1",
+                "created": "2026-10-26T10:00:00Z",
+            }
+        ]
+        grants = await client.assistants.grants("s1", "asst_1", "eu_1")
+    assert get.await_args.args[0] == f"{A}/asst_1/end_users/eu_1/grants"
+    assert [g.tool for g in grants] == ["memory.core_append"]
+    with patch.object(
+        client.assistants._http, "delete", new_callable=AsyncMock
+    ) as delete:
+        await client.assistants.revoke_grant(
+            "s1", "asst_1", "eu_1", "memory.core_append"
+        )
+    delete.assert_awaited_once_with(
+        f"{A}/asst_1/end_users/eu_1/grants/memory.core_append"
+    )
+    c = Client(api_key="unpod_sk_test", base_url="https://api.example.test")
+    for name in ("export_memory", "forget_memory_line", "grants", "revoke_grant"):
+        assert callable(getattr(c.assistants, name))

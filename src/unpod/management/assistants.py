@@ -26,8 +26,11 @@ from unpod.models.assistants import (
     Eval,
     EvalRun,
     Followup,
+    Grant,
     McpToolInfo,
     MemoryBlock,
+    MemoryExport,
+    MemoryForget,
     Message,
     Reply,
     RoutineRun,
@@ -287,9 +290,18 @@ class AssistantsResource:
         thread_id: str,
         approval_id: str,
         approve: bool,
+        always: bool = False,
     ) -> Reply:
-        """Approve or deny the tool call a turn paused on; returns the resumed reply."""
-        decision = "approve" if approve else "deny"
+        """Approve or deny the tool call a turn paused on; returns the resumed reply.
+
+        ``always=True`` (with ``approve=True``): also stop asking this end user
+        for this tool when only the assistant's approval policy would ask.
+        Safety checks (untrusted content, allowlist, spend cap) still ask.
+        Undo with ``revoke_grant``.
+        """
+        if always and not approve:
+            raise ValueError("always=True needs approve=True")
+        decision = "approve_always" if always else "approve" if approve else "deny"
         return await self._turn(
             f"{self._a(space_id)}/{assistant_id}/threads/{thread_id}/approvals/{approval_id}",
             {"decision": decision},
@@ -501,3 +513,49 @@ class AssistantsResource:
             )
         )
         return [MemoryBlock(**b) for b in resp]
+
+    async def export_memory(
+        self, space_id: str, assistant_id: str, end_user_id: str
+    ) -> MemoryExport:
+        """Everything the assistant remembers about this end user."""
+        resp = unwrap_data(
+            await self._http.get(
+                f"{self._a(space_id)}/{assistant_id}/end_users/{end_user_id}"
+                "/memory/export"
+            )
+        )
+        return MemoryExport(**resp)
+
+    async def forget_memory_line(
+        self, space_id: str, assistant_id: str, end_user_id: str, text: str
+    ) -> MemoryForget:
+        """Remove every remembered line matching ``text`` (whole lines; case,
+        punctuation and digit script ignored). ``removed`` is empty when
+        nothing matched."""
+        resp = await _refused(
+            self._http.delete_json(
+                f"{self._a(space_id)}/{assistant_id}/end_users/{end_user_id}"
+                "/memory/lines",
+                json={"text": text},
+            )
+        )
+        return MemoryForget(**unwrap_data(resp))
+
+    async def grants(
+        self, space_id: str, assistant_id: str, end_user_id: str
+    ) -> builtins.list[Grant]:
+        """The tools this end user chose "always allow" for."""
+        resp = unwrap_data(
+            await self._http.get(
+                f"{self._a(space_id)}/{assistant_id}/end_users/{end_user_id}/grants"
+            )
+        )
+        return [Grant(**g) for g in resp]
+
+    async def revoke_grant(
+        self, space_id: str, assistant_id: str, end_user_id: str, tool: str
+    ) -> None:
+        """The tool asks again from the end user's next turn."""
+        await self._http.delete(
+            f"{self._a(space_id)}/{assistant_id}/end_users/{end_user_id}/grants/{tool}"
+        )

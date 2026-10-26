@@ -118,6 +118,44 @@ class MemoryBlock(BaseModel):
     editable_by_agent: bool = True
 
 
+class MemoryExport(BaseModel):
+    """Everything the assistant remembers about one end user."""
+
+    model_config = _CONFIG
+
+    assistant_id: str
+    end_user_id: str
+    exported_at: str | None = None
+    blocks: list[MemoryBlock] = []
+
+
+class ForgottenLine(BaseModel):
+    model_config = _CONFIG
+
+    label: str
+    line: str
+
+
+class MemoryForget(BaseModel):
+    """What ``forget_memory_line`` removed (empty: nothing matched)."""
+
+    model_config = _CONFIG
+
+    removed: list[ForgottenLine] = []
+    blocks: list[MemoryBlock] = []
+
+
+class Grant(BaseModel):
+    """The end user chose "always allow" for this tool."""
+
+    model_config = _CONFIG
+
+    tool: str
+    end_user_id: str
+    approval_id: str | None = None
+    created: str | None = None
+
+
 class RoutineRun(BaseModel):
     """One routine fire (scheduled or manual). ``ts`` is its last change: a run
     that resumed after an approval comes back with its new status."""
