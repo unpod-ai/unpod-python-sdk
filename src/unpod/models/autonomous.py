@@ -14,6 +14,16 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 _CONFIG = ConfigDict(populate_by_name=True, extra="allow")
 
 
+class Space(BaseModel):
+    """A space as a caller may hold it: its handle (``slug``) is what routes use."""
+
+    model_config = _CONFIG
+
+    slug: str
+    token: str | None = None
+    name: str = ""
+
+
 class Flow(BaseModel):
     """One flow version: its steps plus the agent settings."""
 
