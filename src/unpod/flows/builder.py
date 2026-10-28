@@ -1,11 +1,11 @@
 """Build a flow in Python instead of hand-writing its JSON.
 
-``Flow(...).to_definition()`` is exactly the body superbook's ``FlowDefinition``
+``Flow(...).to_definition()`` is exactly the body the journey service's ``FlowDefinition``
 accepts (``extra="forbid"`` on the flow, its steps and their content), so a
 builder flow goes through ``client.flows.create`` like a dict would.
 
 The agent defaults follow the rules the Unpod app's own builder applies:
-superbook refuses an agent flow with no ``agentic_profile``, and ``default`` is
+the journey service refuses an agent flow with no ``agentic_profile``, and ``default`` is
 the decision worker's own fallback, so filling it in changes nothing about how
 the agent answers. Its tool allowlist fails closed, so it is seeded from the
 channels the agent steps send on, plus ``human`` so the agent can always hand
@@ -16,9 +16,9 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-#: The agent profile superbook requires on an agent flow (see the module docstring).
+#: The agent profile the journey service requires on an agent flow (see the module docstring).
 DEFAULT_PROFILE = "default"
-#: superbook's bounds on ``agentic_review_topics``.
+#: the journey service's bounds on ``agentic_review_topics``.
 MAX_REVIEW_TOPICS = 10
 MAX_REVIEW_TOPIC_CHARS = 120
 
@@ -27,10 +27,10 @@ class ChannelLike(Protocol):
     """What a step needs from a channel: ``client.flows.channels.list`` returns these.
 
     ``connector_type`` is the channel's kind (``email``, ``whatsapp``): it is
-    the step's ``action``, and superbook's action roster knows only kinds.
+    the step's ``action``, and the journey service's action roster knows only kinds.
     ``connector_id`` is the connector that sends on it (``gmail``): it is what
     the agent's tool allowlist names, because ``email`` on its own is
-    superbook's stub port and dispatches nothing.
+    the journey service's stub port and dispatches nothing.
     """
 
     connector_type: str | None
@@ -157,7 +157,7 @@ def _clean_topics(topics: list[str] | None) -> list[str]:
 class Flow:
     """A whole flow: its steps, plus how its agent behaves.
 
-    ``goal`` is the agent's objective (superbook's ``agentic_plan``).
+    ``goal`` is the agent's objective (the journey service's ``agentic_plan``).
     ``review_sensitive`` holds the agent's replies to sensitive email for a
     person to approve; ``review_topics`` adds topics of your own to the
     built-in list.
@@ -187,7 +187,7 @@ class Flow:
         self.triggers = triggers
 
     def to_definition(self) -> dict[str, Any]:
-        """The flow as superbook's ``FlowDefinition`` JSON."""
+        """The flow as the journey service's ``FlowDefinition`` JSON."""
         definition: dict[str, Any] = {
             "name": self.name,
             "steps": [step.to_step(i) for i, step in enumerate(self.steps, start=1)],
@@ -198,7 +198,7 @@ class Flow:
             definition["triggers"] = self.triggers
         agent_actions = sorted({s.connector for s in self.steps if s.agentic})
         if not agent_actions:
-            # superbook reads an absent profile as "not an agent flow".
+            # the journey service reads an absent profile as "not an agent flow".
             return definition
         definition["agentic_profile"] = DEFAULT_PROFILE
         definition["agentic_tools"] = [*agent_actions, "human"]

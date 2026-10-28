@@ -24,6 +24,46 @@ class Space(BaseModel):
     name: str = ""
 
 
+class Channel(BaseModel):
+    """One way a flow can reach people in a space: a mailbox, a number.
+
+    ``connection_id`` is the org's connection in the Unpod app; ``account_id``
+    is the sending account flows use, set once the connection is linked to
+    this space. A channel with an ``account_id`` is ``ready`` to send from.
+    """
+
+    model_config = _CONFIG
+
+    type: str
+    space: str
+    name: str = ""
+    address: str = ""
+    connection_id: int | None = None
+    account_id: str | None = None
+    #: The channel's kind (``email``): a step's ``action``.
+    connector_type: str | None = None
+    #: The connector sending on it (``gmail``): what an agent's tools name.
+    connector_id: str | None = None
+
+    @property
+    def ready(self) -> bool:
+        return bool(self.account_id)
+
+
+class ConnectResult(BaseModel):
+    """What ``channels.connect`` did: a ready channel, or a sign-in to finish."""
+
+    model_config = _CONFIG
+
+    channel: Channel | None = None
+    #: Open this in a browser to connect a new Gmail mailbox.
+    sign_in_url: str | None = None
+
+    @property
+    def ready(self) -> bool:
+        return bool(self.channel and self.channel.ready)
+
+
 class Flow(BaseModel):
     """One flow version: its steps plus the agent settings."""
 

@@ -1,6 +1,6 @@
 """Turn whatever a caller holds for a space into the handle the routes need.
 
-The journey routes are keyed by a space's handle (its slug: superbook's keys
+The journey routes are keyed by a space's handle (its slug: the journey service's keys
 are minted per slug). A caller may hold the handle, the space's token, or a
 ``Space`` object; only the token needs a lookup, and Django's space route
 (``GET /api/v2/platform/spaces/<token>/``) is the one that resolves it.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import os
 import threading
 from typing import Any
@@ -207,6 +208,10 @@ class _SyncResource:
 
     def __getattr__(self, name: str) -> Any:
         attr = getattr(self._async, name)
+        if _is_nested_resource(attr):
+            # A resource inside a resource (``flows.channels``): blocking too,
+            # and still callable when the async one is.
+            return _SyncResource(attr)
         if not callable(attr):
             return attr
 
@@ -217,6 +222,18 @@ class _SyncResource:
             return result
 
         return _call
+
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        result = self._async(*args, **kwargs)
+        if asyncio.iscoroutine(result):
+            return _run_blocking(result)
+        return result
+
+
+def _is_nested_resource(attr: Any) -> bool:
+    """An attribute that is itself a resource object, not a method or a value."""
+    return hasattr(attr, "_http") and not inspect.ismethod(attr)
 
 
 class _SyncAgentNamespace:

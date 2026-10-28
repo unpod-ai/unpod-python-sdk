@@ -14,6 +14,8 @@ from typing import Any, TypeVar
 import httpx
 
 from unpod.management._http import AsyncHTTPClient, unwrap_data
+from unpod.management._spaces import SpaceResolver
+from unpod.management.flow_channels import ChannelsResource
 from unpod.models import Flow
 
 JOURNEY_BASE = "/api/v2/platform/journey/v1"
@@ -89,6 +91,10 @@ class FlowsResource:
 
     def __init__(self, http: AsyncHTTPClient) -> None:
         self._http = http
+        self._spaces = SpaceResolver(http)
+        #: ``channels(space)`` lists sending accounts as before;
+        #: ``channels.list`` / ``channels.connect`` work with ``Channel`` objects.
+        self.channels = ChannelsResource(http, self._spaces)
 
     async def create(
         self, space_id: str, flow: Flow | dict[str, Any], idempotency_key: str | None = None
@@ -137,14 +143,6 @@ class FlowsResource:
     async def agentic_profiles(self) -> list[dict[str, Any]]:
         """Values a flow's ``agentic_profile`` may take: ``[{profile_id, name, description}]``."""
         return unwrap_data(await self._http.get(f"{JOURNEY_BASE}/agentic-profiles", params=None))
-
-    async def channels(self, space_id: str) -> list[dict[str, Any]]:
-        """The space's connected accounts (mailboxes, numbers) a step can send from.
-
-        A step names one in ``connector_account_ids`` by its ``account_id``.
-        Accounts are connected in the Unpod app.
-        """
-        return unwrap_data(await self._http.get(f"{JOURNEY_BASE}/spaces/{space_id}/connectors", params=None))
 
     async def agents(self) -> list[dict[str, Any]]:
         """Every agent a flow step can use: the org's pilots and its SDK agents.
