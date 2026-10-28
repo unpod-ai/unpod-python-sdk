@@ -318,42 +318,83 @@ class FlowsResource:
     async def link(self, flow_id: FlowRef, channel: Channel) -> Flow:
         """Wire ``channel`` into the flow, in one call.
 
-        The flow's agent steps on that channel's kind send from it, and new
-        mail to it starts journeys (an ``email`` lead source). Safe to repeat:
-        what is already wired is left alone. A flow listens on one mailbox, so
-        one already listening on another is refused rather than switched.
+        The flow's agent steps on that channel's kind send from it, its agent
+        may use the channel's connector, and new mail to it starts journeys
+        (an ``email`` lead source). Safe to repeat: what is already wired is
+        left alone. Everything that could refuse is checked before anything
+        is written: a channel from another space, or a flow already listening
+        on another mailbox (a flow listens on one), changes nothing.
         """
         if not channel.ready:
             raise ValueError("connect the channel first with client.flows.channels.connect(channel)")
         flow = await self.get(flow_id)
-        steps = [dict(step) for step in flow.steps]
+        if flow.space_id and channel.space and flow.space_id != channel.space:
+            raise ValueError(f"the channel belongs to space {channel.space!r}, the flow to {flow.space_id!r}")
+        add_source = channel.connector_type == "email" and await self._needs_email_source(
+            flow, channel.account_id
+        )
+        definition = _author_definition(flow)
         changed = False
-        for step in steps:
-            on_channel = (step.get("agentic") or {}).get("enabled") and step.get("action") == channel.connector_type
-            if on_channel and step.get("connector_account_ids") != [channel.account_id]:
+        agent_steps = [
+            step
+            for step in definition["steps"]
+            if (step.get("agentic") or {}).get("enabled") and step.get("action") == channel.connector_type
+        ]
+        for step in agent_steps:
+            if step.get("connector_account_ids") != [channel.account_id]:
                 step["connector_account_ids"] = [channel.account_id]
                 changed = True
+        tools = list(definition.get("agentic_tools") or [])
+        if agent_steps and channel.connector_id and channel.connector_id not in tools:
+            # The agent's tools are an allowlist that fails closed: without
+            # the connector, the steps above would send nothing.
+            definition["agentic_tools"] = [*tools, channel.connector_id]
+            changed = True
         if changed:
-            # The service sets the id, space and version of the new version
-            # itself. ``status`` stays: a definition without one is read as a
-            # draft, which would switch a live flow off.
-            body = flow.model_dump(mode="json", exclude_none=True, include=set(Flow.model_fields))
-            for owned in ("flow_id", "space_id", "version"):
-                body.pop(owned, None)
-            flow = await self.update(flow, {**body, "steps": steps})
-        if channel.connector_type == "email":
-            await self._listen_on(flow, channel.account_id)
+            flow = await self.update(flow, definition)
+        if add_source:
+            await self.add_lead_source(flow, "email", account_id=channel.account_id)
         return flow
 
-    async def _listen_on(self, flow: Flow, account_id: str | None) -> None:
+    async def _needs_email_source(self, flow: Flow, account_id: str | None) -> bool:
+        """False when the flow already listens on this mailbox; refuses another."""
         for source in await self.lead_sources(flow):
             if source.get("type") != "email":
                 continue
             current = (source.get("config") or {}).get("account_id") or source.get("account_id")
             if current == account_id:
-                return
+                return False
             raise ValueError(
                 f"flow {flow.flow_id!r} already listens on another mailbox ({current}); "
                 "remove that email lead source first"
             )
-        await self.add_lead_source(flow, "email", account_id=account_id)
+        return True
+
+
+#: What a flow's author writes, i.e. what an update may carry. A stored flow
+#: comes back with more (storage stamps, the lead sources the service carries
+#: forward itself) and the service refuses unknown keys on a save; the id,
+#: space and version are set by the service. ``status`` is kept: a definition
+#: without one is read as a draft, which would switch a live flow off.
+_AUTHOR_KEYS = (
+    "name",
+    "description",
+    "status",
+    "steps",
+    "triggers",
+    "exit_outcomes",
+    "agentic_profile",
+    "agentic_tools",
+    "agentic_plan",
+    "agentic_follow_ups",
+    "agentic_review_sensitive",
+    "agentic_review_topics",
+)
+
+
+def _author_definition(flow: Flow) -> dict[str, Any]:
+    """The stored flow as an update body, keeping fields this SDK does not declare."""
+    stored = flow.model_dump(mode="json", exclude_none=True)
+    definition = {key: stored[key] for key in _AUTHOR_KEYS if key in stored}
+    definition["steps"] = [dict(step) for step in definition.get("steps") or []]
+    return definition

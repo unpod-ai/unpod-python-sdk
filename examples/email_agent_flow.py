@@ -29,12 +29,15 @@ client = Client(
 channels = client.flows.channels.list(space)
 gmail = next((c for c in channels if c.type == "gmail" and c.ready), None)
 if gmail is None:
-    candidate = next(c for c in channels if c.type == "gmail")
-    result = client.flows.channels.connect(candidate)
-    if result.sign_in_url:
-        print("Sign in to Gmail to connect the mailbox:\n ", result.sign_in_url)
-        result = client.flows.channels.connect(candidate, wait=True)
-    gmail = result.channel
+    # A mailbox connected in the org but not this space is linked at once; a
+    # new one needs Google's sign-in, so the URL is printed and this waits.
+    mailboxes = [c for c in channels if c.type == "gmail"]
+    candidate = next((c for c in mailboxes if c.connection_id), mailboxes[-1])
+    gmail = client.flows.channels.connect(
+        candidate,
+        wait=True,
+        on_sign_in_url=lambda url: print("Sign in to Gmail to connect the mailbox:\n ", url),
+    ).channel
 print("mailbox:", gmail.address)
 
 # 2. Build and save the flow.

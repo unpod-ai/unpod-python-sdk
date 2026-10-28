@@ -17,7 +17,7 @@ ACCOUNT = {
     "connector_type": "email",
     "connector_id": "gmail",
     "account_ref": "sales@acme.test",
-    "status": "active",
+    "status": "connected",
 }
 
 
@@ -185,7 +185,10 @@ async def test_connect_waits_for_the_new_mailbox(client):
         post.return_value = {"redirect_url": "https://accounts.google.com/x"}
         getter.side_effect = get
         result = await client.flows.channels.connect(
-            Channel(type="gmail", space=SPACE), wait=True, poll_interval=0
+            Channel(type="gmail", space=SPACE),
+            wait=True,
+            poll_interval=0,
+            on_sign_in_url=lambda url: None,
         )
     assert result.ready and result.channel.account_id == "acc_3"
 
@@ -208,6 +211,14 @@ async def test_connect_only_touches_the_channel_passed(client):
         assert [c.args[0] for c in post.await_args_list] == [
             "/api/v1/channels/connections/5/link-space/"
         ]
+
+
+@pytest.mark.anyio
+async def test_wait_without_a_way_to_show_the_url_is_refused(client):
+    with pytest.raises(ValueError, match="on_sign_in_url"):
+        await client.flows.channels.connect(
+            Channel(type="gmail", space=SPACE), wait=True
+        )
 
 
 @pytest.mark.anyio
@@ -235,3 +246,141 @@ def test_sync_client_channels_block():
         assert client.flows.channels(SPACE) == [ACCOUNT]
         channels = client.flows.channels.list(SPACE)
     assert any(c.ready for c in channels)
+
+
+# ── final-review fixes ───────────────────────────────────────────────────
+
+
+def _envelope(data, status_code=200, message="Success"):
+    """What Django's UnpodJSONRenderer actually sends."""
+    return {"status_code": status_code, "message": message, "data": data}
+
+
+@pytest.mark.anyio
+async def test_sign_in_url_is_read_from_the_real_envelope(client):
+    with patch.object(client.flows._http, "post", new_callable=AsyncMock) as post:
+        post.return_value = _envelope({"redirect_url": "https://accounts.google.com/x"})
+        result = await client.flows.channels.connect(Channel(type="gmail", space=SPACE))
+    assert result.sign_in_url == "https://accounts.google.com/x"
+
+
+@pytest.mark.anyio
+async def test_a_refused_connections_list_raises_with_django_s_message(client):
+    async def get(path, params=None):
+        if path == CONNECTIONS:
+            return _envelope(
+                {}, 206, "You don't have permission to manage integrations"
+            )
+        return []
+
+    with patch.object(client.flows._http, "get", new_callable=AsyncMock) as getter:
+        getter.side_effect = get
+        with pytest.raises(ValueError, match="permission to manage integrations"):
+            await client.flows.channels.list(SPACE)
+
+
+@pytest.mark.anyio
+async def test_a_refused_link_space_raises(client):
+    with patch.object(client.flows._http, "post", new_callable=AsyncMock) as post:
+        post.return_value = _envelope(
+            {}, 206, "You do not have write access to this space"
+        )
+        with pytest.raises(ValueError, match="write access"):
+            await client.flows.channels.connect(
+                Channel(type="gmail", space=SPACE, connection_id=2)
+            )
+
+
+@pytest.mark.anyio
+async def test_a_link_that_leaves_the_channel_unready_raises(client):
+    http = client.flows._http
+    with (
+        patch.object(http, "post", new_callable=AsyncMock) as post,
+        patch.object(http, "get", new_callable=AsyncMock) as get,
+    ):
+        post.return_value = _envelope({"id": 92, "space_slug": SPACE})
+        get.side_effect = _routes([_connection(2)], [])  # provisioning did not land
+        with pytest.raises(ValueError, match="not ready"):
+            await client.flows.channels.connect(
+                Channel(type="gmail", space=SPACE, connection_id=2)
+            )
+
+
+@pytest.mark.anyio
+async def test_wait_hands_over_the_sign_in_url_before_waiting(client):
+    http = client.flows._http
+    seen = [_connection(1, linked_account="acc_1")]
+    after = [*seen, _connection(3, linked_account="acc_3")]
+    lists = iter([seen, after])  # the snapshot before sign-in, then one poll
+    urls = []
+
+    async def get(path, params=None):
+        if path == CONNECTIONS:
+            return {"data": next(lists)}
+        return [ACCOUNT, {**ACCOUNT, "account_id": "acc_3"}]
+
+    async def sleep(_seconds):
+        assert urls, "waited before the sign-in URL was handed over"
+
+    with (
+        patch.object(http, "post", new_callable=AsyncMock) as post,
+        patch.object(http, "get", new_callable=AsyncMock) as getter,
+        patch("unpod.management.flow_channels.asyncio.sleep", side_effect=sleep),
+    ):
+        post.return_value = _envelope({"redirect_url": "https://accounts.google.com/x"})
+        getter.side_effect = get
+        result = await client.flows.channels.connect(
+            Channel(type="gmail", space=SPACE),
+            wait=True,
+            poll_interval=0,
+            on_sign_in_url=urls.append,
+        )
+    assert (
+        urls == ["https://accounts.google.com/x"]
+        and result.channel.account_id == "acc_3"
+    )
+
+
+@pytest.mark.anyio
+async def test_wait_sees_a_reconnected_mailbox_that_becomes_ready(client):
+    """Re-authorizing a known mailbox keeps its connection id."""
+    http = client.flows._http
+    lists = iter([[_connection(1)], [_connection(1, linked_account="acc_1")]])
+
+    async def get(path, params=None):
+        if path == CONNECTIONS:
+            return {"data": next(lists)}
+        return [ACCOUNT]
+
+    with (
+        patch.object(http, "post", new_callable=AsyncMock) as post,
+        patch.object(http, "get", new_callable=AsyncMock) as getter,
+        patch("unpod.management.flow_channels.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        post.return_value = _envelope({"redirect_url": "https://accounts.google.com/x"})
+        getter.side_effect = get
+        result = await client.flows.channels.connect(
+            Channel(type="gmail", space=SPACE),
+            wait=True,
+            poll_interval=0,
+            on_sign_in_url=lambda url: None,
+        )
+    assert result.ready and result.channel.connection_id == 1
+
+
+def test_an_account_in_error_is_not_ready():
+    assert not Channel(
+        type="gmail", space=SPACE, account_id="acc_1", status="error"
+    ).ready
+    assert Channel(
+        type="gmail", space=SPACE, account_id="acc_1", status="connected"
+    ).ready
+
+
+@pytest.mark.anyio
+async def test_list_carries_the_account_status(client):
+    with patch.object(client.flows._http, "get", new_callable=AsyncMock) as get:
+        get.side_effect = _routes([], [{**ACCOUNT, "status": "error"}])
+        channels = await client.flows.channels.list(SPACE)
+    orphan = next(c for c in channels if c.account_id == "acc_1")
+    assert orphan.status == "error" and not orphan.ready

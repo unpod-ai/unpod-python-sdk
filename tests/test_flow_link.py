@@ -145,7 +145,11 @@ async def test_link_keeps_an_active_flow_on(client):
 @pytest.mark.anyio
 async def test_link_twice_changes_nothing(client):
     http = client.flows._http
-    linked = {**STORED, "steps": [{**AGENT_STEP, "connector_account_ids": ["acc_1"]}]}
+    linked = {
+        **STORED,
+        "agentic_tools": ["gmail", "human"],
+        "steps": [{**AGENT_STEP, "connector_account_ids": ["acc_1"]}],
+    }
     source = {"source_id": "src_1", "type": "email", "config": {"account_id": "acc_1"}}
     with (
         patch.object(http, "get", new_callable=AsyncMock) as get,
@@ -163,7 +167,11 @@ async def test_link_twice_changes_nothing(client):
 @pytest.mark.anyio
 async def test_link_refuses_a_flow_already_listening_on_another_mailbox(client):
     http = client.flows._http
-    linked = {**STORED, "steps": [{**AGENT_STEP, "connector_account_ids": ["acc_1"]}]}
+    linked = {
+        **STORED,
+        "agentic_tools": ["gmail", "human"],
+        "steps": [{**AGENT_STEP, "connector_account_ids": ["acc_1"]}],
+    }
     other = {"source_id": "src_9", "type": "email", "config": {"account_id": "acc_9"}}
     with patch.object(http, "get", new_callable=AsyncMock) as get:
         get.side_effect = lambda path, params=None: (
@@ -210,10 +218,97 @@ async def test_link_leaves_steps_on_other_channels_alone(client):
 def test_sync_link_blocks():
     client = Client(api_key="unpod_sk_test", base_url="https://api.example.test")
     http = client._async_client.flows._http
-    linked = {**STORED, "steps": [{**AGENT_STEP, "connector_account_ids": ["acc_1"]}]}
+    linked = {
+        **STORED,
+        "agentic_tools": ["gmail", "human"],
+        "steps": [{**AGENT_STEP, "connector_account_ids": ["acc_1"]}],
+    }
     source = {"source_id": "src_1", "type": "email", "config": {"account_id": "acc_1"}}
     with patch.object(http, "get", new_callable=AsyncMock) as get:
         get.side_effect = lambda path, params=None: (
             linked if path == f"{BASE}/flows/f1" else [source]
         )
         assert client.flows.link("f1", GMAIL).flow_id == "f1"
+
+
+# ── final-review fixes ───────────────────────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_link_keeps_fields_the_sdk_model_does_not_declare(client):
+    http = client.flows._http
+    stored = {
+        **STORED,
+        "agentic_tools": ["gmail", "human"],
+        "agentic_review_sensitive": True,
+        "agentic_review_topics": ["refunds"],
+        "description": "inbox",
+        "lead_sources": [{"source_id": "s"}],  # the service's, carried forward
+        "created_at": "2026-10-28T00:00:00Z",  # storage, refused on a save
+    }
+    with (
+        patch.object(http, "get", new_callable=AsyncMock) as get,
+        patch.object(http, "put", new_callable=AsyncMock) as put,
+        patch.object(http, "post", new_callable=AsyncMock) as post,
+    ):
+        get.side_effect = lambda path, params=None: (
+            stored if path == f"{BASE}/flows/f1" else []
+        )
+        put.return_value = stored
+        post.return_value = {}
+        await client.flows.link("f1", GMAIL)
+    sent = put.await_args.kwargs["json"]
+    assert sent["agentic_review_sensitive"] is True
+    assert sent["agentic_review_topics"] == ["refunds"]
+    assert sent["description"] == "inbox"
+    assert "lead_sources" not in sent and "created_at" not in sent
+
+
+@pytest.mark.anyio
+async def test_link_lets_the_agent_send_on_the_channel(client):
+    http = client.flows._http
+    stored = {**STORED, "agentic_tools": ["human"]}
+    with (
+        patch.object(http, "get", new_callable=AsyncMock) as get,
+        patch.object(http, "put", new_callable=AsyncMock) as put,
+        patch.object(http, "post", new_callable=AsyncMock) as post,
+    ):
+        get.side_effect = lambda path, params=None: (
+            stored if path == f"{BASE}/flows/f1" else []
+        )
+        put.return_value = stored
+        post.return_value = {}
+        await client.flows.link("f1", GMAIL)
+    assert put.await_args.kwargs["json"]["agentic_tools"] == ["human", "gmail"]
+
+
+@pytest.mark.anyio
+async def test_link_refuses_before_writing_anything(client):
+    http = client.flows._http
+    other = {"source_id": "src_9", "type": "email", "config": {"account_id": "acc_9"}}
+    with (
+        patch.object(http, "get", new_callable=AsyncMock) as get,
+        patch.object(http, "put", new_callable=AsyncMock) as put,
+    ):
+        get.side_effect = lambda path, params=None: (
+            STORED if path == f"{BASE}/flows/f1" else [other]
+        )
+        with pytest.raises(ValueError, match="another mailbox"):
+            await client.flows.link("f1", GMAIL)
+        put.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_link_refuses_a_channel_from_another_space(client):
+    http = client.flows._http
+    elsewhere = GMAIL.model_copy(update={"space": "other-space"})
+    with (
+        patch.object(http, "get", new_callable=AsyncMock) as get,
+        patch.object(http, "put", new_callable=AsyncMock) as put,
+    ):
+        get.side_effect = lambda path, params=None: (
+            STORED if path == f"{BASE}/flows/f1" else []
+        )
+        with pytest.raises(ValueError, match="other-space"):
+            await client.flows.link("f1", elsewhere)
+        put.assert_not_awaited()

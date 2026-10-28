@@ -29,7 +29,7 @@ class Channel(BaseModel):
 
     ``connection_id`` is the org's connection in the Unpod app; ``account_id``
     is the sending account flows use, set once the connection is linked to
-    this space. A channel with an ``account_id`` is ``ready`` to send from.
+    this space. A channel whose account is connected is ``ready`` to send from.
     """
 
     model_config = _CONFIG
@@ -44,10 +44,13 @@ class Channel(BaseModel):
     connector_type: str | None = None
     #: The connector sending on it (``gmail``): what an agent's tools name.
     connector_id: str | None = None
+    #: The sending account's status; only ``connected`` can send. A mailbox
+    #: disconnected in the app leaves its account behind as ``error``.
+    status: str | None = None
 
     @property
     def ready(self) -> bool:
-        return bool(self.account_id)
+        return bool(self.account_id) and self.status in (None, "connected")
 
 
 class ConnectResult(BaseModel):

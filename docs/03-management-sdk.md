@@ -613,7 +613,7 @@ from unpod.flows import AgentStep, Flow, MessageStep
 channels = client.flows.channels.list("my-space")        # Channel objects; .ready once usable
 gmail = next(c for c in channels if c.type == "gmail" and c.ready)
 # not ready yet? client.flows.channels.connect(channel) links it to the space,
-# or returns a Google sign-in URL for a new mailbox (wait=True waits for it)
+# or returns a Google sign-in URL for a new mailbox (wait=True, on_sign_in_url=print waits for it)
 
 flow = client.flows.create("my-space", Flow(
     name="Support inbox",
@@ -639,8 +639,8 @@ Unpod app's own routes, which take a user's platform JWT only: use
 
 | Method | What it does |
 |---|---|
-| `flows.channels.list(space)` · `channels.connect(channel, wait=False, timeout=300)` | the space's channels (`ready` when it has an `account_id`) · link one to the space, or start a Gmail sign-in (`sign_in_url`) |
-| `flows.link(flow, channel)` | the flow's agent steps send from `channel`; for a mailbox, adds the `email` lead source (once; a flow already on another mailbox is refused) |
+| `flows.channels.list(space)` · `channels.connect(channel, wait=False, timeout=300, on_sign_in_url=None)` | the space's channels (`ready` when its account is connected) · link one to the space, or start a Gmail sign-in (`sign_in_url`; with `wait=True` the URL goes to `on_sign_in_url` and this waits until the mailbox is ready). Django refusals (no permission, no write access) raise `ValueError` with Django's reason |
+| `flows.link(flow, channel)` | the flow's agent steps send from `channel` and its agent may use the channel's connector; for a mailbox, adds the `email` lead source (once). Checks first, writes after: a channel from another space, or a flow already on another mailbox, changes nothing |
 | `flows.create(space_id, flow)` · `validate(space_id, flow)` | create a flow (leave out `flow_id` and one is picked and returned) · check it without saving |
 | `flows.templates()` · `create_from_template(space_id, template_id, name=, flow_id=)` | ready-made flows · a new draft from one |
 | `flows.agents()` | every agent a step can use, pilots and `client.agents` agents in one list; each `agent_id` goes straight into a step |

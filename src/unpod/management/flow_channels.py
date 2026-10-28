@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Callable
 from typing import Any
 
 from unpod.management._http import AsyncHTTPClient, unwrap_data
@@ -60,7 +61,7 @@ class ChannelsResource:
         """
         requires_proxy_auth(self._http, "channels.list")
         slug = await self._spaces.slug(space)
-        connections = unwrap_data(await self._http.get(_CONNECTIONS, params=None)) or []
+        connections = _django_data(await self._http.get(_CONNECTIONS, params=None)) or []
         accounts = {
             a["account_id"]: a
             for a in await self._accounts(slug)
@@ -87,71 +88,107 @@ class ChannelsResource:
         wait: bool = False,
         timeout: float = 300,
         poll_interval: float = 5,
+        on_sign_in_url: Callable[[str], Any] | None = None,
     ) -> ConnectResult:
         """Make ``channel`` ready to send from, as far as code can.
 
         Ready already: returned as is. Connected in the org but not to this
         space: linked to it. A new Gmail mailbox: Google's sign-in must happen
-        in a browser, so the sign-in URL comes back; with ``wait=True`` this
-        then polls until the mailbox shows up ready (``TimeoutError`` after
+        in a browser, so the sign-in URL comes back. With ``wait=True`` the URL
+        goes to ``on_sign_in_url`` (show it to the person signing in) and this
+        then polls until the mailbox is ready (``TimeoutError`` after
         ``timeout`` seconds). Anything else is connected in the Unpod app.
         """
         if channel.ready:
             return ConnectResult(channel=channel)
         requires_proxy_auth(self._http, "channels.connect")
         if channel.connection_id is not None:
+            return ConnectResult(channel=await self._link(channel))
+        app_name = _SIGN_IN_APPS.get(channel.type)
+        if app_name is None:
+            raise ValueError(f"connect {channel.type} in the Unpod app first")
+        if wait and on_sign_in_url is None:
+            raise ValueError("wait=True needs on_sign_in_url: the person signing in must see the URL")
+        # Taken before the sign-in starts, so a mailbox signed in at once is
+        # still new to it.
+        ready_before = (
+            {c.connection_id for c in await self.list(channel.space) if c.ready} if wait else set()
+        )
+        resp: Any = await self._http.post(_GOOGLE_AUTH, json={"name": app_name, "space": channel.space})
+        url = (_django_data(resp) or {}).get("redirect_url")
+        if not url:
+            raise ValueError(_message(resp) or f"could not start the {app_name} sign-in")
+        if not wait:
+            return ConnectResult(sign_in_url=url)
+        on_sign_in_url(url)
+        return await self._wait_until_ready(channel, ready_before, url, timeout, poll_interval)
+
+    async def _link(self, channel: Channel) -> Channel:
+        _django_data(
             await self._http.post(
                 f"{_CONNECTIONS}{channel.connection_id}/link-space/",
                 json={"space_slug": channel.space},
             )
-            linked = next(
-                (
-                    c
-                    for c in await self.list(channel.space)
-                    if c.connection_id == channel.connection_id
-                ),
-                None,
+        )
+        linked = next(
+            (c for c in await self.list(channel.space) if c.connection_id == channel.connection_id),
+            None,
+        )
+        if linked is None or not linked.ready:
+            # The link landed but no sending account came of it: Django
+            # provisions it after the commit and swallows a failure there.
+            raise ValueError(
+                f"linked {channel.type} connection {channel.connection_id} to {channel.space}, "
+                "but it is not ready to send from; check the connection in the Unpod app"
             )
-            return ConnectResult(channel=linked)
-        app_name = _SIGN_IN_APPS.get(channel.type)
-        if app_name is None:
-            raise ValueError(f"connect {channel.type} in the Unpod app first")
-        before = (
-            {c.connection_id for c in await self.list(channel.space)} if wait else set()
-        )
-        resp: Any = await self._http.post(
-            _GOOGLE_AUTH, json={"name": app_name, "space": channel.space}
-        )
-        url = resp.get("redirect_url") if isinstance(resp, dict) else None
-        if not url:
-            # Django refuses with a 2xx and a message (its house style).
-            message = resp.get("message") if isinstance(resp, dict) else None
-            raise ValueError(message or f"could not start the {app_name} sign-in")
-        if not wait:
-            return ConnectResult(sign_in_url=url)
-        return await self._wait_for_new(channel, before, url, timeout, poll_interval)
+        return linked
 
-    async def _wait_for_new(
+    async def _wait_until_ready(
         self,
         channel: Channel,
-        before: set[int | None],
+        ready_before: set[int | None],
         url: str,
         timeout: float,
         poll_interval: float,
     ) -> ConnectResult:
+        """Poll until a mailbox of this type that was not ready becomes ready.
+
+        "Not ready before" rather than "new": signing in again with a mailbox
+        the org already has updates that connection in place, same id.
+        """
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             await asyncio.sleep(poll_interval)
             for found in await self.list(channel.space):
-                if found.type == channel.type and found.connection_id not in before:
-                    if found.ready:
-                        return ConnectResult(channel=found, sign_in_url=url)
-                    if found.connection_id is not None:
-                        # Signed in, not linked to this space yet.
-                        return await self.connect(found)
-        raise TimeoutError(
-            f"the {channel.type} sign-in was not finished within {timeout:.0f}s"
-        )
+                if found.type != channel.type or found.connection_id is None:
+                    continue
+                if found.connection_id in ready_before:
+                    continue
+                if found.ready:
+                    return ConnectResult(channel=found, sign_in_url=url)
+                if found.account_id is None:
+                    # Signed in, not linked to this space yet.
+                    return ConnectResult(channel=await self._link(found), sign_in_url=url)
+        raise TimeoutError(f"the {channel.type} sign-in was not finished within {timeout:.0f}s")
+
+
+def _django_data(resp: Any) -> Any:
+    """The payload of a Django reply, or ``ValueError`` with Django's reason.
+
+    Django's renderer wraps every reply as ``{status_code, message, data}``
+    and refuses with a 2xx: ``status_code`` 206 and the reason in ``message``.
+    """
+    if isinstance(resp, dict) and resp.get("status_code") not in (None, 200, 201):
+        raise ValueError(_message(resp) or f"refused ({resp.get('status_code')})")
+    return unwrap_data(resp)
+
+
+def _message(resp: Any) -> str | None:
+    if not isinstance(resp, dict):
+        return None
+    message = resp.get("message")
+    # "Success" is the renderer's word for a 200, not a reason.
+    return str(message) if message and message != "Success" else None
 
 
 def _linked_account(connection: dict[str, Any], slug: str) -> str | None:
@@ -182,4 +219,5 @@ def _channel(
         account_id=account.get("account_id"),
         connector_type=account.get("connector_type"),
         connector_id=account.get("connector_id"),
+        status=account.get("status"),
     )
