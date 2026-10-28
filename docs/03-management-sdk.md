@@ -601,8 +601,46 @@ for message in client.journeys.conversation(journey):
 client.journeys.cancel(journey.journey_id)
 ```
 
+### Building a flow without JSON
+
+`unpod.flows` has builder classes, and `flows.channels` finds and connects the
+mailbox a flow sends from. A space can be given as its handle, its token, or a
+`Space`; a flow as its id or a flow object.
+
+```python
+from unpod.flows import AgentStep, Flow, MessageStep
+
+channels = client.flows.channels.list("my-space")        # Channel objects; .ready once usable
+gmail = next(c for c in channels if c.type == "gmail" and c.ready)
+# not ready yet? client.flows.channels.connect(channel) links it to the space,
+# or returns a Google sign-in URL for a new mailbox (wait=True waits for it)
+
+flow = client.flows.create("my-space", Flow(
+    name="Support inbox",
+    goal="Answer customer emails",                       # the agent's objective
+    steps=[AgentStep(channel=gmail, agent="sv:support-bot")],
+    review_sensitive=True,                               # hold sensitive replies for a person
+    review_topics=["pricing negotiations"],              # optional, on top of the built-in list
+))
+client.flows.link(flow, gmail)                           # agent steps send from it; new mail starts journeys
+client.flows.activate(flow)
+```
+
+| Builder | What it becomes |
+|---|---|
+| `AgentStep(channel=, agent=None, reply_wait=None)` | an agent-driven step on that channel (`agentic.enabled`); `agent` is one of `flows.agents()` |
+| `MessageStep(channel=, body=, subject=None)` | a fixed message, sent as written |
+| `Flow(name=, steps=, goal=, follow_ups=True, review_sensitive=False, review_topics=None)` | the flow; agent defaults (`agentic_profile="default"`, tools = the agent steps' connectors + `human`) are filled in |
+
+`flows.channels.list`, `channels.connect` and resolving a space token reach the
+Unpod app's own routes, which take a user's platform JWT only: use
+`JWTAuth(token, org_handle=...)`. With other auth they raise `ValueError`.
+`flows.channels(space)` still returns the raw account list.
+
 | Method | What it does |
 |---|---|
+| `flows.channels.list(space)` · `channels.connect(channel, wait=False, timeout=300)` | the space's channels (`ready` when it has an `account_id`) · link one to the space, or start a Gmail sign-in (`sign_in_url`) |
+| `flows.link(flow, channel)` | the flow's agent steps send from `channel`; for a mailbox, adds the `email` lead source (once; a flow already on another mailbox is refused) |
 | `flows.create(space_id, flow)` · `validate(space_id, flow)` | create a flow (leave out `flow_id` and one is picked and returned) · check it without saving |
 | `flows.templates()` · `create_from_template(space_id, template_id, name=, flow_id=)` | ready-made flows · a new draft from one |
 | `flows.agents()` | every agent a step can use, pilots and `client.agents` agents in one list; each `agent_id` goes straight into a step |
