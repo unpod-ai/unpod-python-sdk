@@ -277,3 +277,14 @@ async def test_tools_set_keeps_handover_settings_it_does_not_type():
     sent = client.agents._http.put.await_args.kwargs["json"]["tools"]
     assert sent["handover"] == {"enabled": False, "numbers": [], "mode": "warm"}
     assert sent["attached"] == ["crm_lookup"]
+
+
+def test_the_blocking_client_reaches_agents_tools():
+    from unpod import Client
+
+    client = Client(api_key="test", base_url="https://example.test")
+    client._async_client.agents._http.get = AsyncMock(return_value=_AGENT)
+
+    cfg = client.agents.tools.get("support")
+
+    assert cfg.handover.numbers == ["+919876543210"]

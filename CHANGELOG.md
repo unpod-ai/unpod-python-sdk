@@ -8,6 +8,15 @@ While the SDK is pre-1.0, breaking changes ship in a **minor** bump.
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-10-29
+
+Brings the package back in line with `main`: 0.5.1 was built from a branch cut
+before 0.5.0, so it shipped without `client.tools`, `client.domain_dictionaries`
+and `numbers.agent.change`. 0.5.2 has everything 0.5.0 and 0.5.1 had.
+
+### Fixed
+- Restored from 0.5.0, missing in 0.5.1: `client.tools`, `client.domain_dictionaries`, `client.numbers.agent.change()`, `agents.update(number=)` and the agent ambience and noise-cancellation arguments.
+
 ### Added
 - `client.agents.tools.get(agent_id)` / `set(agent_id, handover=, voicemail=)`: typed per-agent handover and voicemail config (`ToolsConfig`, `HandoverTool`, `VoicemailTool`); `tools=` on `agents.voice.create`, and `agents.update(tools=)` takes a `ToolsConfig`.
 - `AgentTransferVerb.fallback_targets`: further targets the worker tries in order when the first cannot be reached.

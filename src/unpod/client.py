@@ -285,6 +285,7 @@ class _SyncAgentsNamespace:
         self._async = async_ns
         self.voice = _SyncResource(async_ns.voice)
         self.numbers = _SyncResource(async_ns.numbers)
+        self.tools = _SyncResource(async_ns.tools)
 
     def list(self) -> Any:
         return _run_blocking(self._async.list())
