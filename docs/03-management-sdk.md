@@ -889,3 +889,127 @@ connectivity runtime (`connectivity/metrics.py::MetricsTracker.live`,
   the REST one.
 - [00-overview.md](00-overview.md) — the planes, the terminology canon, and what
   Unpod owns versus what you own.
+
+## Autonomous agents (flows and journeys)
+
+Drive Unpod's autonomous agents the same way you make calls. Requests go to the
+backend's `/api/v2/platform/journey/v1/…` proxy, which checks your org and space
+and forwards to the autonomous-agent service.
+
+```python
+from unpod import Client
+
+client = Client()  # UNPOD_API_KEY, or a platform token + UNPOD_ORG_HANDLE
+
+client.journeys.ping()                                    # {"ok": True, "checks": [...]} — setup check
+client.flows.channels("my-space")                         # accounts a step can send from (account_id)
+client.flows.agentic_profiles()                           # values for a flow's agentic_profile
+flow = client.flows.create("my-space", {"name": "Support", "steps": [...]})  # flow_id picked for you
+client.flows.activate(flow.flow_id)
+client.journeys.set_approval("my-space", "autonomous")    # let the agent send without review
+
+[started] = client.journeys.start(flow.flow_id, participant_id="em-ankit",
+                                  contact={"email": "ankit@example.com", "name": "Ankit"})
+journey = client.journeys.get(started.journey_id)
+for message in client.journeys.conversation(journey):
+    print(message.direction, message.text)
+client.journeys.cancel(journey.journey_id)
+```
+
+### Building a flow without JSON
+
+`unpod.flows` has builder classes, and `flows.channels` finds and connects the
+mailbox a flow sends from. A space can be given as its handle, its token, or a
+`Space`; a flow as its id or a flow object.
+
+```python
+from unpod.flows import AgentStep, Flow, MessageStep
+
+channels = client.flows.channels.list("my-space")        # Channel objects; .ready once usable
+gmail = next(c for c in channels if c.type == "gmail" and c.ready)
+# not ready yet? client.flows.channels.connect(channel) links it to the space,
+# or returns a Google sign-in URL for a new mailbox (wait=True, on_sign_in_url=print waits for it)
+
+flow = client.flows.create("my-space", Flow(
+    name="Support inbox",
+    goal="Answer customer emails",                       # the agent's objective
+    steps=[AgentStep(channel=gmail, agent="sv:support-bot")],
+    review_sensitive=True,                               # hold sensitive replies for a person
+    review_topics=["pricing negotiations"],              # optional, on top of the built-in list
+))
+client.flows.link(flow, gmail)                           # agent steps send from it; new mail starts journeys
+client.flows.activate(flow)
+```
+
+| Builder | What it becomes |
+|---|---|
+| `AgentStep(channel=, agent=None, reply_wait=None)` | an agent-driven step on that channel (`agentic.enabled`); `agent` is one of `flows.agents()` |
+| `MessageStep(channel=, body=, subject=None)` | a fixed message, sent as written |
+| `Flow(name=, steps=, goal=, follow_ups=True, review_sensitive=False, review_topics=None)` | the flow; agent defaults (`agentic_profile="default"`, tools = the agent steps' connectors + `human`) are filled in |
+
+`flows.channels.list`, `channels.connect` and resolving a space token reach the
+Unpod app's own routes, which take a user's platform JWT only: use
+`JWTAuth(token, org_handle=...)`. With other auth they raise `ValueError`.
+`flows.channels(space)` still returns the raw account list.
+
+| Method | What it does |
+|---|---|
+| `flows.channels.list(space)` · `channels.connect(channel, wait=False, timeout=300, on_sign_in_url=None)` | the space's channels (`ready` when its account is connected) · link one to the space, or start a Gmail sign-in (`sign_in_url`; with `wait=True` the URL goes to `on_sign_in_url` and this waits until the mailbox is ready). Django refusals (no permission, no write access) raise `ValueError` with Django's reason |
+| `flows.link(flow, channel)` | the flow's agent steps send from `channel` and its agent may use the channel's connector; for a mailbox, adds the `email` lead source (once). Checks first, writes after: a channel from another space, or a flow already on another mailbox, changes nothing |
+| `flows.create(space_id, flow)` · `validate(space_id, flow)` | create a flow (leave out `flow_id` and one is picked and returned) · check it without saving |
+| `flows.templates()` · `create_from_template(space_id, template_id, name=, flow_id=)` | ready-made flows · a new draft from one |
+| `flows.agents()` | every agent a step can use, pilots and `client.agents` agents in one list; each `agent_id` goes straight into a step |
+| `flows.channels(space_id)` · `agentic_profiles()` | the space's connected accounts (use `account_id` in a step's `connector_account_ids`) · values for `agentic_profile` |
+| `flows.status(flow_id)` | `{flow_id, status, version, journeys: {status: count}}` |
+| `flows.update(flow_id, flow)` · `get(flow_id, version=None)` · `list(space_id)` · `versions(flow_id)` | edit (a new version) · read |
+| `flows.activate(flow_id)` · `pause(flow_id)` · `archive(flow_id)` | on · off (running journeys finish) · retire |
+| `journeys.start(flow_id, participant_id, contact)` or `start(flow_id, participants=[...])` | start for one or many contacts; one result each (`started` / `invalid` / …) |
+| `journeys.get(journey_id)` · `list(space_id, flow_id=, participant_id=, status=)` · `cancel(journey_id)` | read · filter · stop |
+| `journeys.send_event(journey_id, type, outcome, summary, content, channel)` | signal a running journey (a reply, an approval) |
+| `journeys.conversation(journey)` | the inbox thread, oldest first (`[]` before one exists) |
+| `journeys.set_approval(space_id, level)` | `autonomous` · `human_review` (default) · `shadow` · `blocked`; owners/editors only |
+| `journeys.ping()` | can this org reach the autonomous-agent service? |
+| `flows.lead_sources(flow_id)` · `add_lead_source(flow_id, type, mode=, account_id=, label=)` | where contacts come from: `space` · `csv` · `api_push` · `email` (an `api_push` token is returned once) |
+| `flows.enroll_leads(flow_id, source_id, leads)` · `fetch_leads_now(...)` · `pause_lead_source(...)` · `regenerate_lead_source_token(...)` · `delete_lead_source(...)` | start a batch (CSV rows) · read a Space source now · pause · new push token · remove |
+| `flows.test_connection(space_id, account_id)` | check a connected account live; a pass also clears one marked as failing |
+| `journeys.draft(journey_id)` · `approve(journey_id, approved=True, response_text=)` | the draft held for review (`human_review`) · send or reject it |
+| `journeys.reply(journey_id, text, subject=, request_id=, pause_agent=True)` | reply as a person; the agent stays paused until `release` |
+| `journeys.takeover(journey_id)` · `release(journey_id)` · `resume(journey_id)` | a person takes the conversation · hands it back to the agent · resume a paused journey |
+| `journeys.opt_out(journey_id, channel=None)` · `reactivate(journey_id)` | the contact opted out of everything (or one channel) · start an ended journey again |
+| `journeys.alerts(space_id)` · `stuck_tasks(space_id)` | possible opt-outs for a person to decide · sends that never finished (never resent automatically) |
+
+`approve` and `reply` count as a person's send, so the service must be able to
+name the user acting (platform-token mode with `UNPOD_ORG_HANDLE`); otherwise it
+answers 403.
+
+A flow the service refuses raises `FlowValidationError` (from `create`,
+`validate`, `update`, `create_from_template`, `activate`, and `journeys.start`
+on a flow that is off). `status_code` is 422 (the definition) or 409 (its
+state), and `problems` lists one readable line per issue:
+
+```python
+from unpod import FlowValidationError
+
+try:
+    client.flows.validate("my-space", draft)
+except FlowValidationError as err:
+    for problem in err.problems:
+        print(problem)    # step 'step_1': fixed email content needs a body; ...
+```
+
+**Which agent a step uses.** A step's `agent_id` is a pilot handle from the
+Unpod app, or `sv:<agent_id>` for an agent from `client.agents.list()`, so an
+agent you built with this SDK can answer a flow's messages:
+
+```python
+step = {"id": "step_1", "order": 1, "action": "email",
+        "agent_id": "sv:agt_123", "agentic": {"enabled": True}, ...}
+```
+
+The agent's prompt brain becomes the turn's instructions and its `llm_model`
+its model; a playbook brain keeps the flow's own profile. `sv:` agents answer
+message steps only: a `call` step still needs a pilot (a 422 says so).
+
+`participant_id` must match `^[a-z0-9_-]+$`. Models (`Flow`, `Journey`,
+`JourneyStartResult`, `ConversationMessage`) keep unknown fields, so a newer
+engine never breaks an older SDK.

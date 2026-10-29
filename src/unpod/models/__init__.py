@@ -6,6 +6,7 @@ from unpod.models.analytics import (
     AnalyticsResult,
 )
 from unpod.models.api_key import ApiKey
+from unpod.models.autonomous import Channel, ConnectResult, ConversationMessage, Flow, Journey, JourneyStartResult, Space
 from unpod.models.call import Call, CallCreate
 from unpod.models.domain_dictionary import (
     DomainDictionary,
@@ -37,6 +38,13 @@ from unpod.models.trunk import ByoConfigCreate, Trunk, TrunkCreate
 from unpod.models.voice_profile import VoiceProfile
 
 __all__ = [
+    "ConversationMessage",
+    "Channel",
+    "ConnectResult",
+    "Flow",
+    "Space",
+    "Journey",
+    "JourneyStartResult",
     "AnalyticsField",
     "AnalyticsBlock",
     "AnalyticsResult",

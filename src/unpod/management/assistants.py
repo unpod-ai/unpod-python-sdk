@@ -1,0 +1,576 @@
+"""``client.assistants``: build, deploy and chat with assistants.
+
+Same transport as ``client.flows``: the platform's journey proxy, org-scoped by
+the caller's token. A chat turn runs the model (and maybe several tool steps)
+before it answers, so ``send``/``decide`` wait up to ``TURN_TIMEOUT`` and always
+carry an ``Idempotency-Key``: retrying the same call returns the first reply
+instead of running the turn twice.
+"""
+
+from __future__ import annotations
+
+import builtins
+import uuid
+from collections.abc import Awaitable
+from typing import Any, Literal, TypeVar
+
+import httpx
+
+from unpod.management._http import AsyncHTTPClient, unwrap_data
+from unpod.management.flows import JOURNEY_BASE, _problems
+from unpod.models.assistants import (
+    Approval,
+    Assistant,
+    AssistantVersion,
+    EndUser,
+    Eval,
+    EvalRun,
+    Followup,
+    Grant,
+    McpToolInfo,
+    MemoryBlock,
+    MemoryExport,
+    MemoryForget,
+    Message,
+    Reply,
+    RoutineRun,
+    Run,
+    TaskItem,
+    Thread,
+    ToolTestResult,
+)
+
+_T = TypeVar("_T")
+
+# How long the platform proxy waits for a turn. The SDK waits a little longer
+# so a slow turn surfaces as the proxy's clean 504, not a bare client timeout.
+PROXY_TURN_TIMEOUT = 150.0
+TURN_TIMEOUT = 165.0
+# A turn that timed out or got 503/504 is retried with the SAME
+# Idempotency-Key: the service answers the retry with the first turn's reply
+# (waiting for it if still running) instead of running a second turn.
+_TURN_ATTEMPTS = 3
+_RETRY_STATUS = (503, 504)
+
+
+class AssistantValidationError(Exception):
+    """The service refused the request (409 state conflict or 422 invalid)."""
+
+    def __init__(self, status_code: int, problems: builtins.list[str]):
+        self.status_code = status_code
+        self.problems = problems
+        super().__init__(f"{status_code}: {'; '.join(problems) or 'refused'}")
+
+
+async def _refused(call: Awaitable[_T]) -> _T:
+    try:
+        return await call
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code not in (409, 422):
+            raise
+        try:
+            body = exc.response.json()
+        except ValueError:
+            body = exc.response.text
+        detail = (
+            body.get("detail", body.get("message")) if isinstance(body, dict) else body
+        )
+        raise AssistantValidationError(
+            exc.response.status_code, _problems(detail)
+        ) from exc
+
+
+class AssistantsResource:
+    def __init__(self, http: AsyncHTTPClient) -> None:
+        self._http = http
+
+    def _a(self, space_id: str) -> str:
+        return f"{JOURNEY_BASE}/spaces/{space_id}/assistants"
+
+    # ------------------------------------------------------------- build
+
+    async def validate(self, space_id: str, definition: dict[str, Any]) -> bool:
+        """Dry-run: True if the definition is valid; raises with the problems."""
+        await _refused(
+            self._http.post(f"{self._a(space_id)}/validate", json=definition)
+        )
+        return True
+
+    async def create(self, space_id: str, definition: dict[str, Any]) -> Assistant:
+        """Save a new assistant as a draft (not live until ``deploy``)."""
+        resp = await _refused(self._http.post(self._a(space_id), json=definition))
+        return Assistant(**unwrap_data(resp))
+
+    async def list(self, space_id: str) -> builtins.list[Assistant]:
+        resp = unwrap_data(await self._http.get(self._a(space_id)))
+        return [Assistant(**a) for a in resp]
+
+    async def get(self, space_id: str, assistant_id: str) -> Assistant:
+        return Assistant(
+            **unwrap_data(await self._http.get(f"{self._a(space_id)}/{assistant_id}"))
+        )
+
+    async def update(
+        self, space_id: str, assistant_id: str, definition: dict[str, Any]
+    ) -> Assistant:
+        """Replace the draft. Running threads keep the version they started on."""
+        resp = await _refused(
+            self._http.put(f"{self._a(space_id)}/{assistant_id}", json=definition)
+        )
+        return Assistant(**unwrap_data(resp))
+
+    async def deploy(self, space_id: str, assistant_id: str) -> AssistantVersion:
+        """Freeze the draft as the next version and turn the assistant on."""
+        resp = await _refused(
+            self._http.post(f"{self._a(space_id)}/{assistant_id}/deploy")
+        )
+        return AssistantVersion(**unwrap_data(resp))
+
+    async def off(self, space_id: str, assistant_id: str) -> Assistant:
+        resp = await _refused(
+            self._http.post(f"{self._a(space_id)}/{assistant_id}/off")
+        )
+        return Assistant(**unwrap_data(resp))
+
+    async def versions(
+        self, space_id: str, assistant_id: str
+    ) -> builtins.list[AssistantVersion]:
+        resp = unwrap_data(
+            await self._http.get(f"{self._a(space_id)}/{assistant_id}/versions")
+        )
+        return [AssistantVersion(**v) for v in resp]
+
+    async def version(
+        self, space_id: str, assistant_id: str, version: int
+    ) -> AssistantVersion:
+        """One deployed version, with its frozen ``definition``."""
+        resp = unwrap_data(
+            await self._http.get(
+                f"{self._a(space_id)}/{assistant_id}/versions/{version}"
+            )
+        )
+        return AssistantVersion(**resp)
+
+    async def test_tool(
+        self, space_id: str, assistant_id: str, name: str, args: dict[str, Any]
+    ) -> ToolTestResult:
+        """Make one real call of the DRAFT's http tool ``name`` with ``args``
+        (no deploy needed). Bad args raise ``AssistantValidationError`` (422),
+        as does a tool that cannot be tested (409)."""
+        resp = await _refused(
+            self._http.post(
+                f"{self._a(space_id)}/{assistant_id}/tools/{name}/test",
+                json={"args": args},
+            )
+        )
+        return ToolTestResult(**unwrap_data(resp))
+
+    async def discover_mcp(
+        self, space_id: str, assistant_id: str, alias: str
+    ) -> builtins.list[McpToolInfo]:
+        """Every tool the DRAFT's MCP server ``alias`` lists (``allow`` is
+        not applied; it filters at deploy). A missing secret raises
+        ``AssistantValidationError`` (409); an unreachable or non-MCP server
+        is a 503 / 502 error."""
+        resp = await _refused(
+            self._http.post(f"{self._a(space_id)}/{assistant_id}/mcp/{alias}/discover")
+        )
+        return [McpToolInfo(**t) for t in unwrap_data(resp)]
+
+    # -------------------------------------------------------------- chat
+
+    async def end_users(
+        self, space_id: str, assistant_id: str
+    ) -> builtins.list[EndUser]:
+        """The assistant's end users, newest first."""
+        resp = unwrap_data(
+            await self._http.get(f"{self._a(space_id)}/{assistant_id}/end_users")
+        )
+        return [EndUser(**e) for e in resp]
+
+    async def threads(
+        self, space_id: str, assistant_id: str, end_user_id: str
+    ) -> builtins.list[Thread]:
+        """The end user's threads, newest first."""
+        resp = unwrap_data(
+            await self._http.get(
+                f"{self._a(space_id)}/{assistant_id}/end_users/{end_user_id}/threads"
+            )
+        )
+        return [Thread(**t) for t in resp]
+
+    async def pending_approvals(
+        self, space_id: str, assistant_id: str
+    ) -> builtins.list[Approval]:
+        """Pending approvals across all the assistant's threads, newest first;
+        each has ``thread_id``, ``end_user_id`` and ``created``."""
+        resp = unwrap_data(
+            await self._http.get(
+                f"{self._a(space_id)}/{assistant_id}/approvals",
+                params={"status": "pending"},
+            )
+        )
+        return [Approval(**a) for a in resp]
+
+    async def end_user(
+        self,
+        space_id: str,
+        assistant_id: str,
+        external_id: str,
+        name: str = "",
+        timezone: str | None = None,
+        quiet_hours: dict[str, str] | Literal[False] | None = None,
+        max_proactive_per_day: int | Literal[False] | None = None,
+    ) -> EndUser:
+        """Get or create the end user for your own user id ``external_id``.
+
+        ``timezone`` (IANA, e.g. ``"Asia/Kolkata"``) sets the end user's own
+        clock; leaving it out keeps the stored one.
+
+        ``quiet_hours`` (``{"start": "22:00", "end": "08:00"}``, their local
+        time) holds scheduled routine messages until the window ends;
+        ``max_proactive_per_day`` caps scheduled routine messages per day
+        (0 = none). Follow-ups the user asked for are never held. ``None``
+        (default) keeps the stored value; ``False`` clears it so the
+        assistant's ``defaults`` apply."""
+        body: dict[str, Any] = {"external_id": external_id, "name": name}
+        if timezone is not None:
+            body["timezone"] = timezone
+        for key, value in (
+            ("quiet_hours", quiet_hours),
+            ("max_proactive_per_day", max_proactive_per_day),
+        ):
+            if value is not None:
+                body[key] = None if value is False else value
+        resp = await _refused(
+            self._http.post(f"{self._a(space_id)}/{assistant_id}/end_users", json=body)
+        )
+        return EndUser(**unwrap_data(resp))
+
+    async def open_thread(
+        self, space_id: str, assistant_id: str, end_user_id: str
+    ) -> Thread:
+        """A new conversation, pinned to the live version (409 if not on)."""
+        resp = await _refused(
+            self._http.post(
+                f"{self._a(space_id)}/{assistant_id}/end_users/{end_user_id}/threads"
+            )
+        )
+        return Thread(**unwrap_data(resp))
+
+    async def _turn(self, path: str, body: dict[str, Any] | None, key: str) -> Reply:
+        for attempt in range(_TURN_ATTEMPTS):
+            try:
+                resp = await _refused(
+                    self._http.post(
+                        path,
+                        json=body,
+                        headers={"Idempotency-Key": key},
+                        timeout=TURN_TIMEOUT,
+                    )
+                )
+                return Reply(**unwrap_data(resp))
+            except (httpx.TimeoutException, httpx.HTTPStatusError) as exc:
+                retryable = isinstance(exc, httpx.TimeoutException) or (
+                    exc.response.status_code in _RETRY_STATUS
+                )
+                if not retryable or attempt == _TURN_ATTEMPTS - 1:
+                    raise
+        raise AssertionError("unreachable")
+
+    async def send(
+        self,
+        space_id: str,
+        assistant_id: str,
+        thread_id: str,
+        text: str,
+        idempotency_key: str | None = None,
+    ) -> Reply:
+        """Send a message; the reply (or a pending approval) comes back.
+
+        Pass your own ``idempotency_key`` if you may call ``send`` again for the
+        same message later (e.g. after a crash); within this call, timeouts and
+        503/504 are retried automatically with the same key.
+        """
+        return await self._turn(
+            f"{self._a(space_id)}/{assistant_id}/threads/{thread_id}/messages",
+            {"text": text},
+            idempotency_key or uuid.uuid4().hex,
+        )
+
+    async def decide(
+        self,
+        space_id: str,
+        assistant_id: str,
+        thread_id: str,
+        approval_id: str,
+        approve: bool,
+        always: bool = False,
+    ) -> Reply:
+        """Approve or deny the tool call a turn paused on; returns the resumed reply.
+
+        ``always=True`` (with ``approve=True``): also stop asking this end user
+        for this tool when only the assistant's approval policy would ask.
+        Safety checks (untrusted content, allowlist, spend cap) still ask.
+        Undo with ``revoke_grant``.
+        """
+        if always and not approve:
+            raise ValueError("always=True needs approve=True")
+        decision = "approve_always" if always else "approve" if approve else "deny"
+        return await self._turn(
+            f"{self._a(space_id)}/{assistant_id}/threads/{thread_id}/approvals/{approval_id}",
+            {"decision": decision},
+            f"{approval_id}:{decision}",
+        )
+
+    async def run_routine(
+        self,
+        space_id: str,
+        assistant_id: str,
+        end_user_id: str,
+        routine_id: str,
+        idempotency_key: str | None = None,
+    ) -> Reply:
+        """Run a routine now as the end user's next turn; the reply (or a
+        pending approval) comes back. Retried like ``send``, with the same key."""
+        return await self._turn(
+            f"{self._a(space_id)}/{assistant_id}/end_users/{end_user_id}"
+            f"/routines/{routine_id}/run",
+            None,
+            idempotency_key or uuid.uuid4().hex,
+        )
+
+    async def routine_runs(
+        self,
+        space_id: str,
+        assistant_id: str,
+        since: str | None = None,
+        limit: int = 100,
+    ) -> builtins.list[RoutineRun]:
+        """Routine runs changed at or after ``since`` (ISO time), oldest first.
+
+        ``since`` is inclusive: when polling, skip a ``(run_id, ts)`` you have
+        already handled.
+        """
+        params = {"limit": str(limit)}
+        if since is not None:
+            params = {"since": since, **params}
+        resp = unwrap_data(
+            await self._http.get(
+                f"{self._a(space_id)}/{assistant_id}/routine_runs", params=params
+            )
+        )
+        return [RoutineRun(**r) for r in resp]
+
+    async def messages(
+        self, space_id: str, assistant_id: str, thread_id: str
+    ) -> builtins.list[Message]:
+        resp = unwrap_data(
+            await self._http.get(
+                f"{self._a(space_id)}/{assistant_id}/threads/{thread_id}/messages"
+            )
+        )
+        return [Message(**m) for m in resp]
+
+    async def approvals(
+        self, space_id: str, assistant_id: str, thread_id: str
+    ) -> builtins.list[Approval]:
+        """Pending approvals of a thread (at most one in practice), newest first."""
+        resp = unwrap_data(
+            await self._http.get(
+                f"{self._a(space_id)}/{assistant_id}/threads/{thread_id}/approvals",
+                params={"status": "pending"},
+            )
+        )
+        return [Approval(**a) for a in resp]
+
+    async def followups(
+        self, space_id: str, assistant_id: str, end_user_id: str
+    ) -> builtins.list[Followup]:
+        """The follow-ups the assistant scheduled for this end user (every
+        status), newest first."""
+        resp = unwrap_data(
+            await self._http.get(
+                f"{self._a(space_id)}/{assistant_id}/end_users/{end_user_id}/followups"
+            )
+        )
+        return [Followup(**f) for f in resp]
+
+    async def cancel_followup(
+        self, space_id: str, assistant_id: str, end_user_id: str, fu_id: str
+    ) -> Followup:
+        """Cancel a scheduled follow-up (safe to repeat). One that already
+        fired raises ``AssistantValidationError`` (409)."""
+        resp = await _refused(
+            self._http.post(
+                f"{self._a(space_id)}/{assistant_id}/end_users/{end_user_id}"
+                f"/followups/{fu_id}/cancel"
+            )
+        )
+        return Followup(**unwrap_data(resp))
+
+    async def tasks(
+        self, space_id: str, assistant_id: str, thread_id: str
+    ) -> builtins.list[TaskItem]:
+        """The assistant's plan for this thread, as it last wrote it."""
+        resp = unwrap_data(
+            await self._http.get(
+                f"{self._a(space_id)}/{assistant_id}/threads/{thread_id}/tasks"
+            )
+        )
+        return [TaskItem(**t) for t in resp]
+
+    async def runs(
+        self, space_id: str, assistant_id: str, thread_id: str, limit: int = 20
+    ) -> builtins.list[Run]:
+        """The thread's runs with their step traces, newest first."""
+        resp = unwrap_data(
+            await self._http.get(
+                f"{self._a(space_id)}/{assistant_id}/threads/{thread_id}/runs",
+                params={"limit": str(limit)},
+            )
+        )
+        return [Run(**r) for r in resp]
+
+    async def run(self, space_id: str, assistant_id: str, run_id: str) -> Run:
+        resp = unwrap_data(
+            await self._http.get(f"{self._a(space_id)}/{assistant_id}/runs/{run_id}")
+        )
+        return Run(**resp)
+
+    async def evals(self, space_id: str, assistant_id: str) -> builtins.list[Eval]:
+        resp = unwrap_data(
+            await self._http.get(f"{self._a(space_id)}/{assistant_id}/evals")
+        )
+        return [Eval(**e) for e in resp]
+
+    async def create_eval(
+        self, space_id: str, assistant_id: str, eval: dict[str, Any]
+    ) -> Eval:
+        """``eval``: ``{name, turns: [{user, approve?}], checks: [{type,
+        value?, rubric?, turn?}]}``. Invalid or over the limit raises
+        ``AssistantValidationError``."""
+        resp = await _refused(
+            self._http.post(f"{self._a(space_id)}/{assistant_id}/evals", json=eval)
+        )
+        return Eval(**unwrap_data(resp))
+
+    async def update_eval(
+        self, space_id: str, assistant_id: str, eval_id: str, eval: dict[str, Any]
+    ) -> Eval:
+        resp = await _refused(
+            self._http.put(
+                f"{self._a(space_id)}/{assistant_id}/evals/{eval_id}", json=eval
+            )
+        )
+        return Eval(**unwrap_data(resp))
+
+    async def delete_eval(self, space_id: str, assistant_id: str, eval_id: str) -> None:
+        await self._http.delete(f"{self._a(space_id)}/{assistant_id}/evals/{eval_id}")
+
+    async def run_evals(
+        self,
+        space_id: str,
+        assistant_id: str,
+        target: str = "draft",
+        eval_ids: builtins.list[str] | None = None,
+    ) -> EvalRun:
+        """Start a run (``target``: "draft" or "version"); it answers at once
+        with status ``running`` — poll ``eval_run`` until ``done``."""
+        body: dict[str, Any] = {"target": target}
+        if eval_ids is not None:
+            body["eval_ids"] = eval_ids
+        resp = await _refused(
+            self._http.post(f"{self._a(space_id)}/{assistant_id}/evals/run", json=body)
+        )
+        return EvalRun(**unwrap_data(resp))
+
+    async def eval_runs(
+        self, space_id: str, assistant_id: str, limit: int = 20
+    ) -> builtins.list[EvalRun]:
+        resp = unwrap_data(
+            await self._http.get(
+                f"{self._a(space_id)}/{assistant_id}/eval_runs",
+                params={"limit": str(limit)},
+            )
+        )
+        return [EvalRun(**r) for r in resp]
+
+    async def eval_run(self, space_id: str, assistant_id: str, run_id: str) -> EvalRun:
+        resp = unwrap_data(
+            await self._http.get(
+                f"{self._a(space_id)}/{assistant_id}/eval_runs/{run_id}"
+            )
+        )
+        return EvalRun(**resp)
+
+    async def mark_memory_reviewed(
+        self, space_id: str, assistant_id: str, end_user_id: str
+    ) -> builtins.list[MemoryBlock]:
+        """You have read this end user's memory: lines written after the
+        assistant read outside content stop marking their turns as tainted.
+        The memory itself is unchanged and returned."""
+        resp = await _refused(
+            self._http.post(
+                f"{self._a(space_id)}/{assistant_id}/end_users/{end_user_id}"
+                "/memory/reviewed"
+            )
+        )
+        return [MemoryBlock(**b) for b in unwrap_data(resp)]
+
+    async def memory(
+        self, space_id: str, assistant_id: str, end_user_id: str
+    ) -> builtins.list[MemoryBlock]:
+        """What the assistant remembers about this end user."""
+        resp = unwrap_data(
+            await self._http.get(
+                f"{self._a(space_id)}/{assistant_id}/end_users/{end_user_id}/memory"
+            )
+        )
+        return [MemoryBlock(**b) for b in resp]
+
+    async def export_memory(
+        self, space_id: str, assistant_id: str, end_user_id: str
+    ) -> MemoryExport:
+        """Everything the assistant remembers about this end user."""
+        resp = unwrap_data(
+            await self._http.get(
+                f"{self._a(space_id)}/{assistant_id}/end_users/{end_user_id}"
+                "/memory/export"
+            )
+        )
+        return MemoryExport(**resp)
+
+    async def forget_memory_line(
+        self, space_id: str, assistant_id: str, end_user_id: str, text: str
+    ) -> MemoryForget:
+        """Remove every remembered line matching ``text`` (whole lines; case,
+        punctuation and digit script ignored). ``removed`` is empty when
+        nothing matched."""
+        resp = await _refused(
+            self._http.delete_json(
+                f"{self._a(space_id)}/{assistant_id}/end_users/{end_user_id}"
+                "/memory/lines",
+                json={"text": text},
+            )
+        )
+        return MemoryForget(**unwrap_data(resp))
+
+    async def grants(
+        self, space_id: str, assistant_id: str, end_user_id: str
+    ) -> builtins.list[Grant]:
+        """The tools this end user chose "always allow" for."""
+        resp = unwrap_data(
+            await self._http.get(
+                f"{self._a(space_id)}/{assistant_id}/end_users/{end_user_id}/grants"
+            )
+        )
+        return [Grant(**g) for g in resp]
+
+    async def revoke_grant(
+        self, space_id: str, assistant_id: str, end_user_id: str, tool: str
+    ) -> None:
+        """The tool asks again from the end user's next turn."""
+        await self._http.delete(
+            f"{self._a(space_id)}/{assistant_id}/end_users/{end_user_id}/grants/{tool}"
+        )

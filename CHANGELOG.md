@@ -8,6 +8,22 @@ While the SDK is pre-1.0, breaking changes ship in a **minor** bump.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-28
+
+### Added
+- `client.flows` and `client.journeys` for autonomous agents: create, validate, update, activate, pause and archive flows; templates, profiles, versions, lead sources, operator actions and connection tests; `flows.create(idempotency_key=)` for a retry-safe create; `flows.agents()` lists the pilots and SDK agents (`sv:<agent_id>`) a step can use.
+- `unpod.flows` builder classes (`Flow`, `AgentStep`, `MessageStep`): build a flow without writing its JSON.
+- `client.flows.channels.list(space)` / `connect(channel)`: a space's mailboxes and numbers, and connecting one (Gmail sign-in URL, optional `wait=True` with `on_sign_in_url=`).
+- `client.flows.link(flow, channel)`: point a flow's steps at a channel and add its email lead source.
+- A space may be given as its handle, its token or a `Space` object; flow methods accept a `Flow` object in place of its id.
+- `client.assistants`: build, deploy, chat, approvals, memory (export, forget, review), routines, run traces, scenario evals, MCP tool discovery, end users, threads, follow-ups and tasks.
+
+### Fixed
+- The blocking `Client` reuses one event loop per thread.
+
+### Requires
+- `flows.channels.list`/`connect` need proxy-mode auth (`JWTAuth` with an org handle).
+
 ## [0.5.0] - 2026-10-05
 
 ### Added

@@ -150,10 +150,23 @@ class AsyncHTTPClient:
         resp.raise_for_status()
         return self._json_or_empty(resp)  # type: ignore[no-any-return]
 
-    async def post(self, path: str, json: dict | None = None) -> dict | list:
-        """Send a POST request and return parsed JSON response."""
+    async def post(
+        self,
+        path: str,
+        json: dict | None = None,
+        headers: dict[str, str] | None = None,
+        timeout: float | None = None,
+    ) -> dict | list:
+        """Send a POST request and return parsed JSON response. ``headers`` add to
+        (never replace) the auth and request-id headers. ``timeout`` overrides
+        the client's default for this one call (a long-running request)."""
         client = await self._ensure_client()
-        resp = await client.post(self._url(path), headers=self._headers(), json=json)
+        resp = await client.post(
+            self._url(path),
+            headers={**(headers or {}), **self._headers()},
+            json=json,
+            timeout=timeout if timeout is not None else httpx.USE_CLIENT_DEFAULT,
+        )
         self._log_response(resp)
         resp.raise_for_status()
         return self._json_or_empty(resp)  # type: ignore[no-any-return]
@@ -180,6 +193,16 @@ class AsyncHTTPClient:
         resp = await client.delete(self._url(path), headers=self._headers())
         self._log_response(resp)
         resp.raise_for_status()
+
+    async def delete_json(self, path: str, json: dict) -> dict:
+        """Send a DELETE request with a JSON body; return the parsed response."""
+        client = await self._ensure_client()
+        resp = await client.request(
+            "DELETE", self._url(path), headers=self._headers(), json=json
+        )
+        self._log_response(resp)
+        resp.raise_for_status()
+        return self._json_or_empty(resp)  # type: ignore[no-any-return]
 
     async def delete_with_response(self, path: str) -> dict:
         """Send a DELETE request and return parsed JSON response."""

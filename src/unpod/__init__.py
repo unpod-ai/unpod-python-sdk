@@ -14,6 +14,8 @@ from unpod.connectivity.call_context import CallContext
 from unpod.connectivity.runner import AgentRunner, RunnerAuthError
 from unpod.connectivity.session import Session
 from unpod.management._auth import Auth, BearerAuth, JWTAuth, TokenAuth
+from unpod.management.assistants import AssistantValidationError
+from unpod.management.flows import FlowValidationError
 
 __all__ = [
     "AgentRunner",
@@ -25,6 +27,8 @@ __all__ = [
     "CallContext",
     "Client",
     "Endpoint",
+    "AssistantValidationError",
+    "FlowValidationError",
     "JWTAuth",
     "Playbook",
     "Prompt",

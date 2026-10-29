@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import os
+import threading
 from typing import Any
 
 from dotenv import load_dotenv
@@ -15,7 +17,10 @@ from unpod.management.agent import AgentNamespace
 from unpod.management.api_keys import ApiKeysResource
 from unpod.agents import AgentsNamespace
 from unpod.management.calls import CallsResource
+from unpod.management.assistants import AssistantsResource
 from unpod.management.domain_dictionaries import DomainDictionariesResource
+from unpod.management.flows import FlowsResource
+from unpod.management.journeys import JourneysResource
 from unpod.management.tools import ToolsResource
 from unpod.management.numbers import NumbersResource
 from unpod.management.pipes import PipesResource
@@ -138,6 +143,9 @@ class AsyncClient:
         self.pipes = PipesResource(self._http)
         self.agent = AgentNamespace(self._http)
         self.calls = CallsResource(self._http)
+        self.flows = FlowsResource(self._http)
+        self.assistants = AssistantsResource(self._http)
+        self.journeys = JourneysResource(self._http)
         self.sessions = SessionsResource(self._http, orch_http=self._orch_http)
         self.recordings = RecordingsResource(self._http)
         self.transcripts = TranscriptsResource(self._http)
@@ -188,6 +196,9 @@ class Client:
         self.pipes = _SyncResource(self._async_client.pipes)
         self.agent = _SyncAgentNamespace(self._async_client.agent)
         self.calls = _SyncResource(self._async_client.calls)
+        self.flows = _SyncResource(self._async_client.flows)
+        self.assistants = _SyncResource(self._async_client.assistants)
+        self.journeys = _SyncResource(self._async_client.journeys)
         self.sessions = _SyncResource(self._async_client.sessions)
         self.recordings = _SyncResource(self._async_client.recordings)
         self.transcripts = _SyncResource(self._async_client.transcripts)
@@ -213,6 +224,10 @@ class _SyncResource:
 
     def __getattr__(self, name: str) -> Any:
         attr = getattr(self._async, name)
+        if _is_nested_resource(attr):
+            # A resource inside a resource (``flows.channels``): blocking too,
+            # and still callable when the async one is.
+            return _SyncResource(attr)
         if not callable(attr):
             return attr
 
@@ -225,6 +240,18 @@ class _SyncResource:
         return _call
 
 
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        result = self._async(*args, **kwargs)
+        if asyncio.iscoroutine(result):
+            return _run_blocking(result)
+        return result
+
+
+def _is_nested_resource(attr: Any) -> bool:
+    """An attribute that is itself a resource object, not a method or a value."""
+    return hasattr(attr, "_http") and not inspect.ismethod(attr)
+
+
 class _SyncAgentNamespace:
     """Blocking facade for the nested agent namespace."""
 
@@ -232,11 +259,20 @@ class _SyncAgentNamespace:
         self.voice = _SyncResource(async_namespace.voice)
 
 
+# One loop per thread, reused by every blocking call: the pooled httpx
+# connections bind to the loop that opened them, so a fresh ``asyncio.run``
+# per call left the second call on a closed loop ("Event loop is closed").
+_THREAD_LOOP = threading.local()
+
+
 def _run_blocking(coro: Any) -> Any:
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(coro)
+        loop = getattr(_THREAD_LOOP, "loop", None)
+        if loop is None or loop.is_closed():
+            loop = _THREAD_LOOP.loop = asyncio.new_event_loop()
+        return loop.run_until_complete(coro)
     raise RuntimeError(
         "Client cannot be used from a running event loop; use AsyncClient"
     )
