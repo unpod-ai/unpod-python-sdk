@@ -43,7 +43,8 @@ async def test_handler_runs_entrypoint_with_call_started_context() -> None:
 
     ws = _FakeWS(
         inbound=[
-            '{"event":"hello.ack","protocol_version":1,"negotiated_events":[],"negotiated_verbs":[],'
+            '{"event":"hello.ack","protocol_version":2,'
+            '"negotiated_events":[],"negotiated_verbs":[],'
             '"call_id":"s1","session_id":"s1","job_id":"j1","room_id":"s1"}',
             '{"event":"call.started","session_id":"s1","job_id":"j1",'
             '"room_id":"s1","metadata":{"user_number":"+91-x",'
@@ -70,7 +71,8 @@ async def test_handler_advertises_turn_metrics() -> None:
 
     ws = _FakeWS(
         inbound=[
-            '{"event":"hello.ack","protocol_version":1,"negotiated_events":[],"negotiated_verbs":[],'
+            '{"event":"hello.ack","protocol_version":2,'
+            '"negotiated_events":[],"negotiated_verbs":[],'
             '"call_id":"s1","session_id":"s1","job_id":"j1","room_id":"s1"}',
             '{"event":"call.started","session_id":"s1","job_id":"j1",'
             '"room_id":"s1","metadata":{}}',
@@ -114,7 +116,8 @@ async def test_handler_session_bound_can_say() -> None:
 
     ws = _FakeWS(
         inbound=[
-            '{"event":"hello.ack","protocol_version":1,"negotiated_events":[],"negotiated_verbs":[],'
+            '{"event":"hello.ack","protocol_version":2,'
+            '"negotiated_events":[],"negotiated_verbs":[],'
             '"call_id":"s1","session_id":"s1","job_id":"j1","room_id":"s1"}',
             '{"event":"call.started","session_id":"s1","job_id":"j1",'
             '"room_id":"s1","metadata":{}}',
@@ -144,7 +147,8 @@ async def test_handler_fires_async_callbacks_with_final_state() -> None:
 
     ws = _FakeWS(
         inbound=[
-            '{"event":"hello.ack","protocol_version":1,"negotiated_events":[],"negotiated_verbs":[],'
+            '{"event":"hello.ack","protocol_version":2,'
+            '"negotiated_events":[],"negotiated_verbs":[],'
             '"call_id":"s1","session_id":"s1","job_id":"j1","room_id":"s1"}',
             '{"event":"call.started","session_id":"s1","job_id":"j1",'
             '"room_id":"s1","metadata":{}}',
@@ -177,7 +181,8 @@ async def test_handler_on_call_end_failed_when_entrypoint_raises() -> None:
 
     ws = _FakeWS(
         inbound=[
-            '{"event":"hello.ack","protocol_version":1,"negotiated_events":[],"negotiated_verbs":[],'
+            '{"event":"hello.ack","protocol_version":2,'
+            '"negotiated_events":[],"negotiated_verbs":[],'
             '"call_id":"s1","session_id":"s1","job_id":"j1","room_id":"s1"}',
             '{"event":"call.started","session_id":"s1","job_id":"j1",'
             '"room_id":"s1","metadata":{}}',
@@ -212,7 +217,8 @@ async def test_handler_no_callbacks_on_pre_call_abort() -> None:
 
     ws = _FakeWS(
         inbound=[
-            '{"event":"hello.ack","protocol_version":1,"negotiated_events":[],"negotiated_verbs":[],'
+            '{"event":"hello.ack","protocol_version":2,'
+            '"negotiated_events":[],"negotiated_verbs":[],'
             '"call_id":"s1","session_id":"s1","job_id":"j1","room_id":"s1"}',
             '{"event":"user.text","text":"hi"}',
         ]
@@ -251,7 +257,8 @@ async def test_handler_handshake_timeout_closes_without_hang() -> None:
 
     ws = _HangingWS(
         inbound=[
-            '{"event":"hello.ack","protocol_version":1,"negotiated_events":[],"negotiated_verbs":[],'
+            '{"event":"hello.ack","protocol_version":2,'
+            '"negotiated_events":[],"negotiated_verbs":[],'
             '"call_id":"s1","session_id":"s1","job_id":"j1","room_id":"s1"}',
         ]
     )
