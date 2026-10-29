@@ -8,6 +8,10 @@ While the SDK is pre-1.0, breaking changes ship in a **minor** bump.
 
 ## [Unreleased]
 
+### Added
+- `client.agents.tools.get(agent_id)` / `set(agent_id, handover=, voicemail=)`: typed per-agent handover and voicemail config (`ToolsConfig`, `HandoverTool`, `VoicemailTool`); `tools=` on `agents.voice.create`, and `agents.update(tools=)` takes a `ToolsConfig`.
+- `AgentTransferVerb.fallback_targets`: further targets the worker tries in order when the first cannot be reached.
+
 ## [0.5.1] - 2026-10-28
 
 ### Added

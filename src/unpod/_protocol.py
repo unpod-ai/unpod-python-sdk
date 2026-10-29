@@ -290,6 +290,12 @@ class AgentTransferVerb(BaseModel):
     target: str
     mode: Literal["cold", "warm"] = "cold"
     announcement: str = ""
+    #: Further targets to try, in order, when ``target`` cannot be reached.
+    #: The WORKER walks this list: ``Session.transfer`` returns as soon as the
+    #: verb is queued, so a caller-side loop would dial every number at once and
+    #: never learn which one answered. The worker re-checks the destination
+    #: policy for every entry.
+    fallback_targets: list[str] = Field(default_factory=list)
 
 
 class AgentEndCallVerb(BaseModel):
