@@ -91,12 +91,20 @@ def _flow_id(flow: FlowRef) -> str:
 
 
 def _body(flow: Any) -> dict[str, Any]:
-    """A ``Flow`` sends its declared fields only; a builder (``unpod.flows``)
-    sends its definition; a dict is sent as given."""
+    """A ``Flow`` sends its declared fields plus any author key it carries
+    undeclared (``_AUTHOR_KEYS``); a builder (``unpod.flows``) sends its
+    definition; a dict is sent as given.
+
+    The author keys matter on ``update(id, await get(id))``: a stored flow
+    comes back with fields this SDK may not declare (``description``, review
+    settings from a newer service), and dropping them wrote a version without
+    them, silently switching ``agentic_review_sensitive`` off."""
     if hasattr(flow, "to_definition"):
         return flow.to_definition()
     if isinstance(flow, Flow):
-        return flow.model_dump(mode="json", exclude_none=True, include=set(Flow.model_fields))
+        dumped = flow.model_dump(mode="json", exclude_none=True)
+        keep = set(Flow.model_fields) | set(_AUTHOR_KEYS)
+        return {key: value for key, value in dumped.items() if key in keep}
     return flow
 
 

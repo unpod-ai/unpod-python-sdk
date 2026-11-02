@@ -76,6 +76,39 @@ async def test_flows_read_update_validate(client):
 
 
 @pytest.mark.anyio
+async def test_update_with_a_fetched_flow_keeps_review_settings(client):
+    """update(id, await get(id)) must not switch review off or drop the
+    description: both come back on the stored flow (review 2026-11-02)."""
+    stored = {**FLOW, "version": 3, "description": "Support desk",
+              "agentic_review_sensitive": True, "agentic_review_topics": ["pricing"],
+              "exit_outcomes": ["resolved"], "created": "2026-11-01T00:00:00Z"}
+    with patch.object(client.flows._http, "put", new_callable=AsyncMock) as put, \
+         patch.object(client.flows._http, "get", new_callable=AsyncMock) as get:
+        get.return_value = stored
+        put.return_value = {**stored, "version": 4}
+        flow = await client.flows.get("f1")
+        assert flow.agentic_review_sensitive is True
+        assert flow.agentic_review_topics == ["pricing"]
+        await client.flows.update("f1", flow)
+        body = put.await_args.kwargs["json"]
+        assert body["agentic_review_sensitive"] is True
+        assert body["agentic_review_topics"] == ["pricing"]
+        assert body["description"] == "Support desk"
+        assert body["exit_outcomes"] == ["resolved"]
+        assert "created" not in body  # a storage stamp, not an author key
+
+
+def test_a_flow_without_review_settings_sends_none():
+    """Unset review fields stay out of the body, so an older service that does
+    not know them is not sent unknown keys."""
+    from unpod.management.flows import _body
+
+    body = _body(Flow(name="x"))
+    assert "agentic_review_sensitive" not in body
+    assert "agentic_review_topics" not in body
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize(("method", "path"), [("activate", "activate"), ("pause", "deactivate"), ("archive", "archive")])
 async def test_flows_status_switches(client, method, path):
     with patch.object(client.flows._http, "post", new_callable=AsyncMock) as post:

@@ -84,6 +84,12 @@ class Flow(BaseModel):
     agentic_tools: list[str] = Field(default_factory=list)
     agentic_plan: str | None = None
     agentic_follow_ups: bool = True
+    #: Hold the agent's sensitive replies for a person to review first.
+    #: ``None`` (left out) keeps what the service stores: an update built from
+    #: ``flows.get`` must carry these, or it switches review off.
+    agentic_review_sensitive: bool | None = None
+    #: Extra author-named topics that count as sensitive.
+    agentic_review_topics: list[str] | None = None
 
 
 class JourneyStartResult(BaseModel):
