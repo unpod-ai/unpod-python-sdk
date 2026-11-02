@@ -631,6 +631,42 @@ Outbound dispatch also passes a publish gate on the platform side that a
 registered Agent Runner alone does not satisfy — see
 [01-quickstart.md § Known gaps](01-quickstart.md#known-gaps) (#2).
 
+### `calls.attach` — put an agent in a room you already have
+
+```python
+call = await client.calls.attach(
+    room_name="my-livekit-room",    # existing room in the same LiveKit project
+    agent_id="my-voice-agent",      # agent_id OR pipe_id, one is required
+    from_number="+14155550101",
+    to_number="+19995550001",
+    direction="inbound",            # or "outbound"
+    data={"metadata": {"task_id": "T1"}, "context": {"tier": "gold"}},
+    callback_url="https://example.com/call-events",
+    callback_secret="whsec_…",
+)
+print(call.call_id, call.status)
+```
+
+Attaches a platform agent to an **existing** LiveKit room (same LiveKit project)
+that the platform does not own. This is not `numbers.attach`, which binds a phone
+number to an agent.
+
+| Argument | Rule |
+|---|---|
+| `room_name` | Required |
+| `agent_id` / `pipe_id` | At least one must be non-empty, else `ValueError` before any request |
+| `from_number`, `to_number`, `data`, `callback_url`, `callback_secret` | Sent only when not `None` |
+| `direction` | Always sent; defaults to `"inbound"` |
+
+Behaviour:
+
+- Idempotent per `room_name`: a repeat returns the existing live call.
+- The platform never deletes the room. `calls.hangup` on an attached call removes only the platform's agent from it.
+- `data["metadata"]` is echoed on call events. `data["context"]` goes to the agent and is never stored or returned.
+- `callback_url` / `callback_secret` give you signed call events.
+
+Errors: 404 `agent_not_found` / `room_not_found`; 409 `room_busy` / `admission_refused` (with a `reason`); 503 `claims_unavailable`; 402 when the org is blocked.
+
 ## Sessions — and the three things called `Session`
 
 The name collides three ways. They are unrelated types, and only the first is a

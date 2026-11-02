@@ -190,6 +190,14 @@ async def test_calls_attach_requires_agent_or_pipe(client: AsyncClient):
         mock_post.assert_not_called()
 
 
+@pytest.mark.anyio
+async def test_calls_attach_empty_agent_id_raises(client: AsyncClient):
+    with patch.object(client.calls._http, "post", new_callable=AsyncMock) as mock_post:
+        with pytest.raises(ValueError):
+            await client.calls.attach(room_name="r1", agent_id="")
+        mock_post.assert_not_called()
+
+
 def test_sync_client_calls_attach():
     from unpod import Client
     from unpod.models import Call

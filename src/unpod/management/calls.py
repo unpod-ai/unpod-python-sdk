@@ -99,12 +99,19 @@ class CallsResource:
     ) -> Call:
         """Attach a platform agent to an existing LiveKit room.
 
-        Provide ``agent_id`` OR ``pipe_id``; raises :class:`ValueError` if
-        neither is given. ``data`` is opaque and passed through untouched.
-        ``callback_secret`` signs the callbacks sent to ``callback_url``; it is
-        sent as-is and never logged.
+        The room belongs to you, not the platform. Provide ``agent_id`` OR
+        ``pipe_id``; raises :class:`ValueError` if neither is non-empty.
+
+        Idempotent per ``room_name``: a repeat returns the existing live call.
+        The platform never deletes the room; :meth:`hangup` on an attached call
+        removes only the platform's agent.
+
+        ``data["metadata"]`` is echoed on call events; ``data["context"]`` goes
+        to the agent and is never stored or returned. ``data`` is otherwise
+        passed through untouched. ``callback_secret`` signs events sent to
+        ``callback_url``; it is never logged.
         """
-        if agent_id is None and pipe_id is None:
+        if not (agent_id or pipe_id):
             raise ValueError("attach requires agent_id or pipe_id")
         body: dict[str, Any] = {"room_name": room_name, "direction": direction}
         optional = {
