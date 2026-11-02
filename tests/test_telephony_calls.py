@@ -1,17 +1,16 @@
 """Tests for SBC call control: ``client.telephony.calls`` / ``inbound`` and
 ``parse_call_event``.
 
-The proxy routes are provisional (``CALL_API_PATHS``), so these tests check
-request shapes against the OpenAPI contract and look routes up from that table
-instead of hard-coding them.
+Request shapes follow the OpenAPI contract; routes are looked up from
+``CALL_API_PATHS`` (the UNPO-154 proxy) except where a test pins them.
 """
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import hmac
 import json
+import time
 from urllib.parse import urlencode
 
 import httpx
@@ -26,6 +25,7 @@ from unpod.telephony import (
     TelephonyNamespace,
     WebhookSignatureError,
     parse_call_event,
+    verify_signature,
 )
 
 
@@ -281,6 +281,36 @@ def test_sync_client_exposes_calls_and_inbound():
     assert callable(sync.inbound.get_trunk)
 
 
+@pytest.mark.anyio
+async def test_proxy_detail_error_maps_to_code():
+    req = httpx.Request("POST", "https://x.test/")
+    resp = httpx.Response(403, request=req, json={"detail": "call_api_disabled"})
+    http = _FakeHTTP(error=httpx.HTTPStatusError("403", request=req, response=resp))
+    with pytest.raises(TelephonyAPIError) as exc:
+        await TelephonyNamespace(http).calls.create("+911", "+912")
+    assert exc.value.code == "call_api_disabled" and exc.value.status_code == 403
+
+
+def test_paths_target_the_sbc_proxy():
+    assert CALL_API_PATHS["create_call"] == "/sbc/v1/calls"
+    assert CALL_API_PATHS["remove_participant"] == "/sbc/v1/calls/{call_id}/participants/{leg_id}"
+    assert all(p.startswith("/sbc/") for p in CALL_API_PATHS.values())
+
+
+@pytest.mark.anyio
+async def test_webhook_secret_get_and_rotate():
+    http = _FakeHTTP(
+        {
+            ("GET", _p("get_webhook_secret")): {"secret": "ab…yz", "version": 1},
+            ("POST", _p("rotate_webhook_secret")): {"secret": "full", "version": 2, "pushed_to_sbc": False},
+        }
+    )
+    ns = TelephonyNamespace(http)
+    assert (await ns.webhook_secret.get()).version == 1
+    rotated = await ns.webhook_secret.rotate()
+    assert rotated.secret == "full" and rotated.pushed_to_sbc is False
+
+
 # ── parse_call_event ─────────────────────────────────────────────────────────
 
 SECRET = "s3cret"
@@ -301,9 +331,10 @@ FORM = {
 }
 
 
-def _sign(body: bytes, b64: bool = False) -> str:
-    digest = hmac.new(SECRET.encode(), body, hashlib.sha256).digest()
-    return base64.b64encode(digest).decode() if b64 else digest.hex()
+def _sign(body: bytes, ts: int | None = None, secret: str = SECRET) -> str:
+    ts = int(time.time()) if ts is None else ts
+    digest = hmac.new(secret.encode(), f"{ts}.".encode() + body, hashlib.sha256).hexdigest()
+    return f"t={ts},v1={digest}"
 
 
 def test_parse_form_event():
@@ -321,22 +352,41 @@ def test_parse_form_event():
     assert ev.raw["MPCUUID"] == "c1"
 
 
-def test_parse_json_event_base64_signature_custom_header():
+def test_parse_json_event_custom_header():
     body = json.dumps({**FORM, "Duration": 17}).encode()
     ev = parse_call_event(
         body.decode(),
-        {"Content-Type": "application/json", "X-Sig": "sha256=" + _sign(body, b64=True)},
+        {"Content-Type": "application/json", "X-Sig": _sign(body)},
         SECRET,
         signature_header="X-Sig",
     )
     assert ev.duration == 17 and ev.event_id == "e4"
 
 
+def test_signature_matches_supersbc_signer():
+    # Same inputs as SuperSBC's signer: HMAC-SHA256(secret, "<ts>.<body>"), hex.
+    body = b'{"EventName":"Ringing"}'
+    digest = hmac.new(b"k", b'1700000000.{"EventName":"Ringing"}', hashlib.sha256).hexdigest()
+    header = f"t=1700000000,v1={digest}"
+    assert verify_signature(body, header, "k", now=1700000010)
+    assert not verify_signature(body, header, "k", now=1700000000 + 301)
+    assert verify_signature(body, header, "k", tolerance=None, now=0)
+    assert not verify_signature(body, header, "other", now=1700000010)
+
+
+def test_stale_signature_rejected():
+    body = urlencode(FORM).encode()
+    old = _sign(body, ts=int(time.time()) - 3600)
+    with pytest.raises(WebhookSignatureError):
+        parse_call_event(body, {"X-Webhook-Signature": old}, SECRET)
+    assert parse_call_event(body, {"X-Webhook-Signature": old}, SECRET, tolerance=None).call_id == "c1"
+
+
 def test_parse_recording_event():
     body = urlencode(
         {"EventName": "RecordingCompleted", "MPCUUID": "c1", "RecordingURL": "https://r/x.wav", "RecordingDuration": "30"}
     ).encode()
-    ev = parse_call_event(body, {"X-Webhook-Signature": _sign(body).upper()}, SECRET)
+    ev = parse_call_event(body, {"X-Webhook-Signature": _sign(body)}, SECRET)
     assert ev.event == "RecordingCompleted" and ev.recording_duration == 30
 
 

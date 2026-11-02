@@ -38,6 +38,8 @@ from unpod.telephony.calls import (
     Recording,
     TelephonyAPIError,
     TelephonyCall,
+    WebhookSecret,
+    WebhookSecretResource,
 )
 from unpod.telephony.events import (
     CallEvent,
@@ -348,6 +350,7 @@ class TelephonyNamespace:
         self.trunks = TrunksResource(http)
         self.calls = CallsResource(http)
         self.inbound = InboundResource(http)
+        self.webhook_secret = WebhookSecretResource(http)
 
     async def overview(self) -> list[NumberOverview]:
         """Per-number lifecycle + cross-plane sync state for the org."""
@@ -379,6 +382,8 @@ __all__ = [
     "TelephonyNamespace",
     "Trunk",
     "TrunksResource",
+    "WebhookSecret",
+    "WebhookSecretResource",
     "WebhookSignatureError",
     "parse_call_event",
     "verify_signature",

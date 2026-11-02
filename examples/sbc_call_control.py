@@ -1,4 +1,4 @@
-"""SBC call control through the SDK only (preview; the proxy API is not live yet).
+"""SBC call control through the SDK only (preview), via the unpod call-API proxy.
 
 Dials party A, adds party B, plays a prompt, then ends the call. Use only
 ``local_`` / ``qa_`` test numbers and trunks: QA and Prod share one SBC.
@@ -8,7 +8,7 @@ Usage:
 
 Required env vars:
     UNPOD_PLATFORM_TOKEN
-    UNPOD_ORG_HANDLE
+    UNPOD_ORG_HANDLE   (the org needs the call API switched on)
 """
 
 from __future__ import annotations

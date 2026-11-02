@@ -7,9 +7,10 @@ The SDK never talks to the SBC directly and never holds an SBC key.
 These are SBC calls (legs, participants, audio, transfer, DTMF, recording). They
 are not the agent calls at ``client.calls``.
 
-The proxy routes are not final yet. Every route lives in :data:`CALL_API_PATHS`
-so they can be updated in one place. Until the proxy ships these calls return
-whatever the backend returns for an unknown route (usually 404).
+Every route lives in :data:`CALL_API_PATHS` (the UNPO-154 proxy under
+``/api/v2/platform/sbc/``). The org must have the call API switched on, or the
+proxy answers 403 ``call_api_disabled``. Where SuperSBC has not built a route
+yet, the proxy passes SuperSBC's error through.
 """
 
 from __future__ import annotations
@@ -25,30 +26,39 @@ from unpod.management._http import AsyncHTTPClient, unwrap_data
 
 # ── routes ───────────────────────────────────────────────────────────────────
 
-# PROVISIONAL: the proxy API is not built yet. These follow the OpenAPI paths
-# under the existing ``/telephony/`` platform prefix. Fill in the final routes
-# here once the proxy is ready; nothing else in this module hard-codes a path.
+# Routes of the unpod call-API proxy (backend-core ``unpod/sbc/urls.py``,
+# UNPO-154), mounted at ``/api/v2/platform/sbc/``. The proxy is
+# path-transparent: ``/sbc/v1/<resource>`` forwards to SuperSBC
+# ``/api/v1/<resource>``. Paths here are relative to the platform base
+# (``.../api/v2/platform``). The proxy accepts them with or without a
+# trailing slash.
+#
+# Not served by the proxy yet: the ``*_inbound`` routes (SuperSBC has them,
+# the proxy read allowlist does not). They follow the same path-transparent
+# shape so they work unchanged once the proxy adds them.
 CALL_API_PATHS: dict[str, str] = {
-    "create_call": "/telephony/calls/",
-    "list_calls": "/telephony/calls/",
-    "get_call": "/telephony/calls/{call_id}/",
-    "end_call": "/telephony/calls/{call_id}/",
-    "hangup_call": "/telephony/calls/{call_id}/hangup/",
-    "add_participant": "/telephony/calls/{call_id}/participants/",
-    "remove_participant": "/telephony/calls/{call_id}/participants/{leg_id}/",
-    "play_audio": "/telephony/calls/{call_id}/play/",
-    "stop_audio": "/telephony/calls/{call_id}/play/",
-    "speak": "/telephony/calls/{call_id}/speak/",
-    "transfer": "/telephony/calls/{call_id}/transfer/",
-    "transfer_complete": "/telephony/calls/{call_id}/transfer/complete/",
-    "transfer_cancel": "/telephony/calls/{call_id}/transfer/cancel/",
-    "send_dtmf": "/telephony/calls/{call_id}/dtmf/",
-    "record": "/telephony/calls/{call_id}/record/",
-    "get_recording": "/telephony/calls/{call_id}/recording/",
-    "set_did_inbound": "/telephony/dids/{number}/inbound/",
-    "get_did_inbound": "/telephony/dids/{number}/inbound/",
-    "set_trunk_inbound": "/telephony/trunks/{name}/inbound/",
-    "get_trunk_inbound": "/telephony/trunks/{name}/inbound/",
+    "create_call": "/sbc/v1/calls",
+    "list_calls": "/sbc/v1/calls",
+    "get_call": "/sbc/v1/calls/{call_id}",
+    "end_call": "/sbc/v1/calls/{call_id}",
+    "hangup_call": "/sbc/v1/calls/{call_id}/hangup",
+    "add_participant": "/sbc/v1/calls/{call_id}/participants",
+    "remove_participant": "/sbc/v1/calls/{call_id}/participants/{leg_id}",
+    "play_audio": "/sbc/v1/calls/{call_id}/play",
+    "stop_audio": "/sbc/v1/calls/{call_id}/play",
+    "speak": "/sbc/v1/calls/{call_id}/speak",
+    "transfer": "/sbc/v1/calls/{call_id}/transfer",
+    "transfer_complete": "/sbc/v1/calls/{call_id}/transfer/complete",
+    "transfer_cancel": "/sbc/v1/calls/{call_id}/transfer/cancel",
+    "send_dtmf": "/sbc/v1/calls/{call_id}/dtmf",
+    "record": "/sbc/v1/calls/{call_id}/record",
+    "get_recording": "/sbc/v1/calls/{call_id}/recording",
+    "set_did_inbound": "/sbc/v1/dids/{number}/inbound",
+    "get_did_inbound": "/sbc/v1/dids/{number}/inbound",
+    "set_trunk_inbound": "/sbc/v1/trunks/{name}/inbound",
+    "get_trunk_inbound": "/sbc/v1/trunks/{name}/inbound",
+    "get_webhook_secret": "/sbc/webhook-secret",
+    "rotate_webhook_secret": "/sbc/webhook-secret/rotate",
 }
 
 
@@ -87,8 +97,10 @@ class TelephonyAPIError(Exception):
 def _to_api_error(exc: httpx.HTTPStatusError) -> TelephonyAPIError:
     """Map an HTTP error onto :class:`TelephonyAPIError`.
 
-    Accepts the SBC shape ``{"error", "code"}`` and the backend-core envelope
-    ``{"status_code", "message", "data"}``, since the proxy may pass either.
+    Accepts the SuperSBC shape ``{"error", "code"}`` (passed through by the
+    proxy), the proxy's own ``{"detail": "<code>", "message"}`` (for example
+    ``call_api_disabled``, ``from_not_owned``) and the backend-core envelope
+    ``{"status_code", "message", "data"}``.
     """
     resp = exc.response
     try:
@@ -99,8 +111,12 @@ def _to_api_error(exc: httpx.HTTPStatusError) -> TelephonyAPIError:
     message = resp.reason_phrase or "error"
     if isinstance(body, dict):
         inner = body.get("data") if isinstance(body.get("data"), dict) else {}
-        code = body.get("code") or inner.get("code")
-        message = str(body.get("error") or body.get("message") or inner.get("error") or message)
+        # SuperSBC: {"error", "code"}; the proxy's own: {"detail": code, "message"}.
+        detail = body.get("detail") if isinstance(body.get("detail"), str) else None
+        code = body.get("code") or inner.get("code") or detail
+        message = str(
+            body.get("error") or body.get("message") or inner.get("error") or detail or message
+        )
     return TelephonyAPIError(resp.status_code, code, message, body)
 
 
@@ -594,6 +610,40 @@ class InboundResource:
         return InboundConfig(**(unwrap_data(resp) or {}))
 
 
+class WebhookSecret(BaseModel):
+    """The org's call-event signing secret.
+
+    ``get`` returns it masked; ``rotate`` returns the new secret in full once.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    secret: str | None = None
+    version: int | None = None
+    pushed_to_sbc: bool | None = None
+
+
+class WebhookSecretResource:
+    """``client.telephony.webhook_secret``: the secret that signs call events.
+
+    Pass it to :func:`unpod.telephony.parse_call_event`. Only an org admin can
+    rotate it.
+    """
+
+    def __init__(self, http: AsyncHTTPClient) -> None:
+        self._http = http
+
+    async def get(self) -> WebhookSecret:
+        """The masked secret and its version."""
+        resp = await _call(self._http.get(_path("get_webhook_secret")))
+        return WebhookSecret(**(unwrap_data(resp) or {}))
+
+    async def rotate(self) -> WebhookSecret:
+        """Issue a new secret version; the full secret is returned only here."""
+        resp = await _call(self._http.post(_path("rotate_webhook_secret"), json={}))
+        return WebhookSecret(**(unwrap_data(resp) or {}))
+
+
 __all__ = [
     "CALL_API_PATHS",
     "CallList",
@@ -605,4 +655,6 @@ __all__ = [
     "Recording",
     "TelephonyAPIError",
     "TelephonyCall",
+    "WebhookSecret",
+    "WebhookSecretResource",
 ]

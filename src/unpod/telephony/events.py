@@ -4,19 +4,22 @@ Call events arrive at ``status_callback_url`` either form-encoded (default) or
 as JSON. Field names follow Plivo (``CallUUID``, ``MPCUUID``, ``EventName``), so
 this module maps them to snake_case on :class:`CallEvent`.
 
-PROVISIONAL: the contract only says "HMAC signature header". Until the header
-name and the signed bytes are final, both can be set per call. The defaults are
-HMAC-SHA256 over the raw request body in the ``X-Webhook-Signature`` header,
-which is what SuperSBC webhooks use today. Hex and base64 digests are accepted,
-with or without a ``sha256=`` prefix.
+Signature: SuperSBC signs every callback Stripe-style
+(``src/proxy/webhook/signer.rs``):
+
+    X-Webhook-Signature: t=<unix ts>,v1=<hex HMAC-SHA256(secret, "<ts>.<raw body>")>
+
+The secret is the org's call-event secret
+(``client.telephony.webhook_secret``). :func:`parse_call_event` rejects a
+timestamp older than ``tolerance`` seconds to limit replays.
 """
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import hmac
 import json
+import time
 from collections.abc import Mapping
 from typing import Any
 from urllib.parse import parse_qsl
@@ -24,6 +27,7 @@ from urllib.parse import parse_qsl
 from pydantic import BaseModel, ConfigDict, Field
 
 DEFAULT_SIGNATURE_HEADER = "X-Webhook-Signature"
+DEFAULT_TOLERANCE_SECS = 300
 
 
 class WebhookSignatureError(Exception):
@@ -101,28 +105,50 @@ def _header(headers: Mapping[str, str], name: str) -> str | None:
     return None
 
 
+def _parse_signature_header(value: str) -> tuple[int | None, list[str]]:
+    """Split ``t=<ts>,v1=<hex>[,v1=<hex>]`` into the timestamp and digests."""
+    ts: int | None = None
+    sigs: list[str] = []
+    for part in value.split(","):
+        key, _, val = part.strip().partition("=")
+        if key == "t":
+            try:
+                ts = int(val)
+            except ValueError:
+                return None, []
+        elif key == "v1" and val:
+            sigs.append(val)
+    return ts, sigs
+
+
 def verify_signature(
     body: bytes,
     signature: str | None,
     secret: str | bytes,
+    *,
+    tolerance: int | None = DEFAULT_TOLERANCE_SECS,
+    now: float | None = None,
 ) -> bool:
-    """True when ``signature`` is HMAC-SHA256 of ``body`` under ``secret``.
+    """True when ``signature`` is a valid SuperSBC ``t=..,v1=..`` header for ``body``.
 
-    Constant-time comparison. Accepts hex or base64, optionally ``sha256=``.
+    The signed payload is ``"<t>.<body>"``. Comparison is constant-time. With a
+    ``tolerance`` (seconds), a timestamp further than that from ``now`` fails;
+    pass ``tolerance=None`` to skip the age check.
     """
     if not signature:
         return False
+    ts, sigs = _parse_signature_header(signature)
+    if ts is None or not sigs:
+        return False
+    if tolerance is not None:
+        current = time.time() if now is None else now
+        if abs(current - ts) > tolerance:
+            return False
     key = secret.encode() if isinstance(secret, str) else secret
-    digest = hmac.new(key, body, hashlib.sha256).digest()
-    sig = signature.strip()
-    if sig.lower().startswith("sha256="):
-        sig = sig[len("sha256=") :]
+    expected = hmac.new(key, f"{ts}.".encode() + body, hashlib.sha256).hexdigest().encode()
     # Compare bytes: compare_digest raises TypeError on non-ASCII str input,
     # and a forged header must fail verification, not crash the handler.
-    sig_bytes = sig.encode("utf-8")
-    return hmac.compare_digest(sig_bytes.lower(), digest.hex().encode()) or hmac.compare_digest(
-        sig_bytes, base64.b64encode(digest)
-    )
+    return any(hmac.compare_digest(sig.encode("utf-8").lower(), expected) for sig in sigs)
 
 
 def _decode(body: bytes, content_type: str | None) -> dict[str, Any]:
@@ -165,6 +191,7 @@ def parse_call_event(
     secret: str | bytes | None,
     *,
     signature_header: str = DEFAULT_SIGNATURE_HEADER,
+    tolerance: int | None = DEFAULT_TOLERANCE_SECS,
     verify: bool = True,
 ) -> CallEvent:
     """Verify a call webhook and return it as a :class:`CallEvent`.
@@ -172,20 +199,23 @@ def parse_call_event(
     Pass the raw request body exactly as received (before any form or JSON
     parsing) and the request headers. ``Content-Type`` decides form vs JSON.
 
-    Raises :class:`WebhookSignatureError` when the signature is missing or
-    wrong. ``verify=False`` skips the check; use it only in local tests.
+    Raises :class:`WebhookSignatureError` when the signature is missing, wrong
+    or older than ``tolerance`` seconds. ``verify=False`` skips the check; use it only in local tests.
     """
     raw_body = body.encode("utf-8") if isinstance(body, str) else body
     if verify:
         if not secret:
             raise WebhookSignatureError("a secret is required to verify the webhook")
-        if not verify_signature(raw_body, _header(headers, signature_header), secret):
+        if not verify_signature(
+            raw_body, _header(headers, signature_header), secret, tolerance=tolerance
+        ):
             raise WebhookSignatureError("invalid or missing webhook signature")
     return _normalize(_decode(raw_body, _header(headers, "Content-Type")))
 
 
 __all__ = [
     "DEFAULT_SIGNATURE_HEADER",
+    "DEFAULT_TOLERANCE_SECS",
     "CallEvent",
     "WebhookSignatureError",
     "parse_call_event",
