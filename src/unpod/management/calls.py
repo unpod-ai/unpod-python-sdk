@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from unpod.management._http import AsyncHTTPClient, unwrap_data
 from unpod.models import Call
@@ -83,6 +83,41 @@ class CallsResource:
         if data is not None:
             body["data"] = data
         resp = unwrap_data(await self._http.post("/api/v2/platform/speech/v1/calls", json=body))
+        return Call(**resp)
+
+    async def attach(
+        self,
+        room_name: str,
+        agent_id: str | None = None,
+        pipe_id: str | None = None,
+        from_number: str | None = None,
+        to_number: str | None = None,
+        direction: Literal["inbound", "outbound"] = "inbound",
+        data: dict[str, Any] | None = None,
+        callback_url: str | None = None,
+        callback_secret: str | None = None,
+    ) -> Call:
+        """Attach a platform agent to an existing LiveKit room.
+
+        Provide ``agent_id`` OR ``pipe_id``; raises :class:`ValueError` if
+        neither is given. ``data`` is opaque and passed through untouched.
+        ``callback_secret`` signs the callbacks sent to ``callback_url``; it is
+        sent as-is and never logged.
+        """
+        if agent_id is None and pipe_id is None:
+            raise ValueError("attach requires agent_id or pipe_id")
+        body: dict[str, Any] = {"room_name": room_name, "direction": direction}
+        optional = {
+            "agent_id": agent_id,
+            "pipe_id": pipe_id,
+            "from_number": from_number,
+            "to_number": to_number,
+            "data": data,
+            "callback_url": callback_url,
+            "callback_secret": callback_secret,
+        }
+        body.update({k: v for k, v in optional.items() if v is not None})
+        resp = unwrap_data(await self._http.post("/api/v2/platform/speech/v1/calls/attach", json=body))
         return Call(**resp)
 
     async def hangup(self, call_id: str) -> Call:
