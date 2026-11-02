@@ -312,6 +312,8 @@ class _SyncTelephonyNamespace:
         self._async = async_ns
         self.numbers = _SyncResource(async_ns.numbers)
         self.trunks = _SyncResource(async_ns.trunks)
+        self.calls = _SyncResource(async_ns.calls)
+        self.inbound = _SyncResource(async_ns.inbound)
 
     def overview(self) -> Any:
         return _run_blocking(self._async.overview())

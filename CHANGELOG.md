@@ -8,6 +8,11 @@ While the SDK is pre-1.0, breaking changes ship in a **minor** bump.
 
 ## [Unreleased]
 
+### Added
+- Preview: SBC call control at `client.telephony.calls` (`create`, `list`, `get`, `end`, `hangup`, `add_participant`, `remove_participant`, `play_audio`, `stop_audio`, `speak`, `transfer`, `transfer_complete`, `transfer_cancel`, `send_dtmf`, `record`, `get_recording`) and `client.telephony.inbound` (trunk and DID inbound config), per the SuperSBC call API contract. The proxy routes are provisional (`unpod.telephony.CALL_API_PATHS`) until the backend ships them.
+- `unpod.telephony.parse_call_event()`: verifies the webhook HMAC-SHA256 signature and normalizes form or JSON call and recording events into `CallEvent`.
+- `TelephonyAPIError` carrying the contract error `code`.
+
 ## [0.6.0] - 2026-11-02
 
 ### Added

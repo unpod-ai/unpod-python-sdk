@@ -27,6 +27,24 @@ from collections.abc import Sequence
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from unpod.management._http import AsyncHTTPClient, unwrap_data
+from unpod.telephony.calls import (
+    CALL_API_PATHS,
+    CallList,
+    CallsResource,
+    InboundConfig,
+    InboundResource,
+    Leg,
+    PlayResult,
+    Recording,
+    TelephonyAPIError,
+    TelephonyCall,
+)
+from unpod.telephony.events import (
+    CallEvent,
+    WebhookSignatureError,
+    parse_call_event,
+    verify_signature,
+)
 
 
 def _as_number_list(numbers: "str | Sequence[str]") -> list[str]:
@@ -321,12 +339,15 @@ class TrunksResource:
 
 
 class TelephonyNamespace:
-    """``client.telephony`` — numbers, trunks, and a lifecycle overview."""
+    """``client.telephony`` — numbers, trunks, a lifecycle overview, and SBC
+    call control (``calls``, ``inbound``)."""
 
     def __init__(self, http: AsyncHTTPClient) -> None:
         self._http = http
         self.numbers = NumbersResource(http)
         self.trunks = TrunksResource(http)
+        self.calls = CallsResource(http)
+        self.inbound = InboundResource(http)
 
     async def overview(self) -> list[NumberOverview]:
         """Per-number lifecycle + cross-plane sync state for the org."""
@@ -335,16 +356,30 @@ class TelephonyNamespace:
 
 
 __all__ = [
+    "CALL_API_PATHS",
     "AgentAttachResult",
     "AgentDetachResult",
     "AttachResult",
+    "CallEvent",
+    "CallList",
+    "CallsResource",
     "DetachResult",
+    "InboundConfig",
+    "InboundResource",
+    "Leg",
     "Number",
     "NumberOverview",
     "NumberResult",
     "NumbersResource",
     "OriginEndpoint",
+    "PlayResult",
+    "Recording",
+    "TelephonyAPIError",
+    "TelephonyCall",
     "TelephonyNamespace",
     "Trunk",
     "TrunksResource",
+    "WebhookSignatureError",
+    "parse_call_event",
+    "verify_signature",
 ]
