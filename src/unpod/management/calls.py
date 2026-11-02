@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from unpod.management._http import AsyncHTTPClient, unwrap_data
 from unpod.models import Call
@@ -83,6 +83,48 @@ class CallsResource:
         if data is not None:
             body["data"] = data
         resp = unwrap_data(await self._http.post("/api/v2/platform/speech/v1/calls", json=body))
+        return Call(**resp)
+
+    async def attach(
+        self,
+        room_name: str,
+        agent_id: str | None = None,
+        pipe_id: str | None = None,
+        from_number: str | None = None,
+        to_number: str | None = None,
+        direction: Literal["inbound", "outbound"] = "inbound",
+        data: dict[str, Any] | None = None,
+        callback_url: str | None = None,
+        callback_secret: str | None = None,
+    ) -> Call:
+        """Attach a platform agent to an existing LiveKit room.
+
+        The room belongs to you, not the platform. Provide ``agent_id`` OR
+        ``pipe_id``; raises :class:`ValueError` if neither is non-empty.
+
+        Idempotent per ``room_name``: a repeat returns the existing live call.
+        The platform never deletes the room; :meth:`hangup` on an attached call
+        removes only the platform's agent.
+
+        ``data["metadata"]`` is echoed on call events; ``data["context"]`` goes
+        to the agent and is never stored or returned. ``data`` is otherwise
+        passed through untouched. ``callback_secret`` signs events sent to
+        ``callback_url``; it is never logged.
+        """
+        if not (agent_id or pipe_id):
+            raise ValueError("attach requires agent_id or pipe_id")
+        body: dict[str, Any] = {"room_name": room_name, "direction": direction}
+        optional = {
+            "agent_id": agent_id,
+            "pipe_id": pipe_id,
+            "from_number": from_number,
+            "to_number": to_number,
+            "data": data,
+            "callback_url": callback_url,
+            "callback_secret": callback_secret,
+        }
+        body.update({k: v for k, v in optional.items() if v is not None})
+        resp = unwrap_data(await self._http.post("/api/v2/platform/speech/v1/calls/attach", json=body))
         return Call(**resp)
 
     async def hangup(self, call_id: str) -> Call:

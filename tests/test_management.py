@@ -139,6 +139,80 @@ async def test_calls_create(client: AsyncClient):
         assert call.status == "ringing"
 
 
+ATTACH_PATH = "/api/v2/platform/speech/v1/calls/attach"
+
+
+@pytest.mark.anyio
+async def test_calls_attach(client: AsyncClient):
+    with patch.object(client.calls._http, "post", new_callable=AsyncMock) as mock_post:
+        mock_post.return_value = {"data": {"call_id": "call_9", "room_name": "r1", "status": "active"}}
+        data = {"metadata": {"task_id": "T"}, "context": {"m": 1}}
+        call = await client.calls.attach(
+            room_name="r1",
+            agent_id="a1",
+            from_number="+911",
+            to_number="+912",
+            data=data,
+            callback_url="https://x/cb",
+            callback_secret="s",
+        )
+        mock_post.assert_awaited_once_with(
+            ATTACH_PATH,
+            json={
+                "room_name": "r1",
+                "agent_id": "a1",
+                "from_number": "+911",
+                "to_number": "+912",
+                "direction": "inbound",
+                "data": data,
+                "callback_url": "https://x/cb",
+                "callback_secret": "s",
+            },
+        )
+        assert call.call_id == "call_9"
+
+
+@pytest.mark.anyio
+async def test_calls_attach_omits_none(client: AsyncClient):
+    with patch.object(client.calls._http, "post", new_callable=AsyncMock) as mock_post:
+        mock_post.return_value = {"call_id": "call_9"}
+        await client.calls.attach(room_name="r1", pipe_id="p1")
+        mock_post.assert_awaited_once_with(
+            ATTACH_PATH, json={"room_name": "r1", "pipe_id": "p1", "direction": "inbound"}
+        )
+
+
+@pytest.mark.anyio
+async def test_calls_attach_requires_agent_or_pipe(client: AsyncClient):
+    with patch.object(client.calls._http, "post", new_callable=AsyncMock) as mock_post:
+        with pytest.raises(ValueError):
+            await client.calls.attach(room_name="r1")
+        mock_post.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_calls_attach_empty_agent_id_raises(client: AsyncClient):
+    with patch.object(client.calls._http, "post", new_callable=AsyncMock) as mock_post:
+        with pytest.raises(ValueError):
+            await client.calls.attach(room_name="r1", agent_id="")
+        mock_post.assert_not_called()
+
+
+def test_sync_client_calls_attach():
+    from unpod import Client
+    from unpod.models import Call
+
+    sync = Client(api_key="unpod_sk_test", base_url="https://api.example.test")
+    try:
+        with patch.object(sync._async_client.calls._http, "post", new_callable=AsyncMock) as mock_post:
+            mock_post.return_value = {"data": {"call_id": "call_9"}}
+            call = sync.calls.attach(room_name="r1", agent_id="a1")
+        assert isinstance(call, Call)
+        assert call.call_id == "call_9"
+    finally:
+        sync.close()
+
+
 @pytest.mark.anyio
 async def test_calls_list(client: AsyncClient):
     with patch.object(client.calls._http, "get", new_callable=AsyncMock) as mock_get:

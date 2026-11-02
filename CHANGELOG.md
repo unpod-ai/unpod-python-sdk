@@ -8,6 +8,11 @@ While the SDK is pre-1.0, breaking changes ship in a **minor** bump.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-02
+
+### Added
+- `client.calls.attach(room_name, agent_id= or pipe_id=, ...)`: attach an agent to an existing LiveKit room and get a `Call` back; `callback_url=` / `callback_secret=` for call callbacks.
+
 ## [0.5.2] - 2026-10-29
 
 Brings the package back in line with `main`: 0.5.1 was built from a branch cut
