@@ -736,6 +736,54 @@ endpoint. Note the second transcript shape in the package:
 by no resource; what you actually receive is
 `models/session.py::TranscriptEntry`.
 
+## SBC call control — `telephony.calls`, `telephony.inbound`, `parse_call_event`
+
+**PREVIEW.** These methods go through the unpod call-API proxy
+(`/api/v2/platform/sbc/v1/...`, backend-core UNPO-154), which checks org
+membership and ownership of each call, and forwards to SuperSBC under its admin
+key. The org must have the call API switched on (default off), otherwise the
+proxy answers 403 `call_api_disabled`. Routes are in
+`telephony/calls.py::CALL_API_PATHS`. Not proxied yet: the `inbound.*` routes.
+Do not confuse these with `client.calls`, which are agent calls.
+
+```python
+from unpod.telephony import TelephonyAPIError, parse_call_event
+
+call = await client.telephony.calls.create(
+    "+9180XXXXXXXX", "+9198XXXXXXXX", role="agent",
+    status_callback_url="https://you.example/events", status_callback_format="json",
+)
+leg_b = await client.telephony.calls.add_participant(
+    call.call_id, "+9180XXXXXXXX", "+9197XXXXXXXX", role="customer")
+await client.telephony.calls.play_audio(call.call_id, url="https://you.example/hold.mp3")
+await client.telephony.calls.end(call.call_id)
+
+# In your webhook handler: pass the RAW body and the headers.
+# The secret comes from client.telephony.webhook_secret (rotate() shows it in full once).
+event = parse_call_event(raw_body, request.headers, secret=WEBHOOK_SECRET)
+print(event.event, event.call_id, event.leg_id, event.hangup_cause)
+```
+
+| Method | Contract op |
+|---|---|
+| `calls.create(from_, to, ...)` | `createCall`; sends a fresh `Idempotency-Key` per call unless you pass `idempotency_key=` |
+| `calls.list(...)` / `calls.get(id)` | `listCalls` / `getCall` |
+| `calls.end(id)` / `calls.hangup(id, reason=, code=)` | `endCall` / `hangupCall` |
+| `calls.add_participant(id, from_, to, ...)` / `calls.remove_participant(id, leg_id)` | `addParticipant` / `removeParticipant` (max 2 participants) |
+| `calls.play_audio(id, url= or file=)` / `calls.stop_audio(id)` / `calls.speak(id, text)` | `playAudio` / `stopAudio` / `speakAudio` |
+| `calls.transfer(id, target, type=)` / `transfer_complete` / `transfer_cancel` | `transferCall` / `transferComplete` / `transferCancel` |
+| `calls.send_dtmf(id, digits)` / `calls.record(id)` / `calls.get_recording(id)` | `sendDtmf` / `recordCall` / `getRecording` |
+| `inbound.set_trunk` / `get_trunk` / `set_did` / `get_did` | `setTrunkInboundConfig` / `getTrunkInboundConfig` / `setDidInboundOverride` / `getDidInboundEffective` (not proxied yet) |
+| `webhook_secret.get()` / `webhook_secret.rotate()` | the org's call-event signing secret (masked / full once; rotate is admin-only) |
+
+Errors raise `TelephonyAPIError`. `.code` is SuperSBC's `code` or the proxy's
+`detail` (`call_api_disabled`, `from_not_owned`, `invalid_url`, ...).
+
+`parse_call_event` verifies SuperSBC's `X-Webhook-Signature: t=<ts>,v1=<hex>`
+header (HMAC-SHA256 over `"<ts>.<raw body>"`), rejects signatures older than
+`tolerance` seconds (default 300), and accepts form-encoded or JSON bodies. It
+raises `WebhookSignatureError` on a missing, wrong or stale signature.
+
 ## Trunks — two surfaces, neither primary
 
 | Surface | Path | Status |
