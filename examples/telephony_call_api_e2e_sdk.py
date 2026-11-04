@@ -232,9 +232,16 @@ async def scenario_recording_and_download(client: AsyncClient) -> None:
         headers["Authorization"] = f"Token {ENV['UNPOD_PLATFORM_TOKEN']}"
         if ENV.get("UNPOD_ORG_HANDLE"):
             headers["Org-Handle"] = ENV["UNPOD_ORG_HANDLE"]
-    base = (ENV.get("UNPOD_BASE_URL") or ENV.get("UNPOD_SERVICE_BASE_URL") or "").rstrip("/")
+    # recording.url is already absolute (the proxy builds it from the
+    # request's own host, UNPO-182); only prefix it if it ever comes back
+    # relative instead.
+    download_url = recording.url
+    if download_url and not download_url.startswith(("http://", "https://")):
+        from unpod._base_url import http_base
+
+        download_url = (http_base() or "").rstrip("/") + download_url
     async with httpx.AsyncClient() as http:
-        resp = await http.get(f"{base}{recording.url}", headers=headers, timeout=30)
+        resp = await http.get(download_url, headers=headers, timeout=30)
     check(
         resp.status_code == 200 and resp.headers.get("content-type", "").startswith("audio/"),
         f"WAV download through the proxy -> 200 audio/* (got {resp.status_code}, "
@@ -293,7 +300,7 @@ async def scenario_isolation(client: AsyncClient) -> None:
             print("SKIP cross-org isolation (UNPOD_PLATFORM_TOKEN_2/UNPOD_ORG_HANDLE_2 not set)")
             return
         auth_b = TokenAuth(token=ENV["UNPOD_PLATFORM_TOKEN_2"], org_handle=ENV["UNPOD_ORG_HANDLE_2"])
-        async with AsyncClient(base_url=ENV.get("UNPOD_BASE_URL"), auth=auth_b) as client_b:
+        async with AsyncClient(auth=auth_b) as client_b:
             try:
                 await client_b.telephony.calls.get(call.call_id)
                 check(False, "org B must not see org A's call")
@@ -338,7 +345,7 @@ async def main() -> None:
     threading.Thread(target=srv.serve_forever, daemon=True).start()
 
     lat: dict[str, list[float]] = {"initiated_delivery_s": []}
-    async with AsyncClient(base_url=ENV.get("UNPOD_BASE_URL")) as client:
+    async with AsyncClient() as client:
         await scenario_start_call_and_add_customer(client, lat)
         await scenario_failure_endings(client)
         await scenario_wait_tune_one_leg(client)
