@@ -229,8 +229,10 @@ class NumbersResource:
         """Attach numbers to an agent by E.164 number — the primary Leg-B flow.
 
         Takes the phone number, not the id: Django resolves it. ``agent_id`` is
-        optional; ``attach_type`` selects the termination (``"agent"`` default or
-        ``"pipeline"``), and ``pipe_id`` is REQUIRED when ``attach_type="pipeline"``.
+        optional; ``attach_type`` selects the termination (``"agent"`` default,
+        ``"pipeline"``, or ``"human_call"`` for a number routed to a human-to-human
+        call with no agent), and ``pipe_id`` is REQUIRED when ``attach_type="pipeline"``.
+        ``agent_id`` must be omitted when ``attach_type="human_call"``.
         Numbers must be strict E.164 (``+`` and country code). Validation lives in
         Django, so there is exactly one E.164 rule and the SDK cannot drift from it.
         Partial-success: each number reports ok/error independently.

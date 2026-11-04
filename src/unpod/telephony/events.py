@@ -52,6 +52,10 @@ class CallEvent(BaseModel):
     direction: str | None = None
     call_status: str | None = None
     initiation_time: str | None = None
+    start_time: int | None = None
+    answer_time: int | None = None
+    end_time: int | None = None
+    timestamp: int | None = None
     hangup_time: str | None = None
     duration: int | None = None
     hangup_cause: str | None = None
@@ -63,38 +67,82 @@ class CallEvent(BaseModel):
     event_id: str | None = None
     recording_url: str | None = None
     recording_duration: int | None = None
+    record_file: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     raw: dict[str, Any] = Field(default_factory=dict)
 
 
-# Wire name -> CallEvent field.
+# Wire name -> CallEvent field. Both the Plivo-style form keys and their
+# snake_case JSON equivalents map here (``status_callback_format="json"``
+# sends the latter; see ``encode_body`` in ``src/proxy/webhook/leg_delivery.rs``),
+# so a callback is normalized the same way regardless of format.
 _FIELD_MAP: dict[str, str] = {
     "EventName": "event",
+    "event_name": "event",
     "Event": "event",
+    "event": "event",
     "MPCUUID": "call_id",
+    "call_id": "call_id",
     "CallUUID": "leg_id",
+    "leg_id": "leg_id",
     "Role": "role",
+    "role": "role",
     "From": "from",
+    "from": "from",
     "To": "to",
+    "to": "to",
     "Direction": "direction",
+    "direction": "direction",
     "CallStatus": "call_status",
+    "call_status": "call_status",
     "InitiationTime": "initiation_time",
+    "initiation_time": "initiation_time",
+    "StartTime": "start_time",
+    "start_time": "start_time",
+    "AnswerTime": "answer_time",
+    "answer_time": "answer_time",
+    "EndTime": "end_time",
+    "end_time": "end_time",
+    "Timestamp": "timestamp",
+    "timestamp": "timestamp",
     "HangupTime": "hangup_time",
+    "hangup_time": "hangup_time",
     "Duration": "duration",
+    "duration": "duration",
     "PlivoHangupCause": "hangup_cause",
+    "plivo_hangup_cause": "hangup_cause",
     "HangupCause": "hangup_cause",
+    "hangup_cause": "hangup_cause",
     "HangupBy": "hangup_by",
+    "hangup_by": "hangup_by",
     "SipCode": "sip_code",
+    "sip_code": "sip_code",
     "Digit": "digit",
+    "digit": "digit",
     "PlayId": "play_id",
+    "play_id": "play_id",
     "Sequence": "sequence",
+    "sequence": "sequence",
     "EventId": "event_id",
+    "event_id": "event_id",
     "RecordingURL": "recording_url",
     "RecordUrl": "recording_url",
+    "recording_url": "recording_url",
     "RecordingDuration": "recording_duration",
+    "recording_duration": "recording_duration",
+    "RecordFile": "record_file",
 }
 
-_INT_FIELDS = {"duration", "sip_code", "sequence", "recording_duration"}
+_INT_FIELDS = {
+    "duration",
+    "sip_code",
+    "sequence",
+    "recording_duration",
+    "start_time",
+    "answer_time",
+    "end_time",
+    "timestamp",
+}
 
 
 def _header(headers: Mapping[str, str], name: str) -> str | None:
@@ -162,6 +210,9 @@ def _decode(body: bytes, content_type: str | None) -> dict[str, Any]:
     return dict(parse_qsl(text, keep_blank_values=True))
 
 
+_STR_TIME_FIELDS = {"initiation_time", "hangup_time"}
+
+
 def _normalize(raw: dict[str, Any]) -> CallEvent:
     fields: dict[str, Any] = {}
     for wire, value in raw.items():
@@ -173,6 +224,10 @@ def _normalize(raw: dict[str, Any]) -> CallEvent:
                 value = int(value)
             except (TypeError, ValueError):
                 continue
+        elif name in _STR_TIME_FIELDS and not isinstance(value, str):
+            # JSON sends these as numbers (`hangup_time` aliases the numeric
+            # `end_time`); the field is `str` because the form encoding is.
+            value = str(value)
         fields.setdefault(name, value)
     meta = raw.get("Metadata")
     if isinstance(meta, str) and meta:
