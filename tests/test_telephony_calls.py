@@ -109,6 +109,17 @@ async def test_create_call_body_and_idempotency_key():
 
 
 @pytest.mark.anyio
+async def test_create_call_answer_url():
+    http = _FakeHTTP({("POST", _p("create_call")): CALL})
+    await TelephonyNamespace(http).calls.create(
+        "+911", "+912", answer_url="https://example.test/answer", answer_method="GET"
+    )
+    body = http.calls[0][2]
+    assert body["answer_url"] == "https://example.test/answer"
+    assert body["answer_method"] == "GET"
+
+
+@pytest.mark.anyio
 async def test_create_call_keeps_caller_idempotency_key_and_unwraps_envelope():
     http = _FakeHTTP({("POST", _p("create_call")): _env(CALL)})
     call = await TelephonyNamespace(http).calls.create("+911", "+912", idempotency_key="k1")
@@ -225,8 +236,10 @@ async def test_transfer_dtmf_record_recording():
     rec = {"call_id": "c1", "available": True, "url": "https://r/x.wav", "channels": 2}
     http = _FakeHTTP({("GET", _p("get_recording", call_id="c1")): rec})
     ns = TelephonyNamespace(http)
+    # The SBC's TransferRequest/DtmfRequest take `leg`, not `leg_id`
+    # (deny_unknown_fields rejects the latter) — UNPO-183.
     await ns.calls.transfer("c1", "+915", type="attended", leg_id="l1")
-    assert http.calls[0][2] == {"type": "attended", "target": "+915", "leg_id": "l1"}
+    assert http.calls[0][2] == {"type": "attended", "target": "+915", "leg": "l1"}
     await ns.calls.transfer_complete("c1", "l9")
     await ns.calls.transfer_cancel("c1", "l9")
     assert [c[1] for c in http.calls[1:3]] == [
@@ -234,7 +247,7 @@ async def test_transfer_dtmf_record_recording():
         _p("transfer_cancel", call_id="c1"),
     ]
     await ns.calls.send_dtmf("c1", "12#", leg_id="l1")
-    assert http.calls[3][2] == {"digits": "12#", "leg_id": "l1"}
+    assert http.calls[3][2] == {"digits": "12#", "leg": "l1"}
     with pytest.raises(ValueError):
         await ns.calls.send_dtmf("c1", "12x")
     await ns.calls.record("c1", transcribe=True)
@@ -363,6 +376,45 @@ def test_parse_json_event_custom_header():
     assert ev.duration == 17 and ev.event_id == "e4"
 
 
+def test_parse_json_event_snake_case_wire_format():
+    # The SBC's actual `status_callback_format="json"` body (`encode_body` in
+    # `leg_delivery.rs`) is snake_case, not the Plivo form names — UNPO-183.
+    snake = {
+        "call_id": "c1",
+        "leg_id": "l1",
+        "role": "customer",
+        "event": "Hangup",
+        "event_id": "e4",
+        "sequence": 4,
+        "timestamp": 1700000000,
+        "start_time": 1699999990,
+        "answer_time": 1699999995,
+        "end_time": 1700000010,
+        "hangup_cause": "Busy Line",
+        "sip_code": 486,
+        "hangup_by": "callee",
+        "from": "+911",
+        "to": "+912",
+        "direction": "outbound",
+        "event_name": "Hangup",
+        "hangup_time": 1700000010,
+        "duration": 20,
+        "plivo_hangup_cause": "Busy Line",
+    }
+    body = json.dumps(snake).encode()
+    ev = parse_call_event(body, {"X-Webhook-Signature": _sign(body)}, SECRET)
+    assert (ev.event, ev.call_id, ev.leg_id, ev.role) == ("Hangup", "c1", "l1", "customer")
+    assert (ev.duration, ev.sip_code, ev.sequence) == (20, 486, 4)
+    assert ev.hangup_cause == "Busy Line"
+    assert (ev.start_time, ev.answer_time, ev.end_time, ev.timestamp) == (
+        1699999990,
+        1699999995,
+        1700000010,
+        1700000000,
+    )
+    assert ev.hangup_time == "1700000010"
+
+
 def test_signature_matches_supersbc_signer():
     # Same inputs as SuperSBC's signer: HMAC-SHA256(secret, "<ts>.<body>"), hex.
     body = b'{"EventName":"Ringing"}'
@@ -388,6 +440,23 @@ def test_parse_recording_event():
     ).encode()
     ev = parse_call_event(body, {"X-Webhook-Signature": _sign(body)}, SECRET)
     assert ev.event == "RecordingCompleted" and ev.recording_duration == 30
+
+
+def test_parse_record_stop_event_record_file():
+    # `Event=RecordStop` (answer_url hook.rs) sends both RecordFile (raw SBC
+    # path) and RecordUrl (the API route) — UNPO-183/UNPO-181.
+    body = urlencode(
+        {
+            "Event": "RecordStop",
+            "MPCUUID": "c1",
+            "RecordFile": "/var/lib/supersbc/recordings/c1.wav",
+            "RecordUrl": "/api/v1/calls/c1/recording",
+            "RecordingDuration": "30",
+        }
+    ).encode()
+    ev = parse_call_event(body, {"X-Webhook-Signature": _sign(body)}, SECRET)
+    assert ev.record_file == "/var/lib/supersbc/recordings/c1.wav"
+    assert ev.recording_url == "/api/v1/calls/c1/recording"
 
 
 @pytest.mark.parametrize(

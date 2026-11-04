@@ -2,7 +2,9 @@
 
 Methods follow the SuperSBC call API contract (UNPO-123, ``telephony-api-openapi.yaml``)
 and go through the unpod telephony proxy, which adds the org's SBC credential.
-The SDK never talks to the SBC directly and never holds an SBC key.
+The SDK never talks to the SBC directly and never holds an SBC key. Decisions
+D4/D7 plan a direct mode (SDK -> SBC, bypassing the proxy); that mode is out
+of scope for this E2E effort (UNPO-183) and not implemented here.
 
 These are SBC calls (legs, participants, audio, transfer, DTMF, recording). They
 are not the agent calls at ``client.calls``.
@@ -229,6 +231,8 @@ def _leg_body(
     recording_callback_url: str | None,
     record: bool | None,
     record_participant_track: bool | None,
+    answer_url: str | None,
+    answer_method: str | None,
     metadata: dict[str, str] | None,
 ) -> dict[str, Any]:
     """Request body shared by ``create`` and ``add_participant`` (``LegOptions``)."""
@@ -245,6 +249,8 @@ def _leg_body(
         "recording_callback_url": recording_callback_url,
         "record": record,
         "record_participant_track": record_participant_track,
+        "answer_url": answer_url,
+        "answer_method": answer_method,
         "metadata": metadata,
     }
     body.update({k: v for k, v in optional.items() if v is not None})
@@ -290,6 +296,8 @@ class CallsResource:
         recording_callback_url: str | None = None,
         record: bool | None = None,
         record_participant_track: bool | None = None,
+        answer_url: str | None = None,
+        answer_method: Literal["POST", "GET"] | None = None,
         metadata: dict[str, str] | None = None,
         idempotency_key: str | None = None,
     ) -> TelephonyCall:
@@ -297,7 +305,9 @@ class CallsResource:
 
         ``from_`` is a caller ID the org owns (E.164). ``to`` is an E.164 number
         or a SIP URI. Dialing is asynchronous: the call comes back ``initiated``
-        and progress arrives as events at ``status_callback_url``.
+        and progress arrives as events at ``status_callback_url``. ``answer_url``
+        runs an answer-URL app (play/speak/dial/...) on this leg once it
+        connects, instead of just bridging it.
         """
         body = _leg_body(
             from_,
@@ -313,6 +323,8 @@ class CallsResource:
             recording_callback_url=recording_callback_url,
             record=record,
             record_participant_track=record_participant_track,
+            answer_url=answer_url,
+            answer_method=answer_method,
             metadata=metadata,
         )
         resp = await _call(
@@ -392,13 +404,16 @@ class CallsResource:
         recording_callback_url: str | None = None,
         record: bool | None = None,
         record_participant_track: bool | None = None,
+        answer_url: str | None = None,
+        answer_method: Literal["POST", "GET"] | None = None,
         metadata: dict[str, str] | None = None,
         idempotency_key: str | None = None,
     ) -> Leg:
         """Dial participant B and bridge it on answer. Contract ``addParticipant``.
 
         A call has at most two participants; a third raises
-        :class:`TelephonyAPIError` with status 409.
+        :class:`TelephonyAPIError` with status 409. ``answer_url`` runs an
+        answer-URL app on this leg once it connects, instead of just bridging it.
         """
         body = _leg_body(
             from_,
@@ -414,6 +429,8 @@ class CallsResource:
             recording_callback_url=recording_callback_url,
             record=record,
             record_participant_track=record_participant_track,
+            answer_url=answer_url,
+            answer_method=answer_method,
             metadata=metadata,
         )
         resp = await _call(
@@ -515,7 +532,7 @@ class CallsResource:
         """
         body: dict[str, Any] = {"type": type, "target": target}
         if leg_id is not None:
-            body["leg_id"] = leg_id
+            body["leg"] = leg_id
         await _call(self._http.post(_path("transfer", call_id=call_id), json=body))
 
     async def transfer_complete(self, call_id: str, consult_leg: str) -> None:
@@ -542,7 +559,7 @@ class CallsResource:
             raise ValueError("digits must match ^[0-9A-D*#]+$")
         body: dict[str, Any] = {"digits": digits}
         if leg_id is not None:
-            body["leg_id"] = leg_id
+            body["leg"] = leg_id
         await _call(self._http.post(_path("send_dtmf", call_id=call_id), json=body))
 
     async def record(self, call_id: str, *, transcribe: bool | None = None) -> None:
