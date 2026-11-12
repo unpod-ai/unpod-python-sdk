@@ -27,6 +27,7 @@ from collections.abc import Sequence
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from unpod.management._http import AsyncHTTPClient, unwrap_data
+from unpod.telephony.answer import Response as AnswerResponse
 from unpod.telephony.calls import (
     CALL_API_PATHS,
     CallList,
@@ -42,6 +43,10 @@ from unpod.telephony.calls import (
     WebhookSecretResource,
 )
 from unpod.telephony.events import (
+    STREAM_EVENTS,
+    STREAM_FAILED,
+    STREAM_STARTED,
+    STREAM_STOPPED,
     CallEvent,
     WebhookSignatureError,
     parse_call_event,
@@ -49,7 +54,7 @@ from unpod.telephony.events import (
 )
 
 
-def _as_number_list(numbers: "str | Sequence[str]") -> list[str]:
+def _as_number_list(numbers: str | Sequence[str]) -> list[str]:
     """Coerce one E.164 number or a sequence of them to ``list[str]``.
 
     A bare ``str`` is ONE number, never iterated character-by-character
@@ -218,7 +223,7 @@ class NumbersResource:
 
     async def attach(
         self,
-        numbers: "str | Sequence[str]",
+        numbers: str | Sequence[str],
         *,
         agent_id: str | None = None,
         attach_type: str | None = None,
@@ -251,7 +256,7 @@ class NumbersResource:
         resp = await self._http.post("/telephony/numbers/attach/", json=body)
         return AgentAttachResult(**unwrap_data(resp))
 
-    async def detach(self, numbers: "str | Sequence[str]") -> AgentDetachResult:
+    async def detach(self, numbers: str | Sequence[str]) -> AgentDetachResult:
         """Detach numbers by E.164 number — the inverse of :meth:`attach`.
 
         The termination, agent and pipe are read from the stored record, so they
@@ -362,8 +367,13 @@ class TelephonyNamespace:
 
 __all__ = [
     "CALL_API_PATHS",
+    "STREAM_EVENTS",
+    "STREAM_FAILED",
+    "STREAM_STARTED",
+    "STREAM_STOPPED",
     "AgentAttachResult",
     "AgentDetachResult",
+    "AnswerResponse",
     "AttachResult",
     "CallEvent",
     "CallList",

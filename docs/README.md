@@ -19,6 +19,7 @@ their replacement.
 | [05-adapters.md](05-adapters.md) | The `dialog_machine` slot: the `DialogAdapter` protocol led by the `stream()` hot path, the six bundled adapters, and how to write your own |
 | [06-deployment.md](06-deployment.md) | The three shipped ways an agent reaches traffic — LLM endpoint, voice agent, phone number — which SDK call performs each, plus a hard-labeled roadmap |
 | [07-browser-quickstart.md](07-browser-quickstart.md) | Testing an agent in the browser with no phone number: the `examples/browser_playground/` bring-up, its environment, and its rough edges |
+| [09-pipecat-streaming.md](09-pipecat-streaming.md) | Pipecat bots on Unpod calls: answer with `stream`, `UnpodFrameSerializer`, signed streams, and the Plivo → Unpod migration table (preview: needs SuperSBC's `stream` action) |
 
 ## Outside the spine
 

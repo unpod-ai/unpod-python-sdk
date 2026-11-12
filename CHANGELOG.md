@@ -13,6 +13,10 @@ While the SDK is pre-1.0, breaking changes ship in a **minor** bump.
 - `client.telephony.webhook_secret.get()` / `.rotate()`: the org's call-event signing secret.
 - `unpod.telephony.parse_call_event()`: verifies SuperSBC's `t=<ts>,v1=<hex>` webhook signature (with a replay window) and normalizes form or JSON call and recording events into `CallEvent`.
 - `TelephonyAPIError` carrying the SuperSBC `code` or the proxy's `detail`.
+- Preview: Pipecat bots on Unpod calls via audio streaming (needs SuperSBC's `stream` answer action, not shipped yet). `unpod.pipecat.UnpodFrameSerializer` (drop-in for `PlivoFrameSerializer`: reads the stream's audio format, hangs up through the Unpod call API), `parse_unpod_websocket()`, `verify_stream_request()`; install with `unpod[pipecat]`. See `docs/09-pipecat-streaming.md` and `examples/pipecat_streaming/`.
+- `unpod.telephony.answer.Response` (also `unpod.telephony.AnswerResponse`): build `answer_url` replies (`stream`, `speak`, `play`, `wait`, `dial`, `hangup`) as SBC JSON or Plivo-style XML.
+- `unpod.telephony.stream`: the stream wire protocol without a Pipecat dependency.
+- `CallEvent.stream_id` / `.stream_reason` and `STREAM_STARTED` / `STREAM_STOPPED` / `STREAM_FAILED` for stream lifecycle callbacks.
 
 ## [0.6.0] - 2026-11-02
 

@@ -68,6 +68,8 @@ class CallEvent(BaseModel):
     recording_url: str | None = None
     recording_duration: int | None = None
     record_file: str | None = None
+    stream_id: str | None = None
+    stream_reason: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     raw: dict[str, Any] = Field(default_factory=dict)
 
@@ -131,7 +133,20 @@ _FIELD_MAP: dict[str, str] = {
     "RecordingDuration": "recording_duration",
     "recording_duration": "recording_duration",
     "RecordFile": "record_file",
+    # Audio-stream lifecycle (``stream`` answer action): StreamStarted /
+    # StreamStopped / StreamFailed.
+    "StreamID": "stream_id",
+    "StreamId": "stream_id",
+    "stream_id": "stream_id",
+    "Reason": "stream_reason",
+    "reason": "stream_reason",
 }
+
+#: ``CallEvent.event`` values for an audio stream's lifecycle.
+STREAM_STARTED = "StreamStarted"
+STREAM_STOPPED = "StreamStopped"
+STREAM_FAILED = "StreamFailed"
+STREAM_EVENTS = frozenset({STREAM_STARTED, STREAM_STOPPED, STREAM_FAILED})
 
 _INT_FIELDS = {
     "duration",
@@ -271,6 +286,10 @@ def parse_call_event(
 __all__ = [
     "DEFAULT_SIGNATURE_HEADER",
     "DEFAULT_TOLERANCE_SECS",
+    "STREAM_EVENTS",
+    "STREAM_FAILED",
+    "STREAM_STARTED",
+    "STREAM_STOPPED",
     "CallEvent",
     "WebhookSignatureError",
     "parse_call_event",
