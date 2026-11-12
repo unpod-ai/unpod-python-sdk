@@ -25,6 +25,8 @@ observability = ["langfuse>=2.0"]
 dialog = ["superdialog>=0.2,<0.3"]
 langchain = ["langchain-core>=0.3"]
 mcp = ["mcp>=0.9"]
+# Pipecat bots on Unpod calls: UnpodFrameSerializer (unpod.pipecat).
+pipecat = ["pipecat-ai>=1.0"]
 playground = [
   "fastapi>=0.115",
   "uvicorn[standard]>=0.32",
@@ -34,6 +36,7 @@ playground = [
 ]
 dev = [
   "pytest>=8",
+  "pipecat-ai>=1.0",
   "pytest-asyncio>=0.23",
   "anyio>=4",
   "ruff>=0.4",
