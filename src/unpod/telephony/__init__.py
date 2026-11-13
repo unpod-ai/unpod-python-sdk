@@ -43,8 +43,11 @@ from unpod.telephony.calls import (
 )
 from unpod.telephony.events import (
     CallEvent,
+    DigitsRequest,
+    EventName,
     WebhookSignatureError,
     parse_call_event,
+    parse_digits_request,
     verify_signature,
 )
 
@@ -369,6 +372,8 @@ __all__ = [
     "CallList",
     "CallsResource",
     "DetachResult",
+    "DigitsRequest",
+    "EventName",
     "InboundConfig",
     "InboundResource",
     "Leg",
@@ -388,5 +393,6 @@ __all__ = [
     "WebhookSecretResource",
     "WebhookSignatureError",
     "parse_call_event",
+    "parse_digits_request",
     "verify_signature",
 ]
