@@ -875,7 +875,10 @@ class WebhookSecretResource:
         return WebhookSecret(**(unwrap_data(resp) or {}))
 
     async def rotate(self) -> WebhookSecret:
-        """Issue a new secret version; the full secret is returned only here."""
+        """Issue a new secret version and return it in full.
+
+        The previous version stops working at once, so update every receiver.
+        """
         resp = await _call(self._http.post(_path("rotate_webhook_secret"), json={}))
         return WebhookSecret(**(unwrap_data(resp) or {}))
 

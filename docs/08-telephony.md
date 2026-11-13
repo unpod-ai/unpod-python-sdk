@@ -38,6 +38,16 @@ pip install "unpod>=0.6.2"
 
 `0.6.2` is the first release on PyPI with `client.telephony.calls`,
 `client.telephony.inbound` and `parse_call_event`. Telephony needs no extras.
+
+A few newer methods ship in **0.7.0**, which is not on PyPI yet: recording
+control (`stop_recording`, `pause_recording`, `resume_recording`,
+`download_recording`), `parse_digits_request`, `EventName`, and the extra
+call options (`time_limit`, `sip_headers`, `fallback_url`, ...). They are
+marked *0.7.0* below. Until the release, install from GitHub to use them:
+
+```bash
+pip install "unpod @ git+https://github.com/unpod-ai/unpod-python-sdk"
+```
 The webhook example below uses FastAPI, which is **not** an SDK dependency:
 
 ```bash
@@ -241,10 +251,19 @@ first leg's `Answered` event arrives, instead of right after `create`.
 | Send keypad tones | `send_dtmf(call_id, "1234#", leg_id=None)` |
 | Transfer | `transfer(call_id, target, type="blind")`; for `type="attended"` finish with `transfer_complete(call_id, consult_leg)` or `transfer_cancel(...)` |
 | Record | `record(call_id)` to start; `get_recording(call_id)` → `Recording.url` (two-channel WAV, first leg left, second right) |
+| Pause, resume or stop recording *(0.7.0)* | `pause_recording(call_id)`, `resume_recording(call_id)`, `stop_recording(call_id)` |
+| Save the recording to a file *(0.7.0)* | `download_recording(call_id, "call.wav")` → `Path` |
 | Drop one person | `remove_participant(call_id, leg_id)` |
 | End the call | `end(call_id)` ends every leg; `hangup(call_id, reason=, code=)` adds a reason and SIP code |
 
 Omit `leg_id` to act on every leg of the call.
+
+Extra options on `create` and `add_participant` *(0.7.0)*: `time_limit`
+(max call seconds, 1–86400), `sip_headers` (sent to the carrier as
+`X-PH-<key>`), `fallback_url` / `fallback_method` (used when `answer_url`
+fails), `status_callback_events` (which event groups to send),
+`end_mpc_on_exit` (this person leaving ends the call). `play_audio` also takes
+`loop=<n>` (play n times; `0` or `True` until stopped) and `length=<seconds>`.
 
 ### Rules the server enforces
 
@@ -318,6 +337,8 @@ with Client() as client:
 
 Each `rotate()` invalidates the previous secret. `webhook_secret.get()` shows
 it masked. Until your org has a secret, events go out unsigned.
+`webhook_secret.reveal()` *(0.7.0)* is meant to return the current secret
+without rotating, but the server does not serve it yet (404).
 
 ### 2. Verify and parse each event
 
@@ -358,6 +379,12 @@ Run it with `uvicorn app:app --port 8000` behind a public https URL.
 - Some requests are not signed yet: recording events and outbound answer-URL
   requests. Parse those with `verify=False` and confirm anything important
   with the API (for example `get_recording(ev.call_id)`).
+
+Event names are also available as constants on `unpod.telephony.EventName`
+*(0.7.0)*, e.g. `EventName.MPC_END`; `ev.event` stays a plain string. When your
+answer-URL app collects keypad input (`<GetDigits>` / `<GetInput>`), parse the
+action request with `parse_digits_request(body, headers, secret)` *(0.7.0)*:
+it verifies the same signature and returns `DigitsRequest.digits`.
 
 Every event name and field, with hangup causes, is listed in
 [Webhooks](https://docs.unpod.ai/telephony/apis/webhooks).
@@ -476,20 +503,24 @@ All under `client.telephony`. Source: `src/unpod/telephony/`.
 | `calls.get(call_id)` | `TelephonyCall` |
 | `calls.add_participant(call_id, from_, to, *, ...same options as create)` | `Leg` |
 | `calls.remove_participant(call_id, leg_id)` | `None` |
-| `calls.play_audio(call_id, *, url=, leg_id=, loop=, interrupt_on_dtmf=)` | `PlayResult` |
+| `calls.play_audio(call_id, *, url=, leg_id=, loop=, length=, interrupt_on_dtmf=)` | `PlayResult` |
 | `calls.stop_audio(call_id, *, leg_id=, play_id=)` | `None` |
 | `calls.speak(call_id, text, *, voice=, language=, leg_id=, loop=)` | `PlayResult` |
 | `calls.send_dtmf(call_id, digits, *, leg_id=)` | `None` |
 | `calls.transfer(call_id, target, *, type="blind", leg_id=)` | `None` |
 | `calls.transfer_complete(call_id, consult_leg)` / `calls.transfer_cancel(call_id, consult_leg)` | `None` |
 | `calls.record(call_id, *, transcribe=)` | `None` |
+| `calls.pause_recording(call_id)` / `resume_recording` / `stop_recording` *(0.7.0)* | `None` |
+| `calls.download_recording(call_id, path)` *(0.7.0)* | `pathlib.Path` |
 | `calls.get_recording(call_id)` | `Recording` |
 | `calls.end(call_id)` / `calls.hangup(call_id, *, reason=, code=)` | `None` |
 | `inbound.set_did(number, config)` / `inbound.get_did(number)` | `InboundConfig` |
 | `inbound.set_trunk(name, config)` / `inbound.get_trunk(name)` | `InboundConfig` |
 | `webhook_secret.get()` / `webhook_secret.rotate()` | `WebhookSecret` |
+| `webhook_secret.reveal()` *(0.7.0, server route not live yet)* | `WebhookSecret` |
 | `unpod.telephony.parse_call_event(body, headers, secret, *, tolerance=300, verify=True)` | `CallEvent` |
 | `unpod.telephony.verify_signature(body, signature, secret, *, tolerance=300)` | `bool` |
+| `unpod.telephony.parse_digits_request(body, headers, secret, *, tolerance=300, verify=True)` *(0.7.0)* | `DigitsRequest` |
 
 Every model accepts fields it does not know yet, so a newer server never
 breaks an older SDK.
