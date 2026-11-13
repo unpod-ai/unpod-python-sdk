@@ -15,9 +15,12 @@ from urllib.parse import urlencode
 
 import httpx
 import pytest
+
 from unpod.telephony import (
     CALL_API_PATHS,
     CallEvent,
+    DigitsRequest,
+    EventName,
     InboundConfig,
     Leg,
     TelephonyAPIError,
@@ -25,6 +28,7 @@ from unpod.telephony import (
     TelephonyNamespace,
     WebhookSignatureError,
     parse_call_event,
+    parse_digits_request,
     verify_signature,
 )
 
@@ -484,3 +488,240 @@ def test_missing_secret_rejected_unless_verify_off():
     with pytest.raises(WebhookSignatureError):
         parse_call_event(body, {}, None)
     assert parse_call_event(body, {}, None, verify=False).call_id == "c1"
+
+
+# ── UNPO-493: new call params, recording control, play options, events ───────
+
+@pytest.mark.anyio
+async def test_new_kwargs_absent_when_unset():
+    http = _FakeHTTP({("POST", _p("create_call")): CALL})
+    await TelephonyNamespace(http).calls.create("+911", "+912")
+    assert http.calls[0][2] == {"from": "+911", "to": "+912"}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("target", ["create", "add_participant"])
+async def test_new_kwargs_serialized(target):
+    http = _FakeHTTP(
+        {("POST", _p("create_call")): CALL, ("POST", _p("add_participant", call_id="c1")): CALL["legs"][0]}
+    )
+    calls = TelephonyNamespace(http).calls
+    kw = {
+        "time_limit": 600,
+        "sip_headers": {"Tenant": "acme", "Ref-Id": "42"},
+        "answer_url": "https://e.test/a",
+        "fallback_url": "https://e.test/f",
+        "fallback_method": "GET",
+        "status_callback_events": ["mpc-state-changes", "leg-state-changes"],
+        "end_mpc_on_exit": True,
+    }
+    if target == "create":
+        await calls.create("+911", "+912", **kw)
+    else:
+        await calls.add_participant("c1", "+911", "+912", **kw)
+    body = http.calls[0][2]
+    assert body["time_limit"] == 600
+    assert body["sip_headers"] == "Tenant=acme,Ref-Id=42"
+    assert body["fallback_url"] == "https://e.test/f" and body["fallback_method"] == "GET"
+    assert body["status_callback_events"] == "mpc-state-changes,leg-state-changes"
+    assert body["end_mpc_on_exit"] is True
+
+
+@pytest.mark.anyio
+async def test_string_forms_and_false_flag_sent():
+    http = _FakeHTTP({("POST", _p("create_call")): CALL})
+    await TelephonyNamespace(http).calls.create(
+        "+911", "+912", sip_headers="A=1,B=2", status_callback_events="mpc-state-changes", end_mpc_on_exit=False, record=False
+    )
+    body = http.calls[0][2]
+    assert body["sip_headers"] == "A=1,B=2"
+    assert body["end_mpc_on_exit"] is False and body["record"] is False
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "kw",
+    [
+        {"time_limit": 0},
+        {"time_limit": 86401},
+        {"sip_headers": {"bad key": "v"}},
+        {"sip_headers": {"k": "a,b"}},
+        {"sip_headers": {"k": "x" * 257}},
+        {"sip_headers": {f"k{i}": "v" for i in range(11)}},
+        {"sip_headers": "novalue"},
+        {"fallback_url": "https://e.test/f"},
+        {"status_callback_events": ["nope"]},
+    ],
+)
+async def test_new_kwargs_validation(kw):
+    http = _FakeHTTP({("POST", _p("create_call")): CALL})
+    with pytest.raises(ValueError):
+        await TelephonyNamespace(http).calls.create("+911", "+912", **kw)
+    assert http.calls == []
+
+
+@pytest.mark.anyio
+async def test_recording_control_paths_and_409():
+    http = _FakeHTTP()
+    calls = TelephonyNamespace(http).calls
+    await calls.stop_recording("c1")
+    await calls.pause_recording("c1")
+    await calls.resume_recording("c1")
+    assert [(m, p) for m, p, *_ in http.calls] == [
+        ("DELETE", "/sbc/v1/calls/c1/record"),
+        ("POST", "/sbc/v1/calls/c1/record/pause"),
+        ("POST", "/sbc/v1/calls/c1/record/resume"),
+    ]
+    req = httpx.Request("POST", "https://x.test")
+    resp = httpx.Response(409, request=req, json={"error": "not recording", "code": "conflict"})
+    bad = _FakeHTTP(error=httpx.HTTPStatusError("409", request=req, response=resp))
+    with pytest.raises(TelephonyAPIError) as exc:
+        await TelephonyNamespace(bad).calls.pause_recording("c1")
+    assert exc.value.status_code == 409 and exc.value.code == "conflict"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "loop,expected", [(True, True), (False, False), (0, 0), (1, 1), (3, 3)]
+)
+async def test_play_audio_loop_length_mix(loop, expected):
+    http = _FakeHTTP({("POST", _p("play_audio", call_id="c1")): {"play_id": "p"}})
+    await TelephonyNamespace(http).calls.play_audio(
+        "c1", url="https://e.test/a.wav", loop=loop, length=5, mix=True
+    )
+    body = http.calls[0][2]
+    assert body["loop"] == expected and type(body["loop"]) is type(expected)
+    assert body["length"] == 5 and body["mix"] is True
+
+
+@pytest.mark.anyio
+async def test_play_audio_validation():
+    calls = TelephonyNamespace(_FakeHTTP()).calls
+    with pytest.raises(ValueError):
+        await calls.play_audio("c1", url="https://e.test/a.wav", length=0)
+    with pytest.raises(ValueError):
+        await calls.play_audio("c1", url="https://e.test/a.wav", loop=-1)
+
+
+@pytest.mark.anyio
+async def test_webhook_secret_reveal():
+    http = _FakeHTTP(
+        {
+            ("GET", _p("reveal_webhook_secret")): _env({"secret": "whsec_full", "version": 3}),
+            ("GET", _p("get_webhook_secret")): {"secret": "wh…ll", "version": 3},
+        }
+    )
+    ns = TelephonyNamespace(http)
+    full = await ns.webhook_secret.reveal()
+    assert full.secret == "whsec_full" and full.version == 3
+    assert http.calls[0][:2] == ("GET", "/sbc/webhook-secret/reveal")
+    assert (await ns.webhook_secret.get()).secret == "wh…ll"
+
+
+@pytest.mark.anyio
+async def test_webhook_secret_reveal_forbidden():
+    req = httpx.Request("GET", "https://x.test")
+    resp = httpx.Response(403, request=req, json={"detail": "forbidden", "message": "admin only"})
+    http = _FakeHTTP(error=httpx.HTTPStatusError("403", request=req, response=resp))
+    with pytest.raises(TelephonyAPIError) as exc:
+        await TelephonyNamespace(http).webhook_secret.reveal()
+    assert exc.value.status_code == 403
+
+
+def _signed(body: bytes, ctype: str):
+    ts = int(time.time())
+    sig = hmac.new(SECRET.encode(), f"{ts}.".encode() + body, hashlib.sha256).hexdigest()
+    return {"X-Webhook-Signature": f"t={ts},v1={sig}", "Content-Type": ctype}
+
+
+def test_call_event_new_fields_form_and_json():
+    form = {
+        "EventName": "ParticipantExit",
+        "MPCUUID": "m1",
+        "RequestUUID": "r1",
+        "BillDuration": "7",
+        "CallMode": "mpc",
+        "ParticipantCallUUID": "pcu1",
+        "ParticipantRole": "agent",
+        "MPCEndReason": "participant-exit",
+    }
+    body = urlencode(form).encode()
+    ev = parse_call_event(body, _signed(body, "application/x-www-form-urlencoded"), SECRET)
+    js = {
+        "event_name": "MPCEnd",
+        "call_id": "m1",
+        "request_uuid": "r1",
+        "bill_duration": 7,
+        "call_mode": "mpc",
+        "participant_call_uuid": "pcu1",
+        "participant_role": "agent",
+        "mpc_end_reason": "participant-exit",
+    }
+    jbody = json.dumps(js).encode()
+    ev2 = parse_call_event(jbody, _signed(jbody, "application/json"), SECRET)
+    for e in (ev, ev2):
+        assert (e.request_uuid, e.bill_duration, e.call_mode) == ("r1", 7, "mpc")
+        assert (e.participant_call_uuid, e.participant_role) == ("pcu1", "agent")
+        assert e.mpc_end_reason == "participant-exit"
+        assert e.leg_id is None
+    assert ev.event == EventName.PARTICIPANT_EXIT and ev2.event == EventName.MPC_END
+
+
+def test_parse_digits_request():
+    form = {
+        "CallUUID": "l1", "MPCUUID": "m1", "From": "+911", "To": "+912",
+        "Direction": "outbound", "Digits": "", "InputType": "dtmf",
+    }
+    body = urlencode(form).encode()
+    req = parse_digits_request(body, _signed(body, "application/x-www-form-urlencoded"), SECRET)
+    assert isinstance(req, DigitsRequest)
+    assert (req.call_id, req.leg_id, req.from_, req.to) == ("m1", "l1", "+911", "+912")
+    assert req.digits == "" and req.input_type == "dtmf" and req.direction == "outbound"
+    body2 = urlencode({**form, "Digits": "123#"}).encode()
+    assert parse_digits_request(body2, _signed(body2, "application/x-www-form-urlencoded"), SECRET).digits == "123#"
+    with pytest.raises(WebhookSignatureError):
+        parse_digits_request(body, {"X-Webhook-Signature": "t=1,v1=00"}, SECRET)
+
+
+class _StreamHTTP:
+    """Minimal AsyncHTTPClient stand-in backed by an httpx MockTransport."""
+
+    def __init__(self, handler):
+        self._client = httpx.AsyncClient(base_url="https://x.test", transport=httpx.MockTransport(handler))
+
+    async def _ensure_client(self):
+        return self._client
+
+    def _url(self, path):
+        return path
+
+    def _headers(self):
+        return {"Authorization": "Bearer t", "Content-Type": "application/json"}
+
+
+@pytest.mark.anyio
+async def test_download_recording_streams_to_file(tmp_path):
+    seen = {}
+
+    def handler(request):
+        seen["url"] = str(request.url)
+        seen["auth"] = request.headers.get("authorization")
+        return httpx.Response(200, content=b"RIFF....WAVE")
+
+    dest = tmp_path / "rec.wav"
+    out = await TelephonyNamespace(_StreamHTTP(handler)).calls.download_recording("c1", dest)
+    assert out == dest and dest.read_bytes() == b"RIFF....WAVE"
+    assert seen["url"].endswith("/sbc/v1/calls/c1/recording?format=wav") and seen["auth"] == "Bearer t"
+    assert [p.name for p in tmp_path.iterdir()] == ["rec.wav"]
+
+
+@pytest.mark.anyio
+async def test_download_recording_404_leaves_no_file(tmp_path):
+    def handler(request):
+        return httpx.Response(404, json={"error": "created with record=false", "code": "not_found"})
+
+    dest = tmp_path / "rec.wav"
+    with pytest.raises(TelephonyAPIError) as exc:
+        await TelephonyNamespace(_StreamHTTP(handler)).calls.download_recording("c1", dest)
+    assert exc.value.status_code == 404 and "record=false" in exc.value.message
+    assert list(tmp_path.iterdir()) == []

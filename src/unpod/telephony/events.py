@@ -34,6 +34,46 @@ class WebhookSignatureError(Exception):
     """The webhook signature is missing or does not match the secret."""
 
 
+class EventName:
+    """``CallEvent.event`` values (``EventName`` on the wire).
+
+    Constants only: ``CallEvent.event`` stays a plain ``str`` so new events
+    from the SBC do not break parsing.
+    """
+
+    MPC_INITIALIZED = "MPCInitialized"
+    MPC_START = "MPCStart"
+    MPC_END = "MPCEnd"
+    PARTICIPANT_JOIN = "ParticipantJoin"
+    PARTICIPANT_EXIT = "ParticipantExit"
+    PARTICIPANT_HOLD = "ParticipantHold"
+    PARTICIPANT_UNHOLD = "ParticipantUnhold"
+    MPC_RECORDING_PAUSED = "MPCRecordingPaused"
+    MPC_RECORDING_RESUMED = "MPCRecordingResumed"
+    MPC_RECORDING_COMPLETED = "MPCRecordingCompleted"
+    PARTICIPANT_RECORDING_INITIATED = "ParticipantRecordingInitiated"
+    PARTICIPANT_RECORDING_COMPLETED = "ParticipantRecordingCompleted"
+
+
+class DigitsRequest(BaseModel):
+    """The action-URL request after a ``<GetDigits>`` / ``<GetInput>`` element.
+
+    ``digits`` may be empty when only ``finishOnKey`` was pressed. ``input_type``
+    is ``"dtmf"`` for ``<GetInput>``. ``raw`` keeps every field as received.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    call_id: str | None = None
+    leg_id: str | None = None
+    from_: str | None = Field(default=None, alias="from")
+    to: str | None = None
+    direction: str | None = None
+    digits: str = ""
+    input_type: str | None = None
+    raw: dict[str, Any] = Field(default_factory=dict)
+
+
 class CallEvent(BaseModel):
     """One normalized call or recording event.
 
@@ -68,6 +108,12 @@ class CallEvent(BaseModel):
     recording_url: str | None = None
     recording_duration: int | None = None
     record_file: str | None = None
+    request_uuid: str | None = None
+    bill_duration: int | None = None
+    call_mode: str | None = None
+    participant_call_uuid: str | None = None
+    participant_role: str | None = None
+    mpc_end_reason: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     raw: dict[str, Any] = Field(default_factory=dict)
 
@@ -131,6 +177,18 @@ _FIELD_MAP: dict[str, str] = {
     "RecordingDuration": "recording_duration",
     "recording_duration": "recording_duration",
     "RecordFile": "record_file",
+    "RequestUUID": "request_uuid",
+    "request_uuid": "request_uuid",
+    "BillDuration": "bill_duration",
+    "bill_duration": "bill_duration",
+    "CallMode": "call_mode",
+    "call_mode": "call_mode",
+    "ParticipantCallUUID": "participant_call_uuid",
+    "participant_call_uuid": "participant_call_uuid",
+    "ParticipantRole": "participant_role",
+    "participant_role": "participant_role",
+    "MPCEndReason": "mpc_end_reason",
+    "mpc_end_reason": "mpc_end_reason",
 }
 
 _INT_FIELDS = {
@@ -138,6 +196,7 @@ _INT_FIELDS = {
     "sip_code",
     "sequence",
     "recording_duration",
+    "bill_duration",
     "start_time",
     "answer_time",
     "end_time",
@@ -268,11 +327,52 @@ def parse_call_event(
     return _normalize(_decode(raw_body, _header(headers, "Content-Type")))
 
 
+def parse_digits_request(
+    body: bytes | str,
+    headers: Mapping[str, str],
+    secret: str | bytes | None,
+    *,
+    signature_header: str = DEFAULT_SIGNATURE_HEADER,
+    tolerance: int | None = DEFAULT_TOLERANCE_SECS,
+    verify: bool = True,
+) -> DigitsRequest:
+    """Verify a ``<GetDigits>`` / ``<GetInput>`` action request and parse it.
+
+    Same signature scheme as :func:`parse_call_event` (signed with the org
+    secret over the raw body). Fields: ``CallUUID``, ``MPCUUID``, ``From``,
+    ``To``, ``Direction``, ``Digits`` (may be empty), ``InputType``.
+    Raises :class:`WebhookSignatureError` on a bad signature.
+    """
+    raw_body = body.encode("utf-8") if isinstance(body, str) else body
+    if verify:
+        if not secret:
+            raise WebhookSignatureError("a secret is required to verify the request")
+        if not verify_signature(
+            raw_body, _header(headers, signature_header), secret, tolerance=tolerance
+        ):
+            raise WebhookSignatureError("invalid or missing request signature")
+    raw = _decode(raw_body, _header(headers, "Content-Type"))
+    names = {
+        "CallUUID": "leg_id",
+        "MPCUUID": "call_id",
+        "From": "from",
+        "To": "to",
+        "Direction": "direction",
+        "Digits": "digits",
+        "InputType": "input_type",
+    }
+    fields = {names[k]: str(v) for k, v in raw.items() if k in names and v is not None}
+    return DigitsRequest(**fields, raw=dict(raw))
+
+
 __all__ = [
     "DEFAULT_SIGNATURE_HEADER",
     "DEFAULT_TOLERANCE_SECS",
     "CallEvent",
+    "DigitsRequest",
+    "EventName",
     "WebhookSignatureError",
     "parse_call_event",
+    "parse_digits_request",
     "verify_signature",
 ]

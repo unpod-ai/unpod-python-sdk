@@ -8,6 +8,16 @@ While the SDK is pre-1.0, breaking changes ship in a **minor** bump.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-13
+
+### Added
+- `calls.create()` / `calls.add_participant()`: `time_limit`, `sip_headers` (dict or `"k=v,k=v"`), `fallback_url`, `fallback_method`, `status_callback_events`, `end_mpc_on_exit`. Each is sent only when set and validated client-side. Docs for the new `record` and `dial_music` values.
+- Recording control: `calls.stop_recording()`, `pause_recording()`, `resume_recording()` (409 raises `TelephonyAPIError`), and `calls.download_recording(call_id, path)` which streams the WAV with the SDK's auth.
+- `calls.play_audio()`: `loop` as `bool | int`, `length`, `mix`.
+- `CallEvent`: `request_uuid`, `bill_duration`, `call_mode`, `participant_call_uuid`, `participant_role`, `mpc_end_reason`; `EventName` constants for the MPC and participant events.
+- `parse_digits_request()` / `DigitsRequest` for `<GetDigits>` / `<GetInput>` action requests.
+- `client.telephony.webhook_secret.reveal()`: the current full secret (org admin only). `get()` still returns it masked. Needs the backend `GET /sbc/webhook-secret/reveal` route.
+
 ### Added
 - Preview: SBC call control at `client.telephony.calls` (`create`, `list`, `get`, `end`, `hangup`, `add_participant`, `remove_participant`, `play_audio`, `stop_audio`, `speak`, `transfer`, `transfer_complete`, `transfer_cancel`, `send_dtmf`, `record`, `get_recording`) and `client.telephony.inbound` (trunk and DID inbound config), per the SuperSBC call API contract, through the unpod proxy at `/api/v2/platform/sbc/v1/...` (`unpod.telephony.CALL_API_PATHS`). `inbound.*` is not proxied yet.
 - `client.telephony.webhook_secret.get()` / `.rotate()`: the org's call-event signing secret.
