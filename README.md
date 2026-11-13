@@ -46,8 +46,8 @@ unpod
 Configure once — the [Quickstart](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/01-quickstart.md) explains why the REST base is the **bare host** (`pipes`/`calls`/`numbers` spell the full `/api/v2/platform/speech/...` prefix inside their own request paths, so the derived `https://<host>/platform` base would double it):
 
 ```bash
-export UNPOD_BASE_URL="https://api.unpod.ai"          # one knob for the rest
-export UNPOD_SERVICE_BASE_URL="https://api.unpod.ai"  # bare host: pipes/calls/numbers
+export UNPOD_BASE_URL="https://unpod.ai"          # one knob for the rest
+export UNPOD_SERVICE_BASE_URL="https://unpod.ai"  # bare host: pipes/calls/numbers
 export UNPOD_PLATFORM_TOKEN="..."                     # org-scoped REST auth + AgentRunner registration
 export UNPOD_ORG_HANDLE="your-org"
 export UNPOD_API_KEY="sk_..."                         # optional: legacy Bearer key for Client only
@@ -85,6 +85,32 @@ AgentRunner(entrypoint=entrypoint, agent_id="my-voice-agent").start()
 
 `voice_profiles` and `client.telephony.*` read the org-scoped platform plane, so they need `UNPOD_PLATFORM_TOKEN` + `UNPOD_ORG_HANDLE` — a Bearer `UNPOD_API_KEY` alone cannot reach them.
 
+## Telephony
+
+`client.telephony` works with phone calls on Unpod numbers: attach a number to an agent, control live calls yourself (dial, bridge two people, play, speak, transfer, DTMF, record — preview), and verify signed call events on your webhook.
+
+```bash
+pip install "unpod>=0.6.2"
+```
+
+```bash
+# .env — loaded automatically on `import unpod`
+UNPOD_BASE_URL=https://unpod.ai
+UNPOD_PLATFORM_TOKEN=<api key from Settings → Security → API keys>
+UNPOD_ORG_HANDLE=<org handle from Settings → Workspace → General>
+```
+
+```python
+from unpod import Client
+
+with Client() as client:
+    free = [n.number for n in client.telephony.numbers.list() if n.status == "not_assigned"]
+    result = client.telephony.numbers.attach(free[0], agent_id="sales-agent")
+    print(result.numbers[0].ok, result.numbers[0].error)
+```
+
+Everything else — call control, inbound config, webhooks, errors, troubleshooting — is in the [Telephony guide](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/08-telephony.md).
+
 ## Documentation
 
 | Guide | What it covers |
@@ -97,6 +123,7 @@ AgentRunner(entrypoint=entrypoint, agent_id="my-voice-agent").start()
 | [Adapters](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/05-adapters.md) | The `DialogAdapter` protocol led by the `stream()` hot path, the six bundled adapters, and how to write your own |
 | [Deployment](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/06-deployment.md) | The three shipped ways an agent reaches traffic — LLM endpoint, voice agent, phone number |
 | [Browser quickstart](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/07-browser-quickstart.md) | Testing an agent in the browser with no phone number, via `examples/browser_playground/` |
+| [Telephony](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/08-telephony.md) | `client.telephony`: install, credentials, numbers, call control, inbound config, signed call events, errors, troubleshooting |
 
 The old Architecture guide was archived on 2026-07-30 — package structure and data flow are now in Overview, concurrency and multi-replica in Run your agent and Connectivity SDK. It is kept, with a banner listing what did not survive a code check, at [docs/archive/05-architecture.md](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/archive/05-architecture.md).
 

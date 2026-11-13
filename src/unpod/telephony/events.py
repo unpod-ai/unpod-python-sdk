@@ -4,14 +4,21 @@ Call events arrive at ``status_callback_url`` either form-encoded (default) or
 as JSON. Field names follow Plivo (``CallUUID``, ``MPCUUID``, ``EventName``), so
 this module maps them to snake_case on :class:`CallEvent`.
 
-Signature: SuperSBC signs every callback Stripe-style
-(``src/proxy/webhook/signer.rs``):
+Each request is signed with your org's webhook secret
+(``client.telephony.webhook_secret``)::
 
     X-Webhook-Signature: t=<unix ts>,v1=<hex HMAC-SHA256(secret, "<ts>.<raw body>")>
 
-The secret is the org's call-event secret
-(``client.telephony.webhook_secret``). :func:`parse_call_event` rejects a
-timestamp older than ``tolerance`` seconds to limit replays.
+:func:`parse_call_event` checks that signature and rejects a timestamp older
+than ``tolerance`` seconds to limit replays. Typical use in a FastAPI handler::
+
+    body = await request.body()          # raw bytes, before any parsing
+    ev = parse_call_event(body, request.headers, secret=SECRET)
+    if ev.event == "Hangup":
+        print(ev.call_id, ev.hangup_cause)
+
+Recording events and outbound answer-URL requests are not signed yet; parse
+those with ``verify=False``.
 """
 
 from __future__ import annotations
@@ -119,9 +126,8 @@ class CallEvent(BaseModel):
 
 
 # Wire name -> CallEvent field. Both the Plivo-style form keys and their
-# snake_case JSON equivalents map here (``status_callback_format="json"``
-# sends the latter; see ``encode_body`` in ``src/proxy/webhook/leg_delivery.rs``),
-# so a callback is normalized the same way regardless of format.
+# snake_case JSON equivalents (sent with ``status_callback_format="json"``)
+# map here, so an event is normalized the same way in either format.
 _FIELD_MAP: dict[str, str] = {
     "EventName": "event",
     "event_name": "event",
@@ -236,7 +242,7 @@ def verify_signature(
     tolerance: int | None = DEFAULT_TOLERANCE_SECS,
     now: float | None = None,
 ) -> bool:
-    """True when ``signature`` is a valid SuperSBC ``t=..,v1=..`` header for ``body``.
+    """True when ``signature`` is a valid ``t=..,v1=..`` header for ``body``.
 
     The signed payload is ``"<t>.<body>"``. Comparison is constant-time. With a
     ``tolerance`` (seconds), a timestamp further than that from ``now`` fails;
