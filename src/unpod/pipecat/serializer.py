@@ -3,7 +3,8 @@
 Built for Pipecat's ``FastAPIWebsocketTransport``; the constructor takes the
 stream id and call id. Notes:
 
-* the audio format comes from the ``start`` event (μ-law 8k or L16 8k/16k),
+* the audio format comes from the ``start`` event (μ-law or A-law 8k, or L16
+  8k/16k/24k),
   instead of being assumed;
 * the bot's hangup goes through the Unpod call API
   (``client.telephony.calls.hangup``).
@@ -30,15 +31,19 @@ from pipecat.frames.frames import (
     Frame,
     InputAudioRawFrame,
     InputDTMFFrame,
+    InputTransportMessageFrame,
     InterruptionFrame,
+    OutputDTMFFrame,
+    OutputDTMFUrgentFrame,
     OutputTransportMessageFrame,
     OutputTransportMessageUrgentFrame,
 )
 from pipecat.processors.frame_processor import FrameProcessorSetup
 from pipecat.serializers.base_serializer import FrameSerializer
 
-from unpod.pipecat.g711 import pcm_to_ulaw, ulaw_to_pcm
+from unpod.pipecat.g711 import alaw_to_pcm, pcm_to_alaw, pcm_to_ulaw, ulaw_to_pcm
 from unpod.telephony.stream import (
+    ALAW,
     L16,
     MULAW,
     MediaFormat,
@@ -46,6 +51,7 @@ from unpod.telephony.stream import (
     clear_audio_message,
     decode_message,
     play_audio_message,
+    send_dtmf_message,
 )
 
 if TYPE_CHECKING:
@@ -181,6 +187,16 @@ class UnpodFrameSerializer(FrameSerializer):
             if not payload:
                 return None
             return play_audio_message(self._stream_id, payload, self._out_format)
+        if isinstance(frame, (OutputDTMFFrame, OutputDTMFUrgentFrame)):
+            buttons = frame.buttons or ([frame.button] if frame.button else [])
+            digits = "".join(str(b.value) for b in buttons)
+            if not digits:
+                return None
+            try:
+                return send_dtmf_message(self._stream_id, digits)
+            except ValueError:
+                logger.warning("ignoring invalid DTMF digits %r", digits)
+                return None
         if isinstance(
             frame, (OutputTransportMessageFrame, OutputTransportMessageUrgentFrame)
         ):
@@ -198,7 +214,11 @@ class UnpodFrameSerializer(FrameSerializer):
         pcm = await self._out_resampler.resample(
             frame.audio, frame.sample_rate, fmt.sample_rate
         )
-        return pcm_to_ulaw(pcm) if fmt.encoding == MULAW else pcm
+        if fmt.encoding == MULAW:
+            return pcm_to_ulaw(pcm)
+        if fmt.encoding == ALAW:
+            return pcm_to_alaw(pcm)
+        return pcm
 
     async def _hang_up(self) -> None:
         if self._hangup_fn is None:
@@ -234,8 +254,12 @@ class UnpodFrameSerializer(FrameSerializer):
             except ValueError:
                 logger.warning("ignoring invalid DTMF digit %r", digit)
                 return None
-        # `start` is consumed by parse_unpod_websocket; `stop` and unknown
-        # events carry nothing for the pipeline (the transport sees the close).
+        if event in ("playedStream", "clearedAudio"):
+            # Replies to the bot's own `checkpoint` / `clearAudio`; surfaced as
+            # transport messages so a processor can wait on a checkpoint.
+            return InputTransportMessageFrame(message=message)
+        # `start` is consumed by parse_unpod_websocket; unknown events carry
+        # nothing for the pipeline (the SBC ends a stream by closing the socket).
         return None
 
     async def _decode_media(self, media: dict[str, Any]) -> Frame | None:
@@ -251,6 +275,8 @@ class UnpodFrameSerializer(FrameSerializer):
         fmt = self._in_format
         if fmt.encoding == MULAW:
             raw = ulaw_to_pcm(raw)
+        elif fmt.encoding == ALAW:
+            raw = alaw_to_pcm(raw)
         elif fmt.encoding != L16:  # pragma: no cover - rejected in __init__
             return None
         pcm = await self._in_resampler.resample(raw, fmt.sample_rate, rate)

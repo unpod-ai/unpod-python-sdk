@@ -561,6 +561,103 @@ async def test_new_kwargs_validation(kw):
 
 
 @pytest.mark.anyio
+async def test_stream_api_paths_body_and_results():
+    started = {"stream_id": "s1", "message": "audio streaming started"}
+    obj = {
+        "stream_id": "s1",
+        "call_uuid": "c1",
+        "service_url": "wss://bot/ws",
+        "status": "in-progress",
+        "bidirectional": True,
+        "audio_track": "inbound",
+        "content_type": "audio/x-mulaw;rate=8000",
+        "start_time": "2026-11-16T23:18:04Z",
+        "end_time": None,
+        "duration": 3,
+        "status_reason": None,
+    }
+    http = _FakeHTTP(
+        {
+            ("POST", "/sbc/v1/calls/c1/stream"): started,
+            ("GET", "/sbc/v1/calls/c1/stream"): {"streams": [obj]},
+            ("GET", "/sbc/v1/calls/c1/stream/s1"): obj,
+        }
+    )
+    calls = TelephonyNamespace(http).calls
+    res = await calls.start_stream(
+        "c1",
+        "wss://bot/ws",
+        bidirectional=True,
+        content_type="audio/x-mulaw;rate=8000",
+        stream_timeout=120,
+        status_callback_url="https://x.test/cb",
+        status_callback_method="POST",
+        extra_headers={"lead": "42"},
+        keep_call_alive=True,
+    )
+    assert res.stream_id == "s1"
+    assert http.calls[0][2] == {
+        "service_url": "wss://bot/ws",
+        "bidirectional": True,
+        "content_type": "audio/x-mulaw;rate=8000",
+        "stream_timeout": 120,
+        "status_callback_url": "https://x.test/cb",
+        "status_callback_method": "POST",
+        "extra_headers": "lead=42",
+        "keep_call_alive": True,
+    }
+    streams = await calls.list_streams("c1")
+    assert [s.stream_id for s in streams] == ["s1"] and streams[
+        0
+    ].status == "in-progress"
+    one = await calls.get_stream("c1", "s1")
+    assert one.duration == 3 and one.content_type == "audio/x-mulaw;rate=8000"
+    await calls.stop_stream("c1", "s1")
+    await calls.stop_stream("c1")
+    assert [(m, p) for m, p, *_ in http.calls][-2:] == [
+        ("DELETE", "/sbc/v1/calls/c1/stream/s1"),
+        ("DELETE", "/sbc/v1/calls/c1/stream"),
+    ]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "url,kw",
+    [
+        ("https://bot/ws", {}),
+        ("wss://bot/ws", {"audio_track": "left"}),
+        ("wss://bot/ws", {"bidirectional": True, "audio_track": "both"}),
+        ("wss://bot/ws", {"content_type": "audio/opus"}),
+        ("wss://bot/ws", {"stream_timeout": 0}),
+        ("wss://bot/ws", {"status_callback_method": "PUT"}),
+        ("wss://bot/ws", {"extra_headers": "bad header=1"}),
+    ],
+)
+async def test_start_stream_validation(url, kw):
+    http = _FakeHTTP()
+    with pytest.raises(ValueError):
+        await TelephonyNamespace(http).calls.start_stream("c1", url, **kw)
+    assert http.calls == []
+
+
+@pytest.mark.anyio
+async def test_start_stream_403_when_streaming_disabled():
+    req = httpx.Request("POST", "https://x.test")
+    resp = httpx.Response(
+        403,
+        request=req,
+        json={
+            "detail": "audio_stream_disabled",
+            "message": "audio streaming is not enabled",
+        },
+    )
+    bad = _FakeHTTP(error=httpx.HTTPStatusError("403", request=req, response=resp))
+    with pytest.raises(TelephonyAPIError) as exc:
+        await TelephonyNamespace(bad).calls.start_stream("c1", "wss://bot/ws")
+    assert exc.value.status_code == 403 and exc.value.code == "audio_stream_disabled"
+
+
+@pytest.mark.anyio
 async def test_recording_control_paths_and_409():
     http = _FakeHTTP()
     calls = TelephonyNamespace(http).calls

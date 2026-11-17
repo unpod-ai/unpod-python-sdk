@@ -1,4 +1,4 @@
-"""G.711 μ-law ↔ 16-bit PCM (little-endian), via lookup tables.
+"""G.711 μ-law and A-law ↔ 16-bit PCM (little-endian), via lookup tables.
 
 Kept here rather than imported so the serializer behaves the same on every
 Pipecat 1.x: ``pipecat.audio.g711`` only exists from 1.16, and the older
@@ -56,4 +56,50 @@ def pcm_to_ulaw(pcm: bytes) -> bytes:
     return _ENCODE[samples + 32768].tobytes()
 
 
-__all__ = ["pcm_to_ulaw", "ulaw_to_pcm"]
+# ── A-law (G.711 PCMA), the Sun/CCITT reference g711.c ──────────────────────
+
+# Segment upper bounds of the 13-bit magnitude.
+_ASEG_ENDS = np.array([0x1F, 0x3F, 0x7F, 0xFF, 0x1FF, 0x3FF, 0x7FF, 0xFFF])
+
+
+def _build_alaw_decode() -> np.ndarray:
+    a = np.arange(256) ^ 0x55
+    mantissa = (a & 0x0F) << 4
+    segment = (a & 0x70) >> 4
+    t = np.where(segment == 0, mantissa + 8, mantissa + 0x108)
+    t = np.where(segment > 1, t << np.maximum(segment - 1, 0), t)
+    return np.where(a & 0x80, t, -t).astype("<i2")
+
+
+def _build_alaw_encode() -> np.ndarray:
+    sample = np.arange(-32768, 32768, dtype=np.int32) >> 3
+    mask = np.where(sample >= 0, 0xD5, 0x55)
+    magnitude = np.where(sample >= 0, sample, -sample - 1)
+    segment = np.searchsorted(_ASEG_ENDS, magnitude)
+    shift = np.where(segment < 2, 1, segment)
+    code = (segment << 4) | ((magnitude >> shift) & 0x0F)
+    code = np.where(segment > 7, 0x7F, code)
+    return (code ^ mask).astype(np.uint8)
+
+
+_ALAW_DECODE = _build_alaw_decode()
+_ALAW_ENCODE = _build_alaw_encode()
+
+
+def alaw_to_pcm(alaw: bytes) -> bytes:
+    """A-law (1 byte/sample) → 16-bit little-endian PCM."""
+    if not alaw:
+        return b""
+    return _ALAW_DECODE[np.frombuffer(alaw, dtype=np.uint8)].tobytes()
+
+
+def pcm_to_alaw(pcm: bytes) -> bytes:
+    """16-bit little-endian PCM → A-law. A trailing odd byte is dropped."""
+    usable = len(pcm) - (len(pcm) % 2)
+    if not usable:
+        return b""
+    samples = np.frombuffer(pcm[:usable], dtype="<i2").astype(np.int32)
+    return _ALAW_ENCODE[samples + 32768].tobytes()
+
+
+__all__ = ["alaw_to_pcm", "pcm_to_alaw", "pcm_to_ulaw", "ulaw_to_pcm"]

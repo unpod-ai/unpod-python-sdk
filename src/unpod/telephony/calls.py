@@ -68,6 +68,11 @@ CALL_API_PATHS: dict[str, str] = {
     "pause_recording": "/sbc/v1/calls/{call_id}/record/pause",
     "resume_recording": "/sbc/v1/calls/{call_id}/record/resume",
     "get_recording": "/sbc/v1/calls/{call_id}/recording",
+    "start_stream": "/sbc/v1/calls/{call_id}/stream",
+    "list_streams": "/sbc/v1/calls/{call_id}/stream",
+    "stop_streams": "/sbc/v1/calls/{call_id}/stream",
+    "get_stream": "/sbc/v1/calls/{call_id}/stream/{stream_id}",
+    "stop_stream": "/sbc/v1/calls/{call_id}/stream/{stream_id}",
     "set_did_inbound": "/sbc/v1/dids/{number}/inbound",
     "get_did_inbound": "/sbc/v1/dids/{number}/inbound",
     "set_trunk_inbound": "/sbc/v1/trunks/{name}/inbound",
@@ -209,6 +214,38 @@ class Recording(BaseModel):
     duration_secs: int | None = None
 
 
+class CallStream(BaseModel):
+    """One audio stream of a live call (``GET /calls/{id}/stream``).
+
+    ``status`` is ``in-progress``, ``completed`` or ``failed``; ``duration`` is
+    in seconds; ``status_reason`` says why it ended (``api_request``,
+    ``call_hangup``, ``stream_timeout``, ``connection_failed`` ...).
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    stream_id: str
+    call_uuid: str | None = None
+    service_url: str | None = None
+    status: str | None = None
+    bidirectional: bool | None = None
+    audio_track: str | None = None
+    content_type: str | None = None
+    start_time: str | None = None
+    end_time: str | None = None
+    duration: int | None = None
+    status_reason: str | None = None
+
+
+class StreamStartResult(BaseModel):
+    """Result of :meth:`CallsResource.start_stream` (HTTP 202)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    stream_id: str
+    message: str | None = None
+
+
 class InboundConfig(BaseModel):
     """What happens on an inbound call, for a trunk or for one number.
 
@@ -338,6 +375,57 @@ def _leg_body(
             else None
         ),
         "end_mpc_on_exit": end_mpc_on_exit,
+    }
+    body.update({k: v for k, v in optional.items() if v is not None})
+    return body
+
+
+_WS_SCHEMES = ("ws://", "wss://")
+_AUDIO_TRACKS = ("inbound", "outbound", "both")
+
+
+def _stream_body(
+    service_url: str,
+    *,
+    bidirectional: bool | None,
+    audio_track: str | None,
+    content_type: str | None,
+    stream_timeout: int | None,
+    status_callback_url: str | None,
+    status_callback_method: str | None,
+    extra_headers: str | Mapping[str, str] | None,
+    keep_call_alive: bool | None,
+) -> dict[str, Any]:
+    from unpod.telephony.stream import (
+        MediaFormat,
+        extra_headers_str,
+    )
+
+    if not service_url.startswith(_WS_SCHEMES):
+        raise ValueError("service_url must start with ws:// or wss://")
+    if audio_track is not None and audio_track not in _AUDIO_TRACKS:
+        raise ValueError(f"audio_track must be one of {_AUDIO_TRACKS}")
+    if bidirectional and audio_track not in (None, "inbound"):
+        raise ValueError('a bidirectional stream supports only audio_track="inbound"')
+    if content_type is not None:
+        MediaFormat.from_content_type(content_type).validate_supported()
+    if stream_timeout is not None and stream_timeout < 1:
+        raise ValueError("stream_timeout must be at least 1 second")
+    if status_callback_method is not None and status_callback_method not in (
+        "GET",
+        "POST",
+    ):
+        raise ValueError('status_callback_method must be "GET" or "POST"')
+    body: dict[str, Any] = {"service_url": service_url}
+    optional = {
+        "bidirectional": bidirectional,
+        "audio_track": audio_track,
+        "content_type": content_type,
+        "stream_timeout": stream_timeout,
+        "status_callback_url": status_callback_url,
+        "status_callback_method": status_callback_method,
+        "extra_headers": extra_headers_str(extra_headers) if extra_headers else None,
+        "keep_call_alive": keep_call_alive,
     }
     body.update({k: v for k, v in optional.items() if v is not None})
     return body
@@ -786,6 +874,74 @@ class CallsResource:
         """
         resp = await _call(self._http.get(_path("get_recording", call_id=call_id)))
         return Recording(**unwrap_data(resp))
+
+    # ── audio streams (the REST equivalent of the ``stream`` answer action) ──
+
+    async def start_stream(
+        self,
+        call_id: str,
+        service_url: str,
+        *,
+        bidirectional: bool | None = None,
+        audio_track: Literal["inbound", "outbound", "both"] | None = None,
+        content_type: str | None = None,
+        stream_timeout: int | None = None,
+        status_callback_url: str | None = None,
+        status_callback_method: Literal["GET", "POST"] | None = None,
+        extra_headers: str | Mapping[str, str] | None = None,
+        keep_call_alive: bool | None = None,
+    ) -> StreamStartResult:
+        """Start streaming a live call's audio to ``service_url`` (``ws(s)://``).
+
+        The org needs audio streaming enabled (else 403
+        ``audio_stream_disabled``); one stream per call at a time (409).
+        ``content_type`` is e.g. ``"audio/x-mulaw;rate=8000"``,
+        ``"audio/x-alaw;rate=8000"`` or ``"audio/x-l16;rate=16000"``.
+        ``extra_headers`` (``"k=v,k2=v2"`` or a dict) reach the bot in the
+        ``start`` event. Stream lifecycle events go to ``status_callback_url``.
+        """
+        body = _stream_body(
+            service_url,
+            bidirectional=bidirectional,
+            audio_track=audio_track,
+            content_type=content_type,
+            stream_timeout=stream_timeout,
+            status_callback_url=status_callback_url,
+            status_callback_method=status_callback_method,
+            extra_headers=extra_headers,
+            keep_call_alive=keep_call_alive,
+        )
+        resp = await _call(
+            self._http.post(_path("start_stream", call_id=call_id), json=body)
+        )
+        return StreamStartResult(**unwrap_data(resp))
+
+    async def list_streams(self, call_id: str) -> list[CallStream]:
+        """Every stream the call has had, active and ended."""
+        resp = unwrap_data(
+            await _call(self._http.get(_path("list_streams", call_id=call_id)))
+        )
+        items = resp.get("streams", []) if isinstance(resp, dict) else resp
+        return [CallStream(**item) for item in items or []]
+
+    async def get_stream(self, call_id: str, stream_id: str) -> CallStream:
+        """One stream of the call (404 when unknown)."""
+        resp = await _call(
+            self._http.get(_path("get_stream", call_id=call_id, stream_id=stream_id))
+        )
+        return CallStream(**unwrap_data(resp))
+
+    async def stop_stream(self, call_id: str, stream_id: str | None = None) -> None:
+        """Stop a stream (204); without ``stream_id`` the call's active one.
+
+        The stream ends with ``StatusReason=api_request``; the call continues.
+        400 when there is no active stream.
+        """
+        if stream_id is None:
+            path = _path("stop_streams", call_id=call_id)
+        else:
+            path = _path("stop_stream", call_id=call_id, stream_id=stream_id)
+        await _call(self._http.delete(path))
 
 
 class InboundResource:

@@ -8,18 +8,31 @@ import hashlib
 import hmac
 import json
 import time
+from urllib.parse import urlencode
 
 import pytest
 
-from unpod.telephony import STREAM_STARTED, AnswerResponse, parse_call_event
+from unpod.telephony import (
+    STREAM_DEGRADED,
+    STREAM_EVENTS,
+    STREAM_FAILED,
+    STREAM_STARTED,
+    STREAM_STOPPED,
+    AnswerResponse,
+    CallEvent,
+    parse_call_event,
+)
 from unpod.telephony.stream import (
+    ALAW,
     L16,
     MULAW,
     MediaFormat,
     StreamStart,
+    checkpoint_message,
     clear_audio_message,
     parse_start,
     play_audio_message,
+    send_dtmf_message,
     verify_stream_request,
 )
 
@@ -112,7 +125,22 @@ class TestMediaFormat:
         assert (fmt.encoding, fmt.sample_rate) == (L16, 16000)
 
     @pytest.mark.parametrize(
-        "enc,rate", [("audio/opus", 48000), (MULAW, 16000), (L16, 0)]
+        "enc,rate",
+        [(MULAW, 8000), (ALAW, 8000), (L16, 8000), (L16, 16000), (L16, 24000)],
+    )
+    def test_accepts_what_the_sbc_accepts(self, enc, rate):
+        MediaFormat(encoding=enc, sampleRate=rate).validate_supported()
+
+    @pytest.mark.parametrize(
+        "enc,rate",
+        [
+            ("audio/opus", 48000),
+            (MULAW, 16000),
+            (ALAW, 16000),
+            (L16, 0),
+            (L16, 44100),
+            (L16, 22050),
+        ],
     )
     def test_rejects_unsupported(self, enc, rate):
         with pytest.raises(ValueError):
@@ -138,6 +166,37 @@ class TestParseStart:
     def test_rejects_missing_ids(self):
         with pytest.raises(ValueError, match="callId"):
             parse_start(_start(callId=None))
+
+    def test_reads_top_level_extra_headers(self):
+        msg = _start()
+        msg["extra_headers"] = "lead=42,tier=gold"
+        assert parse_start(msg).extra_headers == "lead=42,tier=gold"
+        assert parse_start(_start()).extra_headers == ""
+
+
+class TestBotMessages:
+    """Frames the bot sends, in the shape SuperSBC's ``BotEvent`` parses."""
+
+    def test_checkpoint(self):
+        assert json.loads(checkpoint_message("s1", "greeting")) == {
+            "event": "checkpoint",
+            "streamId": "s1",
+            "name": "greeting",
+        }
+        with pytest.raises(ValueError):
+            checkpoint_message("s1", "")
+        with pytest.raises(ValueError):
+            checkpoint_message("s1", "x" * 257)
+
+    def test_send_dtmf(self):
+        assert json.loads(send_dtmf_message("s1", "12#*ab")) == {
+            "event": "sendDTMF",
+            "streamId": "s1",
+            "dtmf": "12#*AB",
+        }
+        for bad in ("", "12x", "1" * 33):
+            with pytest.raises(ValueError):
+                send_dtmf_message("s1", bad)
 
 
 def test_play_and_clear_messages():
@@ -313,6 +372,23 @@ class TestSerializerAudio:
             len(base64.b64decode(msg["media"]["payload"])) == 160
         )  # 1 byte per sample
 
+    async def test_alaw_in_and_out(self):
+        fmt = MediaFormat(encoding=ALAW, sampleRate=8000)
+        ser = UnpodFrameSerializer("s", "c", hangup=_Hangups(), media_format=fmt)
+        await _setup(ser, 8000)
+        frame = await ser.deserialize(_media(b"\xd5" * 160))  # A-law silence
+        assert isinstance(frame, InputAudioRawFrame) and frame.sample_rate == 8000
+        assert max(abs(v) for v in memoryview(frame.audio).cast("h")) <= 8
+        msg = json.loads(
+            await ser.serialize(
+                OutputAudioRawFrame(
+                    audio=b"\x00\x00" * 160, sample_rate=8000, num_channels=1
+                )
+            )
+        )
+        assert msg["media"]["contentType"] == ALAW
+        assert base64.b64decode(msg["media"]["payload"]) == b"\xd5" * 160
+
     async def test_l16_same_rate_is_passthrough(self):
         ser = UnpodFrameSerializer(
             "s",
@@ -427,6 +503,30 @@ class TestSerializerControl:
         await ser.serialize(EndFrame())
         assert seen == ["call-3"]
 
+    async def test_output_dtmf_becomes_send_dtmf(self):
+        from pipecat.audio.dtmf.types import KeypadEntry
+        from pipecat.frames.frames import OutputDTMFUrgentFrame
+
+        ser = UnpodFrameSerializer("s", "c", hangup=_Hangups())
+        out = await ser.serialize(OutputDTMFUrgentFrame(button=KeypadEntry.POUND))
+        assert json.loads(out) == {"event": "sendDTMF", "streamId": "s", "dtmf": "#"}
+
+    async def test_played_and_cleared_surface_as_transport_messages(self):
+        from pipecat.frames.frames import InputTransportMessageFrame
+
+        ser = UnpodFrameSerializer("s", "c", hangup=_Hangups())
+        played = {
+            "event": "playedStream",
+            "sequenceNumber": 9,
+            "streamId": "s",
+            "name": "a",
+        }
+        frame = await ser.deserialize(json.dumps(played))
+        assert isinstance(frame, InputTransportMessageFrame) and frame.message == played
+        cleared = {"event": "clearedAudio", "sequenceNumber": 10, "streamId": "s"}
+        frame = await ser.deserialize(json.dumps(cleared))
+        assert isinstance(frame, InputTransportMessageFrame)
+
     async def test_transport_messages(self):
         ser = UnpodFrameSerializer("s", "c", hangup=_Hangups())
         out = await ser.serialize(
@@ -438,6 +538,24 @@ class TestSerializerControl:
 
 
 # ── G.711 ───────────────────────────────────────────────────────────────────
+
+
+def test_alaw_matches_the_reference_codec():
+    import numpy as np
+
+    from unpod.pipecat.g711 import alaw_to_pcm, pcm_to_alaw
+
+    every_code = bytes(range(256))
+    assert pcm_to_alaw(alaw_to_pcm(every_code)) == every_code  # 256/256 round-trip
+    assert pcm_to_alaw(b"\x00\x00") == b"\xd5"  # A-law silence
+    assert pcm_to_alaw(b"\x00") == b""
+    samples = np.arange(-32768, 32768, dtype="<i2").tobytes()
+    try:
+        import audioop  # stdlib up to Python 3.12
+    except ImportError:
+        pytest.skip("reference codec (audioop) needs Python <= 3.12")
+    assert alaw_to_pcm(every_code) == audioop.alaw2lin(every_code, 2)
+    assert pcm_to_alaw(samples) == audioop.lin2alaw(samples, 2)
 
 
 def test_g711_matches_pipecat_codec_and_round_trips():
@@ -531,26 +649,141 @@ class TestAnswerResponse:
             AnswerResponse().stream("wss://bot/ws", content_type="audio/opus")
 
 
+def test_stream_answer_all_sbc_attributes():
+    r = AnswerResponse().stream(
+        "wss://bot/ws",
+        content_type=ALAW,
+        stream_timeout=60,
+        extra_headers={"lead": "42"},
+        status_callback_url="https://x.test/cb",
+        status_callback_method="GET",
+        noise_cancellation=True,
+        noise_cancellation_level=80,
+    )
+    xml = r.to_xml()
+    for attr in (
+        'contentType="audio/x-alaw;rate=8000"',
+        'streamTimeout="60"',
+        'extraHeaders="lead=42"',
+        'statusCallbackMethod="GET"',
+        'noiseCancellation="true"',
+        'noiseCancellationLevel="80"',
+    ):
+        assert attr in xml
+    # JSON keys are the SBC's StreamAction fields (answer_url/actions.rs).
+    action = r.to_json()["actions"][0]
+    assert action["stream_timeout"] == 60 and action["extra_headers"] == "lead=42"
+    assert action["status_callback_method"] == "GET"
+    assert action["noise_cancellation_level"] == 80
+
+
+@pytest.mark.parametrize(
+    "kw",
+    [
+        {"stream_timeout": 0},
+        {"status_callback_method": "PUT"},
+        {"noise_cancellation_level": 59},
+        {"noise_cancellation_level": 101},
+        {"extra_headers": "a b=1"},
+        {"extra_headers": {"lead": "4 2"}},
+        {"extra_headers": "x" * 600 + "=1"},
+        {"content_type": ALAW, "sample_rate": 16000},
+    ],
+)
+def test_stream_answer_rejects_what_the_sbc_rejects(kw):
+    with pytest.raises(ValueError):
+        AnswerResponse().stream("wss://bot/ws", **kw)
+
+
 # ── stream lifecycle events ─────────────────────────────────────────────────
 
 
-def test_stream_event_parses():
-    body = b"Event=StreamStarted&MPCUUID=call-1&StreamID=stream-1"
-    ev = parse_call_event(
-        body, {"Content-Type": "application/x-www-form-urlencoded"}, None, verify=False
+# The exact fields the SBC posts (``encode_stream_fields`` in SuperSBC's
+# ``src/proxy/webhook/stream_events.rs``; always form-encoded).
+_SBC_STREAM_COMMON = {
+    "CallUUID": "e01892a9-5cb6-1240-99ac-00163e594ee6-caller",
+    "StreamID": "b7e1c9d2-3f4a-4b5c-8d6e-7f8091a2b3c4",
+    "Timestamp": "2026-11-16T23:18:04Z",
+    "From": "+15550100001",
+    "To": "+15550100002",
+    "Direction": "inbound",
+    "ServiceURL": "wss://bot.example/ws",
+    "ExtraHeaders": "a=1",
+}
+
+
+def _form_event(fields: dict) -> CallEvent:
+    return parse_call_event(
+        urlencode(fields).encode(),
+        {"Content-Type": "application/x-www-form-urlencoded"},
+        None,
+        verify=False,
     )
-    assert (
-        ev.event == STREAM_STARTED
-        and ev.call_id == "call-1"
-        and ev.stream_id == "stream-1"
+
+
+def test_stream_started_from_the_sbc_wire_format():
+    ev = _form_event({**_SBC_STREAM_COMMON, "Event": "started"})
+    assert ev.event == STREAM_STARTED and ev.event in STREAM_EVENTS
+    assert ev.stream_id == "b7e1c9d2-3f4a-4b5c-8d6e-7f8091a2b3c4"
+    assert ev.leg_id == "e01892a9-5cb6-1240-99ac-00163e594ee6-caller"
+    assert ev.service_url == "wss://bot.example/ws"
+    assert ev.extra_headers == "a=1"
+    assert ev.event_time == "2026-11-16T23:18:04Z" and ev.timestamp is None
+    assert ev.stream_reason is None
+
+
+def test_stream_stopped_and_failed_carry_reason_duration_error():
+    ev = _form_event(
+        {
+            **_SBC_STREAM_COMMON,
+            "Event": "stopped",
+            "StatusReason": "api_request",
+            "Duration": "9",
+        }
     )
+    assert (ev.event, ev.stream_reason, ev.duration) == (
+        STREAM_STOPPED,
+        "api_request",
+        9,
+    )
+    ev = _form_event(
+        {
+            **_SBC_STREAM_COMMON,
+            "Event": "failed",
+            "StatusReason": "connection_failed",
+            "Duration": "0",
+            "Error": "http 503",
+        }
+    )
+    assert (ev.event, ev.stream_reason, ev.error) == (
+        STREAM_FAILED,
+        "connection_failed",
+        "http 503",
+    )
+    ev = _form_event(
+        {
+            **_SBC_STREAM_COMMON,
+            "Event": "degraded",
+            "StatusReason": "slow_connection_30",
+        }
+    )
+    assert ev.event == STREAM_DEGRADED and ev.stream_reason == "slow_connection_30"
+
+
+def test_stream_event_json_keys():
     ev = parse_call_event(
-        json.dumps({"event": "StreamFailed", "stream_id": "s", "reason": "connect"}),
+        json.dumps(
+            {"event": "failed", "stream_id": "s", "status_reason": "connection_failed"}
+        ),
         {"Content-Type": "application/json"},
         None,
         verify=False,
     )
-    assert (ev.stream_id, ev.stream_reason) == ("s", "connect")
+    assert (ev.event, ev.stream_id, ev.stream_reason) == (
+        "failed",
+        "s",
+        "connection_failed",
+    )
 
 
 # ── end to end through Pipecat's real FastAPI transport ─────────────────────

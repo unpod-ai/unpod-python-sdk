@@ -17,10 +17,16 @@ first). Until that ships the SBC rejects it as an unknown action.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, Literal
 from xml.sax.saxutils import escape, quoteattr
 
-from unpod.telephony.stream import DEFAULT_ENCODING, DEFAULT_SAMPLE_RATE, MediaFormat
+from unpod.telephony.stream import (
+    DEFAULT_ENCODING,
+    DEFAULT_SAMPLE_RATE,
+    MediaFormat,
+    extra_headers_str,
+)
 
 _WS_SCHEMES = ("ws://", "wss://")
 
@@ -46,12 +52,17 @@ class Response:
         keep_call_alive: bool = True,
         audio_track: Literal["inbound", "outbound", "both"] = "inbound",
         status_callback_url: str | None = None,
+        status_callback_method: Literal["GET", "POST"] | None = None,
+        stream_timeout: int | None = None,
+        extra_headers: str | Mapping[str, str] | None = None,
+        noise_cancellation: bool | None = None,
+        noise_cancellation_level: int | None = None,
     ) -> Response:
         """Stream the call's audio to ``url`` (``ws://`` or ``wss://``).
 
         The SBC dials the URL and speaks the Unpod stream protocol
         (:mod:`unpod.telephony.stream`). Stream lifecycle events
-        (``StreamStarted``/``StreamStopped``/``StreamFailed``) go to
+        (``started`` / ``stopped`` / ``failed`` / ``degraded``) go to
         ``status_callback_url``, or to the ``answer_url`` when unset.
 
         ``keep_call_alive=True`` (the default) holds the call on the stream
@@ -60,6 +71,13 @@ class Response:
         action it hangs up ("End Of XML Instructions").
         ``audio_track`` picks what the bot hears; a bidirectional stream must
         use ``"inbound"`` (the caller).
+
+        ``status_callback_method`` is ``POST`` (default) or ``GET``.
+        ``stream_timeout`` ends the stream after that many seconds.
+        ``extra_headers`` (``"k=v,k2=v2"`` or a dict; ``[A-Za-z0-9_-]`` only)
+        reach the bot in the ``start`` event and the stream events.
+        ``noise_cancellation`` / ``noise_cancellation_level`` (60-100) ask the
+        SBC to clean the caller audio before streaming it.
         """
         if not url.startswith(_WS_SCHEMES):
             raise ValueError("stream url must start with ws:// or wss://")
@@ -68,6 +86,15 @@ class Response:
             raise ValueError(
                 'a bidirectional stream supports only audio_track="inbound"'
             )
+        if stream_timeout is not None and stream_timeout < 1:
+            raise ValueError("stream_timeout must be at least 1 second")
+        if status_callback_method not in (None, "GET", "POST"):
+            raise ValueError('status_callback_method must be "GET" or "POST"')
+        if (
+            noise_cancellation_level is not None
+            and not 60 <= noise_cancellation_level <= 100
+        ):
+            raise ValueError("noise_cancellation_level must be between 60 and 100")
         action: dict[str, Any] = {
             "type": "stream",
             "url": url,
@@ -79,6 +106,16 @@ class Response:
         }
         if status_callback_url:
             action["status_callback_url"] = status_callback_url
+        optional = {
+            "status_callback_method": status_callback_method,
+            "stream_timeout": stream_timeout,
+            "extra_headers": extra_headers_str(extra_headers)
+            if extra_headers
+            else None,
+            "noise_cancellation": noise_cancellation,
+            "noise_cancellation_level": noise_cancellation_level,
+        }
+        action.update({k: v for k, v in optional.items() if v is not None})
         self._actions.append(action)
         return self
 
@@ -184,7 +221,12 @@ def _xml_action(a: dict[str, Any]) -> str:
                 ("keepCallAlive", a.get("keep_call_alive")),
                 ("audioTrack", a.get("audio_track")),
                 ("contentType", a["content_type"]),
+                ("streamTimeout", a.get("stream_timeout")),
+                ("extraHeaders", a.get("extra_headers")),
                 ("statusCallbackUrl", a.get("status_callback_url")),
+                ("statusCallbackMethod", a.get("status_callback_method")),
+                ("noiseCancellation", a.get("noise_cancellation")),
+                ("noiseCancellationLevel", a.get("noise_cancellation_level")),
             ]
         )
         return f"<Stream{attrs}>{escape(a['url'])}</Stream>"

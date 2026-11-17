@@ -15,11 +15,25 @@ SBC → bot::
     {"event": "dtmf", "sequenceNumber": N, "streamId": "...",
      "dtmf": {"track": "inbound", "digit": "5", "timestamp": "<unix ms>"}}
 
+    {"event": "playedStream", "sequenceNumber": N, "streamId": "...", "name": "<checkpoint>"}
+    {"event": "clearedAudio", "sequenceNumber": N, "streamId": "..."}
+
+Every SBC frame also carries a top-level ``"extra_headers"`` string (the
+stream's ``extraHeaders``). The SBC closes the socket (code 1000) to end the
+stream; there is no ``stop`` frame.
+
 bot → SBC::
 
     {"event": "playAudio", "streamId": "...",
      "media": {"contentType": "audio/x-mulaw", "sampleRate": 8000, "payload": "<base64>"}}
     {"event": "clearAudio", "streamId": "..."}
+    {"event": "checkpoint", "streamId": "...", "name": "<label>"}
+    {"event": "sendDTMF", "streamId": "...", "dtmf": "12#"}
+
+``checkpoint`` asks the SBC to answer ``playedStream`` once every audio queued
+before it has played; ``clearAudio`` drops the queue (pending checkpoints get
+no reply) and is answered with ``clearedAudio``. ``sendDTMF`` sends digits
+(``0-9``, ``A-D``, ``*``, ``#``; at most 32 queued) to the caller.
 
 The SBC signs the WebSocket upgrade request with the org's webhook secret
 using a V3 scheme: ``X-Plivo-Signature-V3`` is
@@ -34,6 +48,7 @@ import base64
 import hashlib
 import hmac
 import json
+import re
 from collections.abc import Mapping
 from typing import Any
 
@@ -46,11 +61,20 @@ from unpod.telephony.events import (
     verify_signature,
 )
 
-#: μ-law (G.711 PCMU). The default, and the only format SuperSBC streams in v1.
+#: μ-law (G.711 PCMU), 8000 Hz. The default.
 MULAW = "audio/x-mulaw"
-#: Linear 16-bit PCM, little-endian, mono.
+#: A-law (G.711 PCMA), 8000 Hz. Common on carrier trunks; streaming in the
+#: trunk's own codec saves the SBC a transcode.
+ALAW = "audio/x-alaw"
+#: Linear 16-bit PCM, little-endian, mono, at 8000, 16000 or 24000 Hz.
 L16 = "audio/x-l16"
-ENCODINGS = (MULAW, L16)
+ENCODINGS = (MULAW, ALAW, L16)
+#: Sample rates the SBC accepts per encoding (``StreamFormat::parse``).
+SAMPLE_RATES: dict[str, tuple[int, ...]] = {
+    MULAW: (8000,),
+    ALAW: (8000,),
+    L16: (8000, 16000, 24000),
+}
 
 DEFAULT_ENCODING = MULAW
 DEFAULT_SAMPLE_RATE = 8000
@@ -99,10 +123,10 @@ class MediaFormat(BaseModel):
             raise ValueError(
                 f"unsupported stream encoding {self.encoding!r}; use one of {ENCODINGS}"
             )
-        if self.encoding == MULAW and self.sample_rate != 8000:
-            raise ValueError("audio/x-mulaw streams are 8000 Hz only")
-        if self.sample_rate <= 0:
-            raise ValueError("sample rate must be positive")
+        allowed = SAMPLE_RATES[self.encoding]
+        if self.sample_rate not in allowed:
+            rates = ", ".join(str(r) for r in allowed)
+            raise ValueError(f"{self.encoding} streams support {rates} Hz only")
         return self
 
 
@@ -121,6 +145,8 @@ class StreamStart(BaseModel):
     account_id: str | None = None
     tracks: list[str] = Field(default_factory=lambda: ["inbound"])
     media_format: MediaFormat = Field(default_factory=MediaFormat)
+    #: The stream's ``extraHeaders`` (``"k=v,k2=v2"``), "" when none.
+    extra_headers: str = ""
     custom: dict[str, Any] = Field(default_factory=dict)
     raw: dict[str, Any] = Field(default_factory=dict)
 
@@ -152,6 +178,7 @@ def parse_start(message: Mapping[str, Any] | str | bytes) -> StreamStart:
         if isinstance(tracks, list) and tracks
         else ["inbound"],
         media_format=MediaFormat.parse(start.get("mediaFormat")),
+        extra_headers=str(data.get("extra_headers") or ""),
         custom={k: v for k, v in start.items() if k not in _START_KNOWN},
         raw=data,
     )
@@ -186,8 +213,65 @@ def clear_audio_message(stream_id: str) -> str:
     return json.dumps({"event": "clearAudio", "streamId": stream_id})
 
 
+#: Longest checkpoint name the SBC accepts.
+MAX_CHECKPOINT_NAME = 256
+#: Most DTMF digits the SBC queues from one bot at a time.
+MAX_SEND_DTMF = 32
+_DTMF_CHARS = frozenset("0123456789ABCD*#")
+
+
+def checkpoint_message(stream_id: str, name: str) -> str:
+    """Build a ``checkpoint`` frame. The SBC answers ``playedStream`` with
+    ``name`` once all audio sent before it has played."""
+    if not name or len(name) > MAX_CHECKPOINT_NAME:
+        raise ValueError(f"checkpoint name must be 1..{MAX_CHECKPOINT_NAME} characters")
+    return json.dumps({"event": "checkpoint", "streamId": stream_id, "name": name})
+
+
+def send_dtmf_message(stream_id: str, digits: str) -> str:
+    """Build a ``sendDTMF`` frame: play ``digits`` to the caller as DTMF."""
+    clean = digits.upper()
+    if not clean or any(c not in _DTMF_CHARS for c in clean):
+        raise ValueError("digits must be 0-9, A-D, * or #")
+    if len(clean) > MAX_SEND_DTMF:
+        raise ValueError(f"at most {MAX_SEND_DTMF} digits per message")
+    return json.dumps({"event": "sendDTMF", "streamId": stream_id, "dtmf": clean})
+
+
 V3_SIGNATURE_HEADER = "X-Plivo-Signature-V3"
 V3_NONCE_HEADER = "X-Plivo-Signature-V3-Nonce"
+
+
+_EXTRA_HEADER_TOKEN = re.compile(r"^[A-Za-z0-9_-]+$")
+MAX_STREAM_EXTRA_HEADERS_BYTES = 512
+
+
+def extra_headers_str(value: str | Mapping[str, str]) -> str:
+    """Validate and render a stream's ``extra_headers`` as ``"k=v,k2=v2"``.
+
+    Same rule as the SBC: every key and value is ``[A-Za-z0-9_-]+``, pairs
+    separated by ``,`` (or ``;``), at most 512 bytes in total.
+    """
+    if isinstance(value, str):
+        pairs = [p.strip() for p in re.split(r"[,;]", value) if p.strip()]
+        items = [p.split("=", 1) if "=" in p else [p, ""] for p in pairs]
+        text = value
+    else:
+        items = [[str(k), str(v)] for k, v in value.items()]
+        text = ",".join(f"{k}={v}" for k, v in items)
+    for key, val in items:
+        if not (
+            _EXTRA_HEADER_TOKEN.match(key.strip())
+            and _EXTRA_HEADER_TOKEN.match(val.strip())
+        ):
+            raise ValueError(
+                f"extra_headers {key}={val!r}: keys and values must be [A-Za-z0-9_-]"
+            )
+    if len(text.encode()) > MAX_STREAM_EXTRA_HEADERS_BYTES:
+        raise ValueError(
+            f"extra_headers exceeds {MAX_STREAM_EXTRA_HEADERS_BYTES} bytes"
+        )
+    return text
 
 
 def v3_signature(secret: str | bytes, url: str, nonce: str) -> str:
@@ -260,19 +344,27 @@ def verify_stream_request(
 
 
 __all__ = [
+    "ALAW",
     "DEFAULT_ENCODING",
     "DEFAULT_SAMPLE_RATE",
     "ENCODINGS",
     "L16",
+    "MAX_CHECKPOINT_NAME",
+    "MAX_SEND_DTMF",
+    "MAX_STREAM_EXTRA_HEADERS_BYTES",
     "MULAW",
+    "SAMPLE_RATES",
     "V3_NONCE_HEADER",
     "V3_SIGNATURE_HEADER",
     "MediaFormat",
     "StreamStart",
+    "checkpoint_message",
     "clear_audio_message",
     "decode_message",
+    "extra_headers_str",
     "parse_start",
     "play_audio_message",
+    "send_dtmf_message",
     "v3_signature",
     "verify_stream_request",
 ]

@@ -8,6 +8,19 @@ While the SDK is pre-1.0, breaking changes ship in a **minor** bump.
 
 ## [Unreleased]
 
+### Fixed
+- Stream status callbacks: `STREAM_STARTED` / `STREAM_STOPPED` / `STREAM_FAILED` now match what SuperSBC sends (`started`, `stopped`, `failed`; they were `StreamStartResult` ... and never matched), and `CallEvent.stream_reason` reads `StatusReason`. **Breaking** for code that compared against the old string values.
+
+### Added
+- `audio/x-alaw` (8 kHz) streams: `unpod.telephony.stream.ALAW`, `Response.stream(content_type=ALAW)` and A-law coding in `UnpodFrameSerializer`.
+- `STREAM_DEGRADED` and `CallEvent.service_url`, `.extra_headers`, `.error`, `.event_time` (the ISO `Timestamp` of stream callbacks).
+- REST streams on a live call: `client.telephony.calls.start_stream()`, `list_streams()`, `get_stream()`, `stop_stream()` (`CallStream`, `StreamStartResult`).
+- `Response.stream()`: `stream_timeout`, `status_callback_method`, `extra_headers` (str or dict), `noise_cancellation`, `noise_cancellation_level`.
+- Stream protocol: `checkpoint_message()`, `send_dtmf_message()`, `StreamStart.extra_headers`; in Pipecat, `OutputDTMFFrame` → `sendDTMF` and `playedStream` / `clearedAudio` → `InputTransportMessageFrame`.
+
+### Changed
+- Stream formats are validated as the SBC does: μ-law and A-law 8 kHz only, L16 at 8, 16 or 24 kHz.
+
 ## [0.7.0] - 2026-11-13
 
 ### Added

@@ -35,6 +35,7 @@ Since 0.6.0 (full notes in the [changelog](https://github.com/unpod-ai/unpod-pyt
 - **`answer_url` replies** — `unpod.telephony.answer.Response` builds `stream`, `speak`, `play`, `wait`, `dial` and `hangup` actions as SBC JSON or XML; `stream()` takes `keep_call_alive` and `audio_track`.
 - **Signed stream connections** — `verify_stream_request(headers, secret, url=...)` checks the SBC's V3 signature on the WebSocket upgrade.
 - **SBC call control (preview)** — `client.telephony.calls` (create, hangup, play, speak, transfer, DTMF, record, ...), `parse_call_event()` for signed call webhooks, and `client.telephony.webhook_secret`.
+- **Streaming, matched to the SBC (unreleased)** — A-law streams, REST `calls.start_stream()` / `stop_stream()`, all `<Stream>` options, `checkpoint` / `sendDTMF`, and stream status callbacks parsed from what the SBC really sends (`started`/`stopped`/`failed`/`degraded`).
 - **Changed:** `<Stream>` carries the sample rate in `contentType` only; `verify_stream_request` needs `url=` when the upgrade carries V3 headers.
 
 ## What's Inside
