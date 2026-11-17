@@ -1,23 +1,40 @@
-"""SBC call control: ``client.telephony.calls`` and ``client.telephony.inbound``.
+"""Call control (preview): ``client.telephony.calls`` and ``client.telephony.inbound``.
 
-Methods follow the SuperSBC call API contract (UNPO-123, ``telephony-api-openapi.yaml``)
-and go through the unpod telephony proxy, which adds the org's SBC credential.
-The SDK never talks to the SBC directly and never holds an SBC key. Decisions
-D4/D7 plan a direct mode (SDK -> SBC, bypassing the proxy); that mode is out
-of scope for this E2E effort (UNPO-183) and not implemented here.
+Phone calls you control yourself: dial, bridge two people, play audio, speak
+text, transfer, send DTMF, record. These are NOT the AI-agent calls at
+``client.calls``.
 
-These are SBC calls (legs, participants, audio, transfer, DTMF, recording). They
-are not the agent calls at ``client.calls``.
+Words used here:
 
-Every route lives in :data:`CALL_API_PATHS` (the UNPO-154 proxy under
-``/api/v2/platform/sbc/``). The org must have the call API switched on, or the
-proxy answers 403 ``call_api_disabled``. Where SuperSBC has not built a route
-yet, the proxy passes SuperSBC's error through.
+- call: one conversation (``call_id``), at most two participants
+- leg: one participant's phone connection in a call (``leg_id``)
+- ``from_``: caller ID, must be one of your org's numbers
+- ``to``: an E.164 number or a SIP URI
+
+Example::
+
+    call = await client.telephony.calls.create("+919000000001", "+919811111111",
+                                               role="agent")
+    await client.telephony.calls.add_participant(call.call_id, "+919000000001",
+                                                 "+919822222222", role="customer")
+    await client.telephony.calls.speak(call.call_id, "Connecting you now.")
+    await client.telephony.calls.end(call.call_id)
+
+The call API is off by default: ask Unpod to switch it on for your org, or every
+request raises :class:`TelephonyAPIError` 403 ``call_api_disabled``. Requests go
+through Unpod's API (``/api/v2/platform/sbc/...``), which checks that the call
+belongs to your org; the SDK never talks to the call server directly.
+Guide: ``docs/08-telephony.md``.
 """
 
 from __future__ import annotations
 
+import os
+import re
+import tempfile
 import uuid
+from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import quote, urlencode
 
@@ -28,16 +45,9 @@ from unpod.management._http import AsyncHTTPClient, unwrap_data
 
 # ── routes ───────────────────────────────────────────────────────────────────
 
-# Routes of the unpod call-API proxy (backend-core ``unpod/sbc/urls.py``,
-# UNPO-154), mounted at ``/api/v2/platform/sbc/``. The proxy is
-# path-transparent: ``/sbc/v1/<resource>`` forwards to SuperSBC
-# ``/api/v1/<resource>``. Paths here are relative to the platform base
-# (``.../api/v2/platform``). The proxy accepts them with or without a
-# trailing slash.
-#
-# Not served by the proxy yet: the ``*_inbound`` routes (SuperSBC has them,
-# the proxy read allowlist does not). They follow the same path-transparent
-# shape so they work unchanged once the proxy adds them.
+# Every call-control route, relative to the platform base
+# (``https://<host>/api/v2/platform``). The server accepts them with or
+# without a trailing slash.
 CALL_API_PATHS: dict[str, str] = {
     "create_call": "/sbc/v1/calls",
     "list_calls": "/sbc/v1/calls",
@@ -54,12 +64,16 @@ CALL_API_PATHS: dict[str, str] = {
     "transfer_cancel": "/sbc/v1/calls/{call_id}/transfer/cancel",
     "send_dtmf": "/sbc/v1/calls/{call_id}/dtmf",
     "record": "/sbc/v1/calls/{call_id}/record",
+    "stop_recording": "/sbc/v1/calls/{call_id}/record",
+    "pause_recording": "/sbc/v1/calls/{call_id}/record/pause",
+    "resume_recording": "/sbc/v1/calls/{call_id}/record/resume",
     "get_recording": "/sbc/v1/calls/{call_id}/recording",
     "set_did_inbound": "/sbc/v1/dids/{number}/inbound",
     "get_did_inbound": "/sbc/v1/dids/{number}/inbound",
     "set_trunk_inbound": "/sbc/v1/trunks/{name}/inbound",
     "get_trunk_inbound": "/sbc/v1/trunks/{name}/inbound",
     "get_webhook_secret": "/sbc/webhook-secret",
+    "reveal_webhook_secret": "/sbc/webhook-secret/reveal",
     "rotate_webhook_secret": "/sbc/webhook-secret/rotate",
 }
 
@@ -152,7 +166,7 @@ class Leg(BaseModel):
 
 
 class TelephonyCall(BaseModel):
-    """An SBC call with up to two legs (participant A and B)."""
+    """A call you control, with up to two legs (participants)."""
 
     model_config = ConfigDict(extra="allow")
 
@@ -196,7 +210,12 @@ class Recording(BaseModel):
 
 
 class InboundConfig(BaseModel):
-    """Inbound call config for a trunk, or a per-DID override of it."""
+    """What happens on an inbound call, for a trunk or for one number.
+
+    ``answer_url`` is your app that answers the call; ``answer_fallback``
+    (``"static_routing"`` or ``"reject_503"``) applies when it fails. All URLs
+    must be public https.
+    """
 
     model_config = ConfigDict(extra="allow")
 
@@ -214,6 +233,51 @@ class InboundConfig(BaseModel):
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
+
+
+_STATUS_CALLBACK_EVENTS = ("mpc-state-changes", "participant-state-changes", "leg-state-changes")
+_SIP_HEADER_KEY = re.compile(r"^[A-Za-z0-9-]{1,32}$")
+
+
+def _sip_headers_str(value: str | Mapping[str, str]) -> str:
+    """Serialize ``sip_headers`` to the wire form ``"k1=v1,k2=v2"``.
+
+    The SBC adds ``X-PH-<k>`` on the carrier INVITE. Limits: keys
+    ``[A-Za-z0-9-]`` up to 32 chars, values up to 256 chars, at most 10. The
+    wire form cannot carry ``,`` in a value, so it is rejected here.
+    A string is passed through after the same checks.
+    """
+    if isinstance(value, str):
+        pairs = []
+        for part in value.split(","):
+            k, sep, v = part.partition("=")
+            if not sep:
+                raise ValueError("sip_headers string must look like 'k1=v1,k2=v2'")
+            pairs.append((k, v))
+    else:
+        pairs = [(str(k), str(v)) for k, v in value.items()]
+    if not pairs or len(pairs) > 10:
+        raise ValueError("sip_headers needs between 1 and 10 headers")
+    for k, v in pairs:
+        if not _SIP_HEADER_KEY.match(k):
+            raise ValueError(f"invalid sip_headers key {k!r}: use [A-Za-z0-9-], max 32 chars")
+        if len(v) > 256 or "," in v:
+            raise ValueError(f"invalid sip_headers value for {k!r}: max 256 chars, no commas")
+    return ",".join(f"{k}={v}" for k, v in pairs)
+
+
+def _status_events_str(value: str | Sequence[str]) -> str:
+    """Serialize ``status_callback_events`` to a comma list of known event groups."""
+    items = [p.strip() for p in value.split(",")] if isinstance(value, str) else list(value)
+    if not items:
+        raise ValueError("status_callback_events must not be empty")
+    for item in items:
+        if item not in _STATUS_CALLBACK_EVENTS:
+            raise ValueError(
+                f"unknown status_callback_events value {item!r}; "
+                f"use any of {', '.join(_STATUS_CALLBACK_EVENTS)}"
+            )
+    return ",".join(items)
 
 
 def _leg_body(
@@ -234,8 +298,20 @@ def _leg_body(
     answer_url: str | None,
     answer_method: str | None,
     metadata: dict[str, str] | None,
+    time_limit: int | None = None,
+    sip_headers: str | Mapping[str, str] | None = None,
+    fallback_url: str | None = None,
+    fallback_method: str | None = None,
+    status_callback_events: str | Sequence[str] | None = None,
+    end_mpc_on_exit: bool | None = None,
 ) -> dict[str, Any]:
     """Request body shared by ``create`` and ``add_participant`` (``LegOptions``)."""
+    if time_limit is not None and not 1 <= time_limit <= 86400:
+        raise ValueError("time_limit must be between 1 and 86400 seconds")
+    if fallback_url is not None and answer_url is None:
+        raise ValueError("fallback_url requires answer_url")
+    if fallback_method is not None and fallback_url is None:
+        raise ValueError("fallback_method requires fallback_url")
     body: dict[str, Any] = {"from": from_, "to": to}
     optional = {
         "role": role,
@@ -252,6 +328,16 @@ def _leg_body(
         "answer_url": answer_url,
         "answer_method": answer_method,
         "metadata": metadata,
+        "time_limit": time_limit,
+        "sip_headers": _sip_headers_str(sip_headers) if sip_headers is not None else None,
+        "fallback_url": fallback_url,
+        "fallback_method": fallback_method,
+        "status_callback_events": (
+            _status_events_str(status_callback_events)
+            if status_callback_events is not None
+            else None
+        ),
+        "end_mpc_on_exit": end_mpc_on_exit,
     }
     body.update({k: v for k, v in optional.items() if v is not None})
     return body
@@ -275,7 +361,7 @@ def _with_query(path: str, params: dict[str, Any]) -> str:
 
 
 class CallsResource:
-    """``client.telephony.calls``: create and control SBC calls."""
+    """``client.telephony.calls``: start and control phone calls yourself."""
 
     def __init__(self, http: AsyncHTTPClient) -> None:
         self._http = http
@@ -299,15 +385,42 @@ class CallsResource:
         answer_url: str | None = None,
         answer_method: Literal["POST", "GET"] | None = None,
         metadata: dict[str, str] | None = None,
+        time_limit: int | None = None,
+        sip_headers: str | Mapping[str, str] | None = None,
+        fallback_url: str | None = None,
+        fallback_method: Literal["POST", "GET"] | None = None,
+        status_callback_events: str | Sequence[str] | None = None,
+        end_mpc_on_exit: bool | None = None,
         idempotency_key: str | None = None,
     ) -> TelephonyCall:
-        """Dial the first participant (A). Contract ``createCall``.
+        """Start a call by dialing the first participant.
 
-        ``from_`` is a caller ID the org owns (E.164). ``to`` is an E.164 number
-        or a SIP URI. Dialing is asynchronous: the call comes back ``initiated``
-        and progress arrives as events at ``status_callback_url``. ``answer_url``
-        runs an answer-URL app (play/speak/dial/...) on this leg once it
-        connects, instead of just bridging it.
+        ``from_`` is one of your org's numbers (E.164), else 400
+        ``from_not_owned``. ``to`` is an E.164 number or a SIP URI. Returns at
+        once with ``state="initiated"``; progress (``Ringing``, ``Answered``,
+        ``Hangup``) arrives as events at ``status_callback_url``. Add the second
+        person with :meth:`add_participant`.
+
+        ``role`` and ``metadata`` are your own labels; they come back on this
+        leg's events. ``answer_url`` runs your answer-URL app on this leg once
+        it connects. Every URL must be public ``https``. Pass the same
+        ``idempotency_key`` when you retry, so the phone is not dialed twice.
+
+        Optional kwargs are sent only when set:
+
+        - ``record``: ``True`` forces recording; ``False`` hides the recording
+          (if the global policy made one) from the API, so there are no recording
+          webhooks and ``get_recording`` returns 404; omitted lets the policy decide.
+        - ``dial_music``: ``None``, ``""`` or ``"real"`` is the normal ringback,
+          ``"none"`` is silence, an https URL is custom audio.
+        - ``time_limit``: max call length in seconds, 1..86400 (default 14400).
+        - ``sip_headers``: a dict or ``"k=v,k=v"``; each is sent to the carrier
+          as ``X-PH-<k>`` (keys ``[A-Za-z0-9-]`` up to 32 chars, values up to 256, max 10).
+        - ``fallback_url`` / ``fallback_method``: used when ``answer_url`` fails
+          (needs ``answer_url``).
+        - ``status_callback_events``: a list or comma string of ``mpc-state-changes``,
+          ``participant-state-changes``, ``leg-state-changes``; omitted sends all.
+        - ``end_mpc_on_exit``: this participant leaving ends the call (default false).
         """
         body = _leg_body(
             from_,
@@ -326,6 +439,12 @@ class CallsResource:
             answer_url=answer_url,
             answer_method=answer_method,
             metadata=metadata,
+            time_limit=time_limit,
+            sip_headers=sip_headers,
+            fallback_url=fallback_url,
+            fallback_method=fallback_method,
+            status_callback_events=status_callback_events,
+            end_mpc_on_exit=end_mpc_on_exit,
         )
         resp = await _call(
             self._http.post(
@@ -348,7 +467,7 @@ class CallsResource:
         number: str | None = None,
         since: str | None = None,
     ) -> CallList:
-        """List active calls. Contract ``listCalls``."""
+        """List your org's active calls, one page at a time."""
         params = {
             "page": page,
             "page_size": page_size,
@@ -368,18 +487,18 @@ class CallsResource:
         return CallList(**resp)
 
     async def get(self, call_id: str) -> TelephonyCall:
-        """One call with per-leg state. Contract ``getCall``."""
+        """One call with the state of each leg."""
         resp = await _call(self._http.get(_path("get_call", call_id=call_id)))
         return TelephonyCall(**unwrap_data(resp))
 
     async def end(self, call_id: str) -> None:
-        """End the whole call (all legs). Contract ``endCall``."""
+        """End the whole call: every leg hangs up."""
         await _call(self._http.delete(_path("end_call", call_id=call_id)))
 
     async def hangup(
         self, call_id: str, *, reason: str | None = None, code: int | None = None
     ) -> None:
-        """Hang up with an optional reason and SIP status. Contract ``hangupCall``."""
+        """End the call with an optional ``reason`` text and SIP ``code``."""
         body: dict[str, Any] = {}
         if reason is not None:
             body["reason"] = reason
@@ -407,13 +526,34 @@ class CallsResource:
         answer_url: str | None = None,
         answer_method: Literal["POST", "GET"] | None = None,
         metadata: dict[str, str] | None = None,
+        time_limit: int | None = None,
+        sip_headers: str | Mapping[str, str] | None = None,
+        fallback_url: str | None = None,
+        fallback_method: Literal["POST", "GET"] | None = None,
+        status_callback_events: str | Sequence[str] | None = None,
+        end_mpc_on_exit: bool | None = None,
         idempotency_key: str | None = None,
     ) -> Leg:
-        """Dial participant B and bridge it on answer. Contract ``addParticipant``.
+        """Dial a second person into the call; they are bridged when they answer.
 
-        A call has at most two participants; a third raises
-        :class:`TelephonyAPIError` with status 409. ``answer_url`` runs an
-        answer-URL app on this leg once it connects, instead of just bridging it.
+        Takes the same options as :meth:`create`. A call holds at most two
+        participants; a third raises :class:`TelephonyAPIError` 409.
+
+        Optional kwargs are sent only when set:
+
+        - ``record``: ``True`` forces recording; ``False`` hides the recording
+          (if the global policy made one) from the API, so there are no recording
+          webhooks and ``get_recording`` returns 404; omitted lets the policy decide.
+        - ``dial_music``: ``None``, ``""`` or ``"real"`` is the normal ringback,
+          ``"none"`` is silence, an https URL is custom audio.
+        - ``time_limit``: max call length in seconds, 1..86400 (default 14400).
+        - ``sip_headers``: a dict or ``"k=v,k=v"``; each is sent to the carrier
+          as ``X-PH-<k>`` (keys ``[A-Za-z0-9-]`` up to 32 chars, values up to 256, max 10).
+        - ``fallback_url`` / ``fallback_method``: used when ``answer_url`` fails
+          (needs ``answer_url``).
+        - ``status_callback_events``: a list or comma string of ``mpc-state-changes``,
+          ``participant-state-changes``, ``leg-state-changes``; omitted sends all.
+        - ``end_mpc_on_exit``: this participant leaving ends the call (default false).
         """
         body = _leg_body(
             from_,
@@ -432,6 +572,12 @@ class CallsResource:
             answer_url=answer_url,
             answer_method=answer_method,
             metadata=metadata,
+            time_limit=time_limit,
+            sip_headers=sip_headers,
+            fallback_url=fallback_url,
+            fallback_method=fallback_method,
+            status_callback_events=status_callback_events,
+            end_mpc_on_exit=end_mpc_on_exit,
         )
         resp = await _call(
             self._http.post(
@@ -443,7 +589,7 @@ class CallsResource:
         return Leg(**unwrap_data(resp))
 
     async def remove_participant(self, call_id: str, leg_id: str) -> None:
-        """Hang up one participant leg. Contract ``removeParticipant``."""
+        """Hang up one participant (leg); the rest of the call keeps going."""
         await _call(
             self._http.delete(_path("remove_participant", call_id=call_id, leg_id=leg_id))
         )
@@ -455,22 +601,38 @@ class CallsResource:
         url: str | None = None,
         file: str | None = None,
         leg_id: str | None = None,
-        loop: bool | None = None,
+        loop: bool | int | None = None,
+        length: int | None = None,
+        mix: bool | None = None,
         interrupt_on_dtmf: bool | None = None,
     ) -> PlayResult:
-        """Play audio to one leg, or to all legs when ``leg_id`` is omitted.
+        """Play an audio file to one leg, or to every leg when ``leg_id`` is omitted.
 
-        Pass exactly one of ``url`` (https, MP3 or WAV) or ``file`` (a path on
-        the SBC). Contract ``playAudio``.
+        ``url`` is a public https MP3 or WAV. ``file`` (a path on the call
+        server) is refused by the hosted API; use ``url``. Returns a
+        ``play_id`` you can pass to :meth:`stop_audio`.
+
+        ``loop``: an int ``n`` plays ``n`` times; ``0`` or ``True`` plays until
+        stopped. ``length`` stops playback after that many seconds (>= 1).
+        ``mix`` is accepted, but mixing is not supported yet: playback replaces
+        the call audio.
         """
         if (url is None) == (file is None):
             raise ValueError("pass exactly one of url= or file=")
+        if length is not None and length < 1:
+            raise ValueError("length must be at least 1 second")
+        if loop is not None and not isinstance(loop, bool) and loop < 0:
+            raise ValueError("loop must be >= 0")
         source = {"type": "url", "url": url} if url is not None else {"type": "file", "path": file}
         body: dict[str, Any] = {"source": source}
         if leg_id is not None:
             body["leg_id"] = leg_id
         if loop is not None:
             body["loop"] = loop
+        if length is not None:
+            body["length"] = length
+        if mix is not None:
+            body["mix"] = mix
         if interrupt_on_dtmf is not None:
             body["interrupt_on_dtmf"] = interrupt_on_dtmf
         resp = await _call(self._http.post(_path("play_audio", call_id=call_id), json=body))
@@ -479,10 +641,7 @@ class CallsResource:
     async def stop_audio(
         self, call_id: str, *, leg_id: str | None = None, play_id: str | None = None
     ) -> None:
-        """Stop audio on one leg, or on all legs when ``leg_id`` is omitted.
-
-        Contract ``stopAudio``.
-        """
+        """Stop audio on one leg, or on every leg when ``leg_id`` is omitted."""
         path = _with_query(
             _path("stop_audio", call_id=call_id), {"leg_id": leg_id, "play_id": play_id}
         )
@@ -498,10 +657,11 @@ class CallsResource:
         leg_id: str | None = None,
         loop: bool | None = None,
     ) -> PlayResult:
-        """Synthesize ``text`` with the SBC TTS and play it. Contract ``speakAudio``.
+        """Speak ``text`` (max 1000 characters) to one leg or every leg.
 
-        ``voice`` overrides the trunk/DID voice. Raises :class:`TelephonyAPIError`
-        with status 503 when TTS is not configured.
+        ``voice`` overrides the voice set in the number's inbound config.
+        Raises :class:`TelephonyAPIError` 503 ``tts_unavailable`` when
+        text-to-speech is not configured.
         """
         if len(text) > 1000:
             raise ValueError("text must be at most 1000 characters")
@@ -525,9 +685,10 @@ class CallsResource:
         type: Literal["blind", "attended"] = "blind",
         leg_id: str | None = None,
     ) -> None:
-        """Blind or attended transfer. Contract ``transferCall``.
+        """Transfer the call to ``target``.
 
-        For an attended transfer, finish with :meth:`transfer_complete` or
+        ``type="blind"`` hands the call over at once. ``type="attended"`` first
+        connects you to the target; finish with :meth:`transfer_complete` or
         :meth:`transfer_cancel`.
         """
         body: dict[str, Any] = {"type": type, "target": target}
@@ -536,7 +697,7 @@ class CallsResource:
         await _call(self._http.post(_path("transfer", call_id=call_id), json=body))
 
     async def transfer_complete(self, call_id: str, consult_leg: str) -> None:
-        """Complete an attended transfer. Contract ``transferComplete``."""
+        """Finish an attended transfer: connect the caller to the target."""
         await _call(
             self._http.post(
                 _path("transfer_complete", call_id=call_id),
@@ -545,7 +706,7 @@ class CallsResource:
         )
 
     async def transfer_cancel(self, call_id: str, consult_leg: str) -> None:
-        """Cancel an attended transfer. Contract ``transferCancel``."""
+        """Abort an attended transfer and return to the original call."""
         await _call(
             self._http.post(
                 _path("transfer_cancel", call_id=call_id),
@@ -554,7 +715,7 @@ class CallsResource:
         )
 
     async def send_dtmf(self, call_id: str, digits: str, *, leg_id: str | None = None) -> None:
-        """Send DTMF digits (``0-9``, ``A-D``, ``*``, ``#``). Contract ``sendDtmf``."""
+        """Send keypad tones: ``0-9``, ``A-D``, ``*``, ``#``."""
         if not digits or any(d not in "0123456789ABCD*#" for d in digits):
             raise ValueError("digits must match ^[0-9A-D*#]+$")
         body: dict[str, Any] = {"digits": digits}
@@ -563,27 +724,77 @@ class CallsResource:
         await _call(self._http.post(_path("send_dtmf", call_id=call_id), json=body))
 
     async def record(self, call_id: str, *, transcribe: bool | None = None) -> None:
-        """Start recording the call. Contract ``recordCall``."""
+        """Start recording the call. Fetch it later with :meth:`get_recording`.
+
+        Starting while already recording succeeds. After :meth:`stop_recording`
+        the server answers 409.
+        """
         body: dict[str, Any] = {}
         if transcribe is not None:
             body["transcribe"] = transcribe
         await _call(self._http.post(_path("record", call_id=call_id), json=body))
 
-    async def get_recording(self, call_id: str) -> Recording:
-        """Recording metadata. Contract ``getRecording``.
+    async def stop_recording(self, call_id: str) -> None:
+        """Stop recording for good (204). 409 when not recording or already stopped."""
+        await _call(self._http.delete(_path("stop_recording", call_id=call_id)))
 
-        Raises :class:`TelephonyAPIError` with status 409 while the recording
-        is still being written. Download the WAV from ``Recording.url``.
+    async def pause_recording(self, call_id: str) -> None:
+        """Pause the recording (204). 409 when not recording or already paused."""
+        await _call(self._http.post(_path("pause_recording", call_id=call_id), json={}))
+
+    async def resume_recording(self, call_id: str) -> None:
+        """Resume a paused recording (204). 409 when not paused or stopped."""
+        await _call(self._http.post(_path("resume_recording", call_id=call_id), json={}))
+
+    async def download_recording(self, call_id: str, path: str | os.PathLike[str]) -> Path:
+        """Stream the recording WAV to ``path`` with the SDK's auth and return it.
+
+        Written to a temp file next to ``path`` and renamed, so a failed download
+        leaves no partial file. Raises :class:`TelephonyAPIError` (404 when the
+        call was created with ``record=false``; 409 while still being written).
+        """
+        dest = Path(path)
+        http = self._http
+        client = await http._ensure_client()
+        url = http._url(_path("get_recording", call_id=call_id))
+        headers = {k: v for k, v in http._headers().items() if k.lower() != "content-type"}
+        fd, tmp_name = tempfile.mkstemp(dir=dest.parent, prefix=dest.name + ".", suffix=".part")
+        try:
+            with os.fdopen(fd, "wb") as out:
+                async with client.stream(
+                    "GET", url, headers=headers, params={"format": "wav"}
+                ) as resp:
+                    if resp.status_code >= 400:
+                        await resp.aread()
+                    try:
+                        resp.raise_for_status()
+                    except httpx.HTTPStatusError as exc:
+                        raise _to_api_error(exc) from exc
+                    async for chunk in resp.aiter_bytes():
+                        out.write(chunk)
+            os.replace(tmp_name, dest)
+        except BaseException:
+            Path(tmp_name).unlink(missing_ok=True)
+            raise
+        return dest
+
+    async def get_recording(self, call_id: str) -> Recording:
+        """The call's recording: one two-channel WAV at ``Recording.url``.
+
+        Raises :class:`TelephonyAPIError` 409 while the recording is still
+        being written; retry a little later.
         """
         resp = await _call(self._http.get(_path("get_recording", call_id=call_id)))
         return Recording(**unwrap_data(resp))
 
 
 class InboundResource:
-    """``client.telephony.inbound``: where inbound calls to a trunk or DID go.
+    """``client.telephony.inbound``: what happens when someone calls your number.
 
-    The trunk config applies to every DID on that trunk; a DID override wins
-    field by field.
+    Set an :class:`InboundConfig` (answer URL, fallback, callbacks) for one
+    number with :meth:`set_did`, or for every number of a trunk with
+    :meth:`set_trunk`. A number's own config wins over its trunk's, field by
+    field.
     """
 
     def __init__(self, http: AsyncHTTPClient) -> None:
@@ -598,31 +809,28 @@ class InboundResource:
     async def set_trunk(
         self, name: str, config: InboundConfig | dict[str, Any]
     ) -> InboundConfig:
-        """Set a trunk's inbound config. Contract ``setTrunkInboundConfig``."""
+        """Set the inbound config for every number on trunk ``name``."""
         resp = await _call(
             self._http.put(_path("set_trunk_inbound", name=name), json=self._body(config))
         )
         return InboundConfig(**(unwrap_data(resp) or {}))
 
     async def get_trunk(self, name: str) -> InboundConfig:
-        """A trunk's inbound config. Contract ``getTrunkInboundConfig``."""
+        """The inbound config of trunk ``name``."""
         resp = await _call(self._http.get(_path("get_trunk_inbound", name=name)))
         return InboundConfig(**(unwrap_data(resp) or {}))
 
     async def set_did(
         self, number: str, config: InboundConfig | dict[str, Any]
     ) -> InboundConfig:
-        """Override the trunk config for one DID. Contract ``setDidInboundOverride``."""
+        """Set the inbound config for one E.164 number (overrides its trunk's)."""
         resp = await _call(
             self._http.put(_path("set_did_inbound", number=number), json=self._body(config))
         )
         return InboundConfig(**(unwrap_data(resp) or {}))
 
     async def get_did(self, number: str) -> InboundConfig:
-        """The effective config for a DID (override merged over the trunk).
-
-        Contract ``getDidInboundEffective``.
-        """
+        """The config that applies to one number: its own, merged over its trunk's."""
         resp = await _call(self._http.get(_path("get_did_inbound", number=number)))
         return InboundConfig(**(unwrap_data(resp) or {}))
 
@@ -630,7 +838,8 @@ class InboundResource:
 class WebhookSecret(BaseModel):
     """The org's call-event signing secret.
 
-    ``get`` returns it masked; ``rotate`` returns the new secret in full once.
+    ``get`` returns it masked; ``reveal`` returns the current secret in full
+    (admin only); ``rotate`` issues a new one and returns it in full.
     """
 
     model_config = ConfigDict(extra="allow")
@@ -644,7 +853,7 @@ class WebhookSecretResource:
     """``client.telephony.webhook_secret``: the secret that signs call events.
 
     Pass it to :func:`unpod.telephony.parse_call_event`. Only an org admin can
-    rotate it.
+    reveal or rotate it.
     """
 
     def __init__(self, http: AsyncHTTPClient) -> None:
@@ -655,8 +864,21 @@ class WebhookSecretResource:
         resp = await _call(self._http.get(_path("get_webhook_secret")))
         return WebhookSecret(**(unwrap_data(resp) or {}))
 
+    async def reveal(self) -> WebhookSecret:
+        """The current full secret and its version (org admin only; 403 otherwise).
+
+        Use it to recover a secret you lost without rotating, which would break
+        every other receiver still verifying with the old one. Treat the value as
+        a credential: keep it out of logs and source control.
+        """
+        resp = await _call(self._http.get(_path("reveal_webhook_secret")))
+        return WebhookSecret(**(unwrap_data(resp) or {}))
+
     async def rotate(self) -> WebhookSecret:
-        """Issue a new secret version; the full secret is returned only here."""
+        """Issue a new secret version and return it in full.
+
+        The previous version stops working at once, so update every receiver.
+        """
         resp = await _call(self._http.post(_path("rotate_webhook_secret"), json={}))
         return WebhookSecret(**(unwrap_data(resp) or {}))
 

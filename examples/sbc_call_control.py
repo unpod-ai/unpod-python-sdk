@@ -6,9 +6,12 @@ Dials party A, adds party B, plays a prompt, then ends the call. Use only
 Usage:
     python examples/sbc_call_control.py <from> <to_a> <to_b>
 
-Required env vars:
-    UNPOD_PLATFORM_TOKEN
-    UNPOD_ORG_HANDLE   (the org needs the call API switched on)
+Required env vars (or a .env file in the working directory):
+    UNPOD_BASE_URL=https://unpod.ai
+    UNPOD_PLATFORM_TOKEN   (API key from Settings -> Security -> API keys)
+    UNPOD_ORG_HANDLE       (the org needs the call API switched on)
+
+<from> must be one of your org's numbers. Guide: docs/08-telephony.md
 """
 
 from __future__ import annotations

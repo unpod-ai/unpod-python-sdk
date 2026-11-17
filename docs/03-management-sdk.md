@@ -743,8 +743,10 @@ by no resource; what you actually receive is
 membership and ownership of each call, and forwards to SuperSBC under its admin
 key. The org must have the call API switched on (default off), otherwise the
 proxy answers 403 `call_api_disabled`. Routes are in
-`telephony/calls.py::CALL_API_PATHS`. Not proxied yet: the `inbound.*` routes.
-Do not confuse these with `client.calls`, which are agent calls.
+`telephony/calls.py::CALL_API_PATHS`.
+Do not confuse these with `client.calls`, which are agent calls. For a
+step-by-step guide (credentials, webhook receiver, error codes,
+troubleshooting) see [08-telephony.md](08-telephony.md).
 
 ```python
 from unpod.telephony import TelephonyAPIError, parse_call_event
@@ -770,10 +772,10 @@ print(event.event, event.call_id, event.leg_id, event.hangup_cause)
 | `calls.list(...)` / `calls.get(id)` | `listCalls` / `getCall` |
 | `calls.end(id)` / `calls.hangup(id, reason=, code=)` | `endCall` / `hangupCall` |
 | `calls.add_participant(id, from_, to, ...)` / `calls.remove_participant(id, leg_id)` | `addParticipant` / `removeParticipant` (max 2 participants) |
-| `calls.play_audio(id, url= or file=)` / `calls.stop_audio(id)` / `calls.speak(id, text)` | `playAudio` / `stopAudio` / `speakAudio` |
+| `calls.play_audio(id, url=)` / `calls.stop_audio(id)` / `calls.speak(id, text)` | `playAudio` / `stopAudio` / `speakAudio` (the proxy refuses `file=`: use a public https `url=`) |
 | `calls.transfer(id, target, type=)` / `transfer_complete` / `transfer_cancel` | `transferCall` / `transferComplete` / `transferCancel` |
 | `calls.send_dtmf(id, digits)` / `calls.record(id)` / `calls.get_recording(id)` | `sendDtmf` / `recordCall` / `getRecording` |
-| `inbound.set_trunk` / `get_trunk` / `set_did` / `get_did` | `setTrunkInboundConfig` / `getTrunkInboundConfig` / `setDidInboundOverride` / `getDidInboundEffective` (not proxied yet) |
+| `inbound.set_trunk` / `get_trunk` / `set_did` / `get_did` | `setTrunkInboundConfig` / `getTrunkInboundConfig` / `setDidInboundOverride` / `getDidInboundEffective` |
 | `webhook_secret.get()` / `webhook_secret.rotate()` | the org's call-event signing secret (masked / full once; rotate is admin-only) |
 
 Errors raise `TelephonyAPIError`. `.code` is SuperSBC's `code` or the proxy's
