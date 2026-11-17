@@ -107,7 +107,7 @@ class TestMediaFormat:
         fmt = MediaFormat.parse({"encoding": "audio/x-l16", "sampleRate": 16000})
         assert (fmt.encoding, fmt.sample_rate) == (L16, 16000)
 
-    def test_reads_plivo_content_type(self):
+    def test_reads_content_type_with_rate(self):
         fmt = MediaFormat.parse("audio/x-l16;rate=16000")
         assert (fmt.encoding, fmt.sample_rate) == (L16, 16000)
 
@@ -170,7 +170,7 @@ class TestVerifyStreamRequest:
             {"X-Webhook-Signature": _sign(now - 3600)}, SECRET
         )
 
-    # SuperSBC (UNPO-487) signs the upgrade with Plivo's V3 headers over the
+    # SuperSBC (UNPO-487) signs the upgrade with V3 headers over the
     # dialled URL (ws(s) -> http(s)) + nonce.
     def _v3(self, signed_url, secret=SECRET, nonce="12345"):
         from unpod.telephony.stream import v3_signature
@@ -484,7 +484,7 @@ class TestAnswerResponse:
             ]
         }
 
-    def test_stream_xml_is_plivo_shaped_and_escaped(self):
+    def test_stream_xml_is_well_formed_and_escaped(self):
         xml = AnswerResponse().stream("wss://bot/ws?a=1&b=2").to_xml()
         assert xml.startswith('<?xml version="1.0" encoding="UTF-8"?>\n<Response>')
         assert (

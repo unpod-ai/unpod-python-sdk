@@ -1,7 +1,7 @@
 """Parse and verify call webhooks: :func:`parse_call_event`.
 
 Call events arrive at ``status_callback_url`` either form-encoded (default) or
-as JSON. Field names follow Plivo (``CallUUID``, ``MPCUUID``, ``EventName``), so
+as JSON. Field names are ``CallUUID``, ``MPCUUID``, ``EventName`` and so on, so
 this module maps them to snake_case on :class:`CallEvent`.
 
 Signature: SuperSBC signs every callback Stripe-style
@@ -74,7 +74,7 @@ class CallEvent(BaseModel):
     raw: dict[str, Any] = Field(default_factory=dict)
 
 
-# Wire name -> CallEvent field. Both the Plivo-style form keys and their
+# Wire name -> CallEvent field. Both the form-encoded keys and their
 # snake_case JSON equivalents map here (``status_callback_format="json"``
 # sends the latter; see ``encode_body`` in ``src/proxy/webhook/leg_delivery.rs``),
 # so a callback is normalized the same way regardless of format.

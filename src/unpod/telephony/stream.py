@@ -1,9 +1,7 @@
 """The Unpod audio-stream wire protocol, without any Pipecat dependency.
 
 When a customer's ``answer_url`` returns a ``stream`` action, SuperSBC dials
-the given ``wss://`` URL and speaks JSON text frames over it. The message
-shapes follow Plivo's audio-streaming protocol, so a bot written for Plivo
-needs no protocol change (SuperSBC design ``2026-11-11-sip-websocket-streaming``):
+the given ``wss://`` URL and speaks JSON text frames over it. (SuperSBC design ``2026-11-11-sip-websocket-streaming``):
 
 SBC → bot::
 
@@ -24,7 +22,7 @@ bot → SBC::
     {"event": "clearAudio", "streamId": "..."}
 
 The SBC signs the WebSocket upgrade request with the org's webhook secret
-using Plivo's V3 scheme: ``X-Plivo-Signature-V3`` is
+using a V3 scheme: ``X-Plivo-Signature-V3`` is
 ``base64(HMAC-SHA256(secret, <request URL with ws(s) -> http(s)> + nonce))`` and
 ``X-Plivo-Signature-V3-Nonce`` the nonce. :func:`verify_stream_request` checks
 it (and the older ``X-Webhook-Signature: t=<ts>,v1=<hex>`` form).
@@ -68,7 +66,7 @@ class MediaFormat(BaseModel):
 
     @classmethod
     def parse(cls, value: Any) -> MediaFormat:
-        """Read ``start.mediaFormat``. Plivo-style ``"audio/x-mulaw;rate=8000"``
+        """Read ``start.mediaFormat``. ``"audio/x-mulaw;rate=8000"``
         content types are accepted too; anything missing falls back to μ-law 8k."""
         if isinstance(value, MediaFormat):
             return value
@@ -240,7 +238,7 @@ def verify_stream_request(
     org's webhook secret (``client.telephony.webhook_secret``) and ``url`` the
     request URL (``str(websocket.url)``), which the V3 signature covers.
 
-    SuperSBC signs with Plivo's V3 headers (see the module docs); the older
+    SuperSBC signs with V3 headers (see the module docs); the older
     ``X-Webhook-Signature`` form (``"<t>."`` + ``body``) is accepted too.
     """
     if not secret:

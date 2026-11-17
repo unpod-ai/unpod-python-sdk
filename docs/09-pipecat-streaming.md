@@ -27,7 +27,7 @@ pip install "unpod[pipecat]"
 
 | Piece | Where | What it does |
 |---|---|---|
-| `Answer().stream(url)` | `unpod.telephony.answer` | Builds the `answer_url` reply, as SBC JSON (`to_json()`) or Plivo-style XML (`to_xml()`) |
+| `Answer().stream(url)` | `unpod.telephony.answer` | Builds the `answer_url` reply, as SBC JSON (`to_json()`) or XML (`to_xml()`) |
 | `verify_stream_request(headers, secret)` | `unpod.pipecat` | Checks the SBC's `X-Webhook-Signature` on the WebSocket upgrade, so only Unpod can reach your bot |
 | `parse_unpod_websocket(ws)` | `unpod.pipecat` | Reads the `start` event: `call_id`, `stream_id`, `account_id`, `media_format` |
 | `UnpodFrameSerializer` | `unpod.pipecat` | Pipecat frames ↔ stream messages. Hangs up through the Unpod call API |
@@ -90,24 +90,9 @@ Answer().stream("wss://you/ws").to_xml()
 `speak`, `play`, `wait`, `dial` and `hangup` are available too, e.g.
 `Answer().speak("Connecting you").stream(url)`.
 
-## Moving from Plivo
-
-| Plivo | Unpod |
-|---|---|
-| `PLIVO_AUTH_ID` / `PLIVO_AUTH_TOKEN` | `UNPOD_PLATFORM_TOKEN` / `UNPOD_ORG_HANDLE`, plus the webhook secret |
-| Console: number → XML application | `client.telephony.inbound.set_did(number, answer_url=...)` |
-| `POST /v1/Account/{id}/Call/` | `client.telephony.calls.create(from_, to, answer_url=...)` |
-| `plivoxml.ResponseElement().add(StreamElement(...))` | `Answer().stream(url).to_xml()` (same XML shape) |
-| `parse_telephony_websocket(ws)` | `parse_unpod_websocket(ws)` |
-| `PlivoFrameSerializer(stream_id, call_id, auth_id, auth_token)` | `UnpodFrameSerializer.from_start(start, client=unpod)` |
-| (no signature on `/ws`) | `verify_stream_request(ws.headers, secret)` |
-| Plivo `statusCallbackUrl` | `StreamStarted` / `StreamStopped` / `StreamFailed` via `parse_call_event` |
-
-The STT/LLM/TTS pipeline, prompts, VAD and transport don't change.
-
 ## Wire protocol
 
-JSON text frames, Plivo's shapes (`unpod.telephony.stream`):
+JSON text frames (`unpod.telephony.stream`):
 
 | Direction | Event | Notes |
 |---|---|---|
@@ -133,6 +118,6 @@ These are SDK-side assumptions; each is one line to change if the SBC differs.
 
 1. `start.callId` is the call id the call API takes (`calls.hangup(call_id)`).
 2. The WebSocket upgrade is signed over `"<t>."` with an empty body.
-3. `<Stream contentType="audio/x-mulaw;rate=8000">` (Plivo's form) is accepted.
+3. `<Stream contentType="audio/x-mulaw;rate=8000">` (the rate rides on the content type) is accepted.
 4. Lifecycle callbacks name the stream `StreamID` / `stream_id` and the cause `Reason` / `reason`.
 5. `audio/x-l16` is little-endian.

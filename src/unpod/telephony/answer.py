@@ -9,10 +9,7 @@ either of the two forms the SBC parses (``src/proxy/answer_url/{actions,xml}.rs`
 
     resp = Response().stream("wss://bot.example.com/ws")
     return JSONResponse(resp.to_json())                       # {"actions": [...]}
-    return Response(resp.to_xml(), media_type="application/xml")  # Plivo-style XML
-
-The XML form is Plivo-compatible, so an existing Plivo answer server keeps
-working; this builder replaces ``plivo.plivoxml``.
+    return Response(resp.to_xml(), media_type="application/xml")  # XML
 
 ``stream`` needs the SuperSBC ``stream`` verb (design 2026-11-11, inbound
 first). Until that ships the SBC rejects it as an unknown action.
@@ -60,7 +57,7 @@ class Response:
         ``keep_call_alive=True`` (the default) holds the call on the stream
         until the bot closes it. With ``False`` the SBC runs the stream in the
         background and moves on to the next action at once; with no next
-        action it hangs up ("End Of XML Instructions"), as on Plivo.
+        action it hangs up ("End Of XML Instructions").
         ``audio_track`` picks what the bot hears; a bidirectional stream must
         use ``"inbound"`` (the caller).
         """
@@ -75,7 +72,7 @@ class Response:
             "type": "stream",
             "url": url,
             "bidirectional": bidirectional,
-            # The SBC reads the rate from the content type only (Plivo's shape).
+            # The SBC reads the rate from the content type only (``audio/x-mulaw;rate=8000``).
             "content_type": f"{content_type};rate={sample_rate}",
             "keep_call_alive": keep_call_alive,
             "audio_track": audio_track,
@@ -155,7 +152,7 @@ class Response:
         return {"actions": self.actions}
 
     def to_xml(self) -> str:
-        """Plivo-style ``<Response>`` XML."""
+        """``<Response>`` XML."""
         body = "".join(_xml_action(a) for a in self._actions)
         return f'<?xml version="1.0" encoding="UTF-8"?>\n<Response>{body}</Response>'
 

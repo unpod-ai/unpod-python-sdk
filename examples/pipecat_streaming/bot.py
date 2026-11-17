@@ -1,7 +1,7 @@
 """A Pipecat voice bot on an Unpod call: Deepgram → OpenAI → Cartesia.
 
-The same pipeline as Pipecat's ``plivo-chatbot`` example. Only the transport
-setup differs: ``UnpodFrameSerializer`` instead of ``PlivoFrameSerializer``.
+A standard Pipecat STT -> LLM -> TTS pipeline over a WebSocket transport, with
+``UnpodFrameSerializer`` carrying the call's audio.
 """
 
 from __future__ import annotations

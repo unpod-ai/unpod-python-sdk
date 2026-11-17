@@ -56,8 +56,7 @@ def _ws_url(request: Request, direction: str) -> str:
 
 @app.api_route("/answer", methods=["GET", "POST"])
 async def answer(request: Request, direction: str = "inbound") -> Response:
-    """Tell the SBC to stream this call to our bot. Plivo-style XML, so an
-    existing Plivo answer server only needs its ``<Stream>`` URL changed."""
+    """Tell the SBC to stream this call to our bot. Replies with XML."""
     xml = Answer().stream(_ws_url(request, direction)).to_xml()
     return Response(content=xml, media_type="application/xml")
 

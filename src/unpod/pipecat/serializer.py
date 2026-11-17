@@ -1,12 +1,12 @@
 """``UnpodFrameSerializer``: Pipecat frames ↔ the Unpod audio-stream protocol.
 
-Drop-in for ``PlivoFrameSerializer``: same constructor shape (stream id, call
-id), same transport (``FastAPIWebsocketTransport``). Differences that matter:
+Built for Pipecat's ``FastAPIWebsocketTransport``; the constructor takes the
+stream id and call id. Notes:
 
 * the audio format comes from the ``start`` event (μ-law 8k or L16 8k/16k),
   instead of being assumed;
 * the bot's hangup goes through the Unpod call API
-  (``client.telephony.calls.hangup``), not ``api.plivo.com``.
+  (``client.telephony.calls.hangup``).
 
 Works across Pipecat 1.x: it does its own G.711 coding and resampling rather
 than the base-class helpers (Pipecat 1.16+) or ``pipecat.audio.utils``'s μ-law
