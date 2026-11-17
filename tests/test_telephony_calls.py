@@ -382,7 +382,7 @@ def test_parse_json_event_custom_header():
 
 def test_parse_json_event_snake_case_wire_format():
     # The SBC's actual `status_callback_format="json"` body (`encode_body` in
-    # `leg_delivery.rs`) is snake_case, not the Plivo form names — UNPO-183.
+    # `leg_delivery.rs`) is snake_case, not the form-encoded names — UNPO-183.
     snake = {
         "call_id": "c1",
         "leg_id": "l1",

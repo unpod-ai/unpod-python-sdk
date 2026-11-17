@@ -20,6 +20,7 @@ their replacement.
 | [06-deployment.md](06-deployment.md) | The three shipped ways an agent reaches traffic — LLM endpoint, voice agent, phone number — which SDK call performs each, plus a hard-labeled roadmap |
 | [07-browser-quickstart.md](07-browser-quickstart.md) | Testing an agent in the browser with no phone number: the `examples/browser_playground/` bring-up, its environment, and its rough edges |
 | [08-telephony.md](08-telephony.md) | `client.telephony` end to end: install, credentials, numbers, call control and inbound config (preview), signed call events, errors, troubleshooting, method reference |
+| [09-pipecat-streaming.md](09-pipecat-streaming.md) | Pipecat bots on Unpod calls: answer with `stream`, `UnpodFrameSerializer`, and signed streams (preview: needs SuperSBC's `stream` action) |
 
 ## Outside the spine
 

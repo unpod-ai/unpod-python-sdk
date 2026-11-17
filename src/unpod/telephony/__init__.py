@@ -35,6 +35,7 @@ from collections.abc import Sequence
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from unpod.management._http import AsyncHTTPClient, unwrap_data
+from unpod.telephony.answer import Response as AnswerResponse
 from unpod.telephony.calls import (
     CALL_API_PATHS,
     CallList,
@@ -50,6 +51,10 @@ from unpod.telephony.calls import (
     WebhookSecretResource,
 )
 from unpod.telephony.events import (
+    STREAM_EVENTS,
+    STREAM_FAILED,
+    STREAM_STARTED,
+    STREAM_STOPPED,
     CallEvent,
     DigitsRequest,
     EventName,
@@ -60,7 +65,7 @@ from unpod.telephony.events import (
 )
 
 
-def _as_number_list(numbers: "str | Sequence[str]") -> list[str]:
+def _as_number_list(numbers: str | Sequence[str]) -> list[str]:
     """Coerce one E.164 number or a sequence of them to ``list[str]``.
 
     A bare ``str`` is ONE number, never iterated character-by-character
@@ -239,7 +244,7 @@ class NumbersResource:
 
     async def attach(
         self,
-        numbers: "str | Sequence[str]",
+        numbers: str | Sequence[str],
         *,
         agent_id: str | None = None,
         attach_type: str | None = None,
@@ -391,8 +396,13 @@ class TelephonyNamespace:
 
 __all__ = [
     "CALL_API_PATHS",
+    "STREAM_EVENTS",
+    "STREAM_FAILED",
+    "STREAM_STARTED",
+    "STREAM_STOPPED",
     "AgentAttachResult",
     "AgentDetachResult",
+    "AnswerResponse",
     "AttachResult",
     "CallEvent",
     "CallList",

@@ -1,7 +1,7 @@
 """Parse and verify call webhooks: :func:`parse_call_event`.
 
 Call events arrive at ``status_callback_url`` either form-encoded (default) or
-as JSON. Field names follow Plivo (``CallUUID``, ``MPCUUID``, ``EventName``), so
+as JSON. Field names are ``CallUUID``, ``MPCUUID``, ``EventName`` and so on, so
 this module maps them to snake_case on :class:`CallEvent`.
 
 Each request is signed with your org's webhook secret
@@ -121,13 +121,16 @@ class CallEvent(BaseModel):
     participant_call_uuid: str | None = None
     participant_role: str | None = None
     mpc_end_reason: str | None = None
+    stream_id: str | None = None
+    stream_reason: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     raw: dict[str, Any] = Field(default_factory=dict)
 
 
-# Wire name -> CallEvent field. Both the Plivo-style form keys and their
-# snake_case JSON equivalents (sent with ``status_callback_format="json"``)
-# map here, so an event is normalized the same way in either format.
+# Wire name -> CallEvent field. Both the form-encoded keys and their
+# snake_case JSON equivalents map here (``status_callback_format="json"``
+# sends the latter; see ``encode_body`` in ``src/proxy/webhook/leg_delivery.rs``),
+# so a callback is normalized the same way regardless of format.
 _FIELD_MAP: dict[str, str] = {
     "EventName": "event",
     "event_name": "event",
@@ -195,7 +198,20 @@ _FIELD_MAP: dict[str, str] = {
     "participant_role": "participant_role",
     "MPCEndReason": "mpc_end_reason",
     "mpc_end_reason": "mpc_end_reason",
+    # Audio-stream lifecycle (``stream`` answer action): StreamStarted /
+    # StreamStopped / StreamFailed.
+    "StreamID": "stream_id",
+    "StreamId": "stream_id",
+    "stream_id": "stream_id",
+    "Reason": "stream_reason",
+    "reason": "stream_reason",
 }
+
+#: ``CallEvent.event`` values for an audio stream's lifecycle.
+STREAM_STARTED = "StreamStarted"
+STREAM_STOPPED = "StreamStopped"
+STREAM_FAILED = "StreamFailed"
+STREAM_EVENTS = frozenset({STREAM_STARTED, STREAM_STOPPED, STREAM_FAILED})
 
 _INT_FIELDS = {
     "duration",
@@ -374,6 +390,10 @@ def parse_digits_request(
 __all__ = [
     "DEFAULT_SIGNATURE_HEADER",
     "DEFAULT_TOLERANCE_SECS",
+    "STREAM_EVENTS",
+    "STREAM_FAILED",
+    "STREAM_STARTED",
+    "STREAM_STOPPED",
     "CallEvent",
     "DigitsRequest",
     "EventName",

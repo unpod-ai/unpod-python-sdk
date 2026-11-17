@@ -17,12 +17,26 @@ While the SDK is pre-1.0, breaking changes ship in a **minor** bump.
 - `CallEvent`: `request_uuid`, `bill_duration`, `call_mode`, `participant_call_uuid`, `participant_role`, `mpc_end_reason`; `EventName` constants for the MPC and participant events.
 - `parse_digits_request()` / `DigitsRequest` for `<GetDigits>` / `<GetInput>` action requests.
 - `client.telephony.webhook_secret.reveal()`: the current full secret (org admin only). `get()` still returns it masked. Needs the backend `GET /sbc/webhook-secret/reveal` route.
-
-### Added
 - Preview: SBC call control at `client.telephony.calls` (`create`, `list`, `get`, `end`, `hangup`, `add_participant`, `remove_participant`, `play_audio`, `stop_audio`, `speak`, `transfer`, `transfer_complete`, `transfer_cancel`, `send_dtmf`, `record`, `get_recording`) and `client.telephony.inbound` (trunk and DID inbound config), per the SuperSBC call API contract, through the unpod proxy at `/api/v2/platform/sbc/v1/...` (`unpod.telephony.CALL_API_PATHS`). `inbound.*` is not proxied yet.
 - `client.telephony.webhook_secret.get()` / `.rotate()`: the org's call-event signing secret.
 - `unpod.telephony.parse_call_event()`: verifies SuperSBC's `t=<ts>,v1=<hex>` webhook signature (with a replay window) and normalizes form or JSON call and recording events into `CallEvent`.
 - `TelephonyAPIError` carrying the SuperSBC `code` or the proxy's `detail`.
+- Preview: Pipecat bots on Unpod calls via audio streaming (needs SuperSBC's `stream` answer action, not shipped yet). `unpod.pipecat.UnpodFrameSerializer` (reads the stream's audio format, hangs up through the Unpod call API), `parse_unpod_websocket()`, `verify_stream_request()`; install with `unpod[pipecat]`. See `docs/09-pipecat-streaming.md` and `examples/pipecat_streaming/`.
+- `unpod.telephony.answer.Response` (also `unpod.telephony.AnswerResponse`): build `answer_url` replies (`stream`, `speak`, `play`, `wait`, `dial`, `hangup`) as SBC JSON or XML.
+- `unpod.telephony.stream`: the stream wire protocol without a Pipecat dependency.
+- `CallEvent.stream_id` / `.stream_reason` and `STREAM_STARTED` / `STREAM_STOPPED` / `STREAM_FAILED` for stream lifecycle callbacks.
+- `answer.Response.stream(keep_call_alive=True, audio_track="inbound")`: emit the `keepCallAlive` and `audioTrack` attributes on `<Stream>`. With `keep_call_alive=False` the SBC runs the stream in the background and moves on to the next action (with none left it hangs up, "End Of XML Instructions"). A bidirectional stream must use `audio_track="inbound"`; anything else raises `ValueError`.
+- `verify_stream_request(..., url=)` and `unpod.telephony.stream.v3_signature()`: verify the SBC's V3 signature on the stream WebSocket upgrade (`X-Plivo-Signature-V3` + `X-Plivo-Signature-V3-Nonce`, `base64(HMAC-SHA256(secret, url + nonce))`). Behind a TLS-terminating proxy or tunnel both `ws://`/`wss://` and the `X-Forwarded-Host`/`Host` hosts are tried. The older `X-Webhook-Signature` form is still accepted. Exports `V3_SIGNATURE_HEADER` and `V3_NONCE_HEADER`.
+
+### Changed
+- `<Stream>` now carries the sample rate in `contentType` only (`audio/x-mulaw;rate=8000`), the shape the SBC reads; the separate `sample_rate` action field is gone.
+- `verify_stream_request` raises `ValueError` when the upgrade carries V3 headers and no `url=` is passed. Pass `url=str(websocket.url)`; `examples/pipecat_streaming/` is updated.
+
+### Fixed
+- `UnpodFrameSerializer` ignores media frames whose `track` is not `inbound`, so with `audioTrack="both"` the bot no longer hears the audio the SBC plays back to the caller.
+
+### Requires
+- The SBC org must have audio streaming switched on (`audio_stream_enabled`, default off); otherwise the stream fails with `start_failed` / "audio streaming is not enabled for this org".
 
 ## [0.6.0] - 2026-11-02
 
