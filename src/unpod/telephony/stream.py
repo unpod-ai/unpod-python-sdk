@@ -23,14 +23,18 @@ bot → SBC::
      "media": {"contentType": "audio/x-mulaw", "sampleRate": 8000, "payload": "<base64>"}}
     {"event": "clearAudio", "streamId": "..."}
 
-The SBC signs the WebSocket upgrade request with the org's webhook secret, the
-same ``X-Webhook-Signature: t=<ts>,v1=<hex>`` scheme as call events;
-:func:`verify_stream_request` checks it.
+The SBC signs the WebSocket upgrade request with the org's webhook secret
+using Plivo's V3 scheme: ``X-Plivo-Signature-V3`` is
+``base64(HMAC-SHA256(secret, <request URL with ws(s) -> http(s)> + nonce))`` and
+``X-Plivo-Signature-V3-Nonce`` the nonce. :func:`verify_stream_request` checks
+it (and the older ``X-Webhook-Signature: t=<ts>,v1=<hex>`` form).
 """
 
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import json
 from collections.abc import Mapping
 from typing import Any
@@ -184,10 +188,47 @@ def clear_audio_message(stream_id: str) -> str:
     return json.dumps({"event": "clearAudio", "streamId": stream_id})
 
 
+V3_SIGNATURE_HEADER = "X-Plivo-Signature-V3"
+V3_NONCE_HEADER = "X-Plivo-Signature-V3-Nonce"
+
+
+def v3_signature(secret: str | bytes, url: str, nonce: str) -> str:
+    """``base64(HMAC-SHA256(secret, url + nonce))``, as SuperSBC signs the upgrade."""
+    key = secret.encode() if isinstance(secret, str) else secret
+    digest = hmac.new(key, (url + nonce).encode(), hashlib.sha256).digest()
+    return base64.b64encode(digest).decode("ascii")
+
+
+def _signed_url_candidates(url: str, headers: Mapping[str, str]) -> list[str]:
+    """The URLs the SBC may have signed: the one it dialled, with ws(s) as http(s).
+
+    Behind a TLS-terminating proxy or tunnel the server sees ``ws://`` while
+    the SBC dialled ``wss://``, so both schemes are tried, on the public host
+    (``X-Forwarded-Host``/``Host``) as well as the one in ``url``.
+    """
+    _, sep, rest = url.partition("://")
+    if not sep:
+        return [url]
+    hosts = [rest.split("/", 1)[0]]
+    for name in ("x-forwarded-host", "host"):
+        value = _header(headers, name)
+        if value and value not in hosts:
+            hosts.append(value.split(",")[0].strip())
+    path = "/" + rest.split("/", 1)[1] if "/" in rest else ""
+    out: list[str] = []
+    for host in hosts:
+        for http_scheme in ("https", "http"):
+            cand = f"{http_scheme}://{host}{path}"
+            if cand not in out:
+                out.append(cand)
+    return out
+
+
 def verify_stream_request(
     headers: Mapping[str, str],
     secret: str | bytes,
     *,
+    url: str | None = None,
     body: bytes = b"",
     signature_header: str = DEFAULT_SIGNATURE_HEADER,
     tolerance: int | None = DEFAULT_TOLERANCE_SECS,
@@ -196,10 +237,24 @@ def verify_stream_request(
 
     Call it before ``websocket.accept()`` and close the socket when it returns
     False, so only Unpod's SBC can open a stream to your bot. ``secret`` is the
-    org's webhook secret (``client.telephony.webhook_secret``). An upgrade has
-    no body, so the signed payload is ``"<t>."`` followed by ``body`` (empty).
+    org's webhook secret (``client.telephony.webhook_secret``) and ``url`` the
+    request URL (``str(websocket.url)``), which the V3 signature covers.
+
+    SuperSBC signs with Plivo's V3 headers (see the module docs); the older
+    ``X-Webhook-Signature`` form (``"<t>."`` + ``body``) is accepted too.
     """
     if not secret:
+        return False
+    v3 = _header(headers, V3_SIGNATURE_HEADER)
+    nonce = _header(headers, V3_NONCE_HEADER)
+    if v3 and nonce is not None:
+        if not url:
+            raise ValueError("verify_stream_request needs url= to check a V3 signature")
+        sigs = [x.strip() for x in v3.split(",") if x.strip()]
+        for cand in _signed_url_candidates(url, headers):
+            want = v3_signature(secret, cand, nonce)
+            if any(hmac.compare_digest(want, sig) for sig in sigs):
+                return True
         return False
     return verify_signature(
         body, _header(headers, signature_header), secret, tolerance=tolerance
@@ -212,11 +267,14 @@ __all__ = [
     "ENCODINGS",
     "L16",
     "MULAW",
+    "V3_NONCE_HEADER",
+    "V3_SIGNATURE_HEADER",
     "MediaFormat",
     "StreamStart",
     "clear_audio_message",
     "decode_message",
     "parse_start",
     "play_audio_message",
+    "v3_signature",
     "verify_stream_request",
 ]

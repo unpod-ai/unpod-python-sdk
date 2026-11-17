@@ -170,6 +170,45 @@ class TestVerifyStreamRequest:
             {"X-Webhook-Signature": _sign(now - 3600)}, SECRET
         )
 
+    # SuperSBC (UNPO-487) signs the upgrade with Plivo's V3 headers over the
+    # dialled URL (ws(s) -> http(s)) + nonce.
+    def _v3(self, signed_url, secret=SECRET, nonce="12345"):
+        from unpod.telephony.stream import v3_signature
+
+        return {
+            "X-Plivo-Signature-V3": v3_signature(secret, signed_url, nonce),
+            "X-Plivo-Signature-V3-Nonce": nonce,
+        }
+
+    def test_v3_signature_matches_sbc_vector(self):
+        import hashlib
+        import hmac as _hmac
+
+        from unpod.telephony.stream import v3_signature
+
+        want = base64.b64encode(
+            _hmac.new(b"s", b"https://h/ws?a=1123", hashlib.sha256).digest()
+        ).decode()
+        assert v3_signature("s", "https://h/ws?a=1", "123") == want
+
+    def test_v3_valid_direct_and_behind_tunnel(self):
+        h = self._v3("https://bot.example.com/ws?t=1")
+        assert verify_stream_request(h, SECRET, url="wss://bot.example.com/ws?t=1")
+        # A tunnel terminates TLS: the server sees ws://localhost:7860 but Host is public.
+        h2 = {**h, "host": "bot.example.com"}
+        assert verify_stream_request(h2, SECRET, url="ws://localhost:7860/ws?t=1")
+
+    def test_v3_rejects_wrong_secret_path_or_nonce(self):
+        h = self._v3("https://bot.example.com/ws")
+        assert not verify_stream_request(h, "other", url="wss://bot.example.com/ws")
+        assert not verify_stream_request(h, SECRET, url="wss://bot.example.com/other")
+        bad = {**h, "X-Plivo-Signature-V3-Nonce": "999"}
+        assert not verify_stream_request(bad, SECRET, url="wss://bot.example.com/ws")
+
+    def test_v3_needs_url(self):
+        with pytest.raises(ValueError):
+            verify_stream_request(self._v3("https://h/ws"), SECRET)
+
     def test_empty_secret_never_verifies(self):
         assert not verify_stream_request(
             {"X-Webhook-Signature": _sign(int(time.time()))}, ""
@@ -245,6 +284,16 @@ class TestSerializerAudio:
         frames = [f for f in frames if f is not None]
         assert frames and all(isinstance(f, InputAudioRawFrame) for f in frames)
         assert all(f.sample_rate == 16000 and f.num_channels == 1 for f in frames)
+
+    async def test_outbound_track_is_not_fed_to_the_pipeline(self):
+        ser = UnpodFrameSerializer("stream-1", "call-1", hangup=_Hangups())
+        await _setup(ser, 8000)
+        msg = json.loads(_media(b"\x7f" * 160))
+        msg["media"]["track"] = "outbound"
+        assert await ser.deserialize(json.dumps(msg)) is None
+        assert isinstance(
+            await ser.deserialize(_media(b"\x7f" * 160)), InputAudioRawFrame
+        )
 
     async def test_pcm_out_is_mulaw_play_audio(self):
         ser = UnpodFrameSerializer("stream-1", "call-1", hangup=_Hangups())
@@ -427,8 +476,9 @@ class TestAnswerResponse:
                     "type": "stream",
                     "url": "wss://bot.example.com/ws",
                     "bidirectional": True,
-                    "content_type": MULAW,
-                    "sample_rate": 8000,
+                    "content_type": "audio/x-mulaw;rate=8000",
+                    "keep_call_alive": True,
+                    "audio_track": "inbound",
                     "status_callback_url": "https://x/cb",
                 },
             ]
@@ -438,9 +488,24 @@ class TestAnswerResponse:
         xml = AnswerResponse().stream("wss://bot/ws?a=1&b=2").to_xml()
         assert xml.startswith('<?xml version="1.0" encoding="UTF-8"?>\n<Response>')
         assert (
-            '<Stream bidirectional="true" contentType="audio/x-mulaw;rate=8000">'
+            '<Stream bidirectional="true" keepCallAlive="true" audioTrack="inbound" '
+            'contentType="audio/x-mulaw;rate=8000">'
             "wss://bot/ws?a=1&amp;b=2</Stream>"
         ) in xml
+
+    def test_stream_l16_rate_rides_on_content_type(self):
+        action = (
+            AnswerResponse()
+            .stream("wss://b/ws", content_type="audio/x-l16", sample_rate=16000)
+            .actions[0]
+        )
+        assert action["content_type"] == "audio/x-l16;rate=16000"
+        assert "sample_rate" not in action
+
+    def test_bidirectional_needs_inbound_track(self):
+        with pytest.raises(ValueError):
+            AnswerResponse().stream("wss://b/ws", audio_track="both")
+        AnswerResponse().stream("wss://b/ws", bidirectional=False, audio_track="both")
 
     def test_other_verbs_xml(self):
         xml = (
@@ -522,7 +587,7 @@ def test_fastapi_transport_echo_end_to_end():
 
     @app.websocket("/ws")
     async def ws(websocket: WebSocket):
-        if not verify_stream_request(websocket.headers, SECRET):
+        if not verify_stream_request(websocket.headers, SECRET, url=str(websocket.url)):
             await websocket.close(code=1008)
             return
         await websocket.accept()
@@ -570,7 +635,7 @@ def test_fastapi_transport_rejects_unsigned():
 
     @app.websocket("/ws")
     async def ws(websocket: WebSocket):
-        if not verify_stream_request(websocket.headers, SECRET):
+        if not verify_stream_request(websocket.headers, SECRET, url=str(websocket.url)):
             await websocket.close(code=1008)
             return
         await websocket.accept()

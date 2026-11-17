@@ -65,7 +65,7 @@ async def answer(request: Request, direction: str = "inbound") -> Response:
 @app.websocket("/ws")
 async def stream(websocket: WebSocket, direction: str = "inbound"):
     # Only Unpod's SBC holds the org's webhook secret.
-    if not verify_stream_request(websocket.headers, WEBHOOK_SECRET):
+    if not verify_stream_request(websocket.headers, WEBHOOK_SECRET, url=str(websocket.url)):
         await websocket.close(code=1008)
         return
     await websocket.accept()

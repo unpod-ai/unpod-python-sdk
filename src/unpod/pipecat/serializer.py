@@ -219,7 +219,12 @@ class UnpodFrameSerializer(FrameSerializer):
         message = decode_message(data)
         event = message.get("event")
         if event == "media":
-            return await self._decode_media(message.get("media") or {})
+            media = message.get("media") or {}
+            # Only the caller's audio feeds the pipeline: with audioTrack="both"
+            # the SBC also sends what it plays to the caller (track "outbound").
+            if media.get("track", "inbound") != "inbound":
+                return None
+            return await self._decode_media(media)
         if event == "dtmf":
             digit = (message.get("dtmf") or {}).get("digit")
             if not digit:

@@ -9,7 +9,7 @@ and streams the call's audio both ways. On the bot side::
 
     @app.websocket("/ws")
     async def ws(websocket: WebSocket):
-        if not verify_stream_request(websocket.headers, WEBHOOK_SECRET):
+        if not verify_stream_request(websocket.headers, WEBHOOK_SECRET, url=str(websocket.url)):
             await websocket.close(code=1008)
             return
         await websocket.accept()

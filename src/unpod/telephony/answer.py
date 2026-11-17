@@ -46,6 +46,8 @@ class Response:
         bidirectional: bool = True,
         content_type: str = DEFAULT_ENCODING,
         sample_rate: int = DEFAULT_SAMPLE_RATE,
+        keep_call_alive: bool = True,
+        audio_track: Literal["inbound", "outbound", "both"] = "inbound",
         status_callback_url: str | None = None,
     ) -> Response:
         """Stream the call's audio to ``url`` (``ws://`` or ``wss://``).
@@ -54,16 +56,29 @@ class Response:
         (:mod:`unpod.telephony.stream`). Stream lifecycle events
         (``StreamStarted``/``StreamStopped``/``StreamFailed``) go to
         ``status_callback_url``, or to the ``answer_url`` when unset.
+
+        ``keep_call_alive=True`` (the default) holds the call on the stream
+        until the bot closes it. With ``False`` the SBC runs the stream in the
+        background and moves on to the next action at once; with no next
+        action it hangs up ("End Of XML Instructions"), as on Plivo.
+        ``audio_track`` picks what the bot hears; a bidirectional stream must
+        use ``"inbound"`` (the caller).
         """
         if not url.startswith(_WS_SCHEMES):
             raise ValueError("stream url must start with ws:// or wss://")
         MediaFormat(encoding=content_type, sampleRate=sample_rate).validate_supported()
+        if bidirectional and audio_track != "inbound":
+            raise ValueError(
+                'a bidirectional stream supports only audio_track="inbound"'
+            )
         action: dict[str, Any] = {
             "type": "stream",
             "url": url,
             "bidirectional": bidirectional,
-            "content_type": content_type,
-            "sample_rate": sample_rate,
+            # The SBC reads the rate from the content type only (Plivo's shape).
+            "content_type": f"{content_type};rate={sample_rate}",
+            "keep_call_alive": keep_call_alive,
+            "audio_track": audio_track,
         }
         if status_callback_url:
             action["status_callback_url"] = status_callback_url
@@ -169,8 +184,9 @@ def _xml_action(a: dict[str, Any]) -> str:
         attrs = _attrs(
             [
                 ("bidirectional", a["bidirectional"]),
-                # Plivo's own shape: the rate rides on the content type.
-                ("contentType", f"{a['content_type']};rate={a['sample_rate']}"),
+                ("keepCallAlive", a.get("keep_call_alive")),
+                ("audioTrack", a.get("audio_track")),
+                ("contentType", a["content_type"]),
                 ("statusCallbackUrl", a.get("status_callback_url")),
             ]
         )
