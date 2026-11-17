@@ -63,6 +63,10 @@ CALL_API_PATHS: dict[str, str] = {
     "transfer_complete": "/sbc/v1/calls/{call_id}/transfer/complete",
     "transfer_cancel": "/sbc/v1/calls/{call_id}/transfer/cancel",
     "send_dtmf": "/sbc/v1/calls/{call_id}/dtmf",
+    "hold": "/sbc/v1/calls/{call_id}/hold",
+    "unhold": "/sbc/v1/calls/{call_id}/unhold",
+    "mute": "/sbc/v1/calls/{call_id}/mute",
+    "unmute": "/sbc/v1/calls/{call_id}/unmute",
     "record": "/sbc/v1/calls/{call_id}/record",
     "stop_recording": "/sbc/v1/calls/{call_id}/record",
     "pause_recording": "/sbc/v1/calls/{call_id}/record/pause",
@@ -136,7 +140,11 @@ def _to_api_error(exc: httpx.HTTPStatusError) -> TelephonyAPIError:
         detail = body.get("detail") if isinstance(body.get("detail"), str) else None
         code = body.get("code") or inner.get("code") or detail
         message = str(
-            body.get("error") or body.get("message") or inner.get("error") or detail or message
+            body.get("error")
+            or body.get("message")
+            or inner.get("error")
+            or detail
+            or message
         )
     return TelephonyAPIError(resp.status_code, code, message, body)
 
@@ -217,7 +225,7 @@ class Recording(BaseModel):
 class CallStream(BaseModel):
     """One audio stream of a live call (``GET /calls/{id}/stream``).
 
-    ``status`` is ``in-progress``, ``completed`` or ``failed``; ``duration`` is
+    ``status`` is ``in-progress``, ``stopped`` or ``failed``; ``duration`` is
     in seconds; ``status_reason`` says why it ended (``api_request``,
     ``call_hangup``, ``stream_timeout``, ``connection_failed`` ...).
     """
@@ -272,7 +280,11 @@ class InboundConfig(BaseModel):
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 
-_STATUS_CALLBACK_EVENTS = ("mpc-state-changes", "participant-state-changes", "leg-state-changes")
+_STATUS_CALLBACK_EVENTS = (
+    "mpc-state-changes",
+    "participant-state-changes",
+    "leg-state-changes",
+)
 _SIP_HEADER_KEY = re.compile(r"^[A-Za-z0-9-]{1,32}$")
 
 
@@ -297,15 +309,21 @@ def _sip_headers_str(value: str | Mapping[str, str]) -> str:
         raise ValueError("sip_headers needs between 1 and 10 headers")
     for k, v in pairs:
         if not _SIP_HEADER_KEY.match(k):
-            raise ValueError(f"invalid sip_headers key {k!r}: use [A-Za-z0-9-], max 32 chars")
+            raise ValueError(
+                f"invalid sip_headers key {k!r}: use [A-Za-z0-9-], max 32 chars"
+            )
         if len(v) > 256 or "," in v:
-            raise ValueError(f"invalid sip_headers value for {k!r}: max 256 chars, no commas")
+            raise ValueError(
+                f"invalid sip_headers value for {k!r}: max 256 chars, no commas"
+            )
     return ",".join(f"{k}={v}" for k, v in pairs)
 
 
 def _status_events_str(value: str | Sequence[str]) -> str:
     """Serialize ``status_callback_events`` to a comma list of known event groups."""
-    items = [p.strip() for p in value.split(",")] if isinstance(value, str) else list(value)
+    items = (
+        [p.strip() for p in value.split(",")] if isinstance(value, str) else list(value)
+    )
     if not items:
         raise ValueError("status_callback_events must not be empty")
     for item in items:
@@ -366,7 +384,9 @@ def _leg_body(
         "answer_method": answer_method,
         "metadata": metadata,
         "time_limit": time_limit,
-        "sip_headers": _sip_headers_str(sip_headers) if sip_headers is not None else None,
+        "sip_headers": _sip_headers_str(sip_headers)
+        if sip_headers is not None
+        else None,
         "fallback_url": fallback_url,
         "fallback_method": fallback_method,
         "status_callback_events": (
@@ -378,8 +398,6 @@ def _leg_body(
     }
     body.update({k: v for k, v in optional.items() if v is not None})
     return body
-
-
 
 
 def _stream_body(
@@ -663,7 +681,9 @@ class CallsResource:
     async def remove_participant(self, call_id: str, leg_id: str) -> None:
         """Hang up one participant (leg); the rest of the call keeps going."""
         await _call(
-            self._http.delete(_path("remove_participant", call_id=call_id, leg_id=leg_id))
+            self._http.delete(
+                _path("remove_participant", call_id=call_id, leg_id=leg_id)
+            )
         )
 
     async def play_audio(
@@ -686,8 +706,9 @@ class CallsResource:
 
         ``loop``: an int ``n`` plays ``n`` times; ``0`` or ``True`` plays until
         stopped. ``length`` stops playback after that many seconds (>= 1).
-        ``mix`` is accepted, but mixing is not supported yet: playback replaces
-        the call audio.
+        ``mix`` (SBC default ``True``): on a REST call's callee leg the file is
+        mixed over the bridged audio (peer or streaming bot); elsewhere playback
+        replaces the leg's outgoing audio.
         """
         if (url is None) == (file is None):
             raise ValueError("pass exactly one of url= or file=")
@@ -695,7 +716,11 @@ class CallsResource:
             raise ValueError("length must be at least 1 second")
         if loop is not None and not isinstance(loop, bool) and loop < 0:
             raise ValueError("loop must be >= 0")
-        source = {"type": "url", "url": url} if url is not None else {"type": "file", "path": file}
+        source = (
+            {"type": "url", "url": url}
+            if url is not None
+            else {"type": "file", "path": file}
+        )
         body: dict[str, Any] = {"source": source}
         if leg_id is not None:
             body["leg_id"] = leg_id
@@ -707,7 +732,9 @@ class CallsResource:
             body["mix"] = mix
         if interrupt_on_dtmf is not None:
             body["interrupt_on_dtmf"] = interrupt_on_dtmf
-        resp = await _call(self._http.post(_path("play_audio", call_id=call_id), json=body))
+        resp = await _call(
+            self._http.post(_path("play_audio", call_id=call_id), json=body)
+        )
         return PlayResult(**unwrap_data(resp))
 
     async def stop_audio(
@@ -786,7 +813,45 @@ class CallsResource:
             )
         )
 
-    async def send_dtmf(self, call_id: str, digits: str, *, leg_id: str | None = None) -> None:
+    async def hold(self, call_id: str, *, leg_id: str | None = None) -> str:
+        """Put the caller on hold (re-INVITE ``sendonly``); returns the held leg id.
+
+        Only the caller leg of an inbound call can be held: a call made with
+        :meth:`create`, or another leg, answers ``400``. ``Hold`` / ``Unhold``
+        events follow on ``status_callback_url``.
+        """
+        body = {"leg_id": leg_id} if leg_id is not None else {}
+        resp = await _call(self._http.post(_path("hold", call_id=call_id), json=body))
+        data = unwrap_data(resp)
+        return data.get("leg_id", "") if isinstance(data, dict) else ""
+
+    async def unhold(self, call_id: str, *, leg_id: str | None = None) -> str:
+        """Take the caller off hold; returns the leg id. Same rules as :meth:`hold`."""
+        body = {"leg_id": leg_id} if leg_id is not None else {}
+        resp = await _call(self._http.post(_path("unhold", call_id=call_id), json=body))
+        data = unwrap_data(resp)
+        return data.get("leg_id", "") if isinstance(data, dict) else ""
+
+    async def mute(self, call_id: str, leg: Literal["caller", "callee"]) -> None:
+        """Stop sending ``leg``'s audio to the other side.
+
+        ``409`` until the call's media is up (answered and negotiated).
+        """
+        if leg not in ("caller", "callee"):
+            raise ValueError('leg must be "caller" or "callee"')
+        await _call(self._http.post(_path("mute", call_id=call_id), json={"leg": leg}))
+
+    async def unmute(self, call_id: str, leg: Literal["caller", "callee"]) -> None:
+        """Undo :meth:`mute` for ``leg``."""
+        if leg not in ("caller", "callee"):
+            raise ValueError('leg must be "caller" or "callee"')
+        await _call(
+            self._http.post(_path("unmute", call_id=call_id), json={"leg": leg})
+        )
+
+    async def send_dtmf(
+        self, call_id: str, digits: str, *, leg_id: str | None = None
+    ) -> None:
         """Send keypad tones: ``0-9``, ``A-D``, ``*``, ``#``."""
         if not digits or any(d not in "0123456789ABCD*#" for d in digits):
             raise ValueError("digits must match ^[0-9A-D*#]+$")
@@ -816,9 +881,13 @@ class CallsResource:
 
     async def resume_recording(self, call_id: str) -> None:
         """Resume a paused recording (204). 409 when not paused or stopped."""
-        await _call(self._http.post(_path("resume_recording", call_id=call_id), json={}))
+        await _call(
+            self._http.post(_path("resume_recording", call_id=call_id), json={})
+        )
 
-    async def download_recording(self, call_id: str, path: str | os.PathLike[str]) -> Path:
+    async def download_recording(
+        self, call_id: str, path: str | os.PathLike[str]
+    ) -> Path:
         """Stream the recording WAV to ``path`` with the SDK's auth and return it.
 
         Written to a temp file next to ``path`` and renamed, so a failed download
@@ -829,8 +898,12 @@ class CallsResource:
         http = self._http
         client = await http._ensure_client()
         url = http._url(_path("get_recording", call_id=call_id))
-        headers = {k: v for k, v in http._headers().items() if k.lower() != "content-type"}
-        fd, tmp_name = tempfile.mkstemp(dir=dest.parent, prefix=dest.name + ".", suffix=".part")
+        headers = {
+            k: v for k, v in http._headers().items() if k.lower() != "content-type"
+        }
+        fd, tmp_name = tempfile.mkstemp(
+            dir=dest.parent, prefix=dest.name + ".", suffix=".part"
+        )
         try:
             with os.fdopen(fd, "wb") as out:
                 async with client.stream(
@@ -878,7 +951,8 @@ class CallsResource:
         """Start streaming a live call's audio to ``service_url`` (``ws(s)://``).
 
         The org needs audio streaming enabled (else 403
-        ``audio_stream_disabled``); one stream per call at a time (409).
+        ``audio_stream_disabled``); one stream per call at a time (a second
+        start answers 400 "a stream is already active").
         ``content_type`` is e.g. ``"audio/x-mulaw;rate=8000"``,
         ``"audio/x-alaw;rate=8000"`` or ``"audio/x-l16;rate=16000"``.
         ``extra_headers`` (``"k=v,k2=v2"`` or a dict) reach the bot in the
@@ -951,7 +1025,9 @@ class InboundResource:
     ) -> InboundConfig:
         """Set the inbound config for every number on trunk ``name``."""
         resp = await _call(
-            self._http.put(_path("set_trunk_inbound", name=name), json=self._body(config))
+            self._http.put(
+                _path("set_trunk_inbound", name=name), json=self._body(config)
+            )
         )
         return InboundConfig(**(unwrap_data(resp) or {}))
 
@@ -965,7 +1041,9 @@ class InboundResource:
     ) -> InboundConfig:
         """Set the inbound config for one E.164 number (overrides its trunk's)."""
         resp = await _call(
-            self._http.put(_path("set_did_inbound", number=number), json=self._body(config))
+            self._http.put(
+                _path("set_did_inbound", number=number), json=self._body(config)
+            )
         )
         return InboundConfig(**(unwrap_data(resp) or {}))
 

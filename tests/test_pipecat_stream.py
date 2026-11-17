@@ -39,8 +39,8 @@ from unpod.telephony.stream import (
 pipecat = pytest.importorskip("pipecat")
 fastapi = pytest.importorskip("fastapi")
 
-from fastapi import WebSocket
-from pipecat.frames.frames import (
+from fastapi import WebSocket  # noqa: E402 - after importorskip
+from pipecat.frames.frames import (  # noqa: E402
     CancelFrame,
     EndFrame,
     InputAudioRawFrame,
@@ -49,9 +49,9 @@ from pipecat.frames.frames import (
     OutputAudioRawFrame,
     OutputTransportMessageFrame,
 )
-from pipecat.processors.frame_processor import FrameProcessorSetup
+from pipecat.processors.frame_processor import FrameProcessorSetup  # noqa: E402
 
-from unpod.pipecat import UnpodFrameSerializer, parse_unpod_websocket
+from unpod.pipecat import UnpodFrameSerializer, parse_unpod_websocket  # noqa: E402
 
 SECRET = "whsec_test"
 
