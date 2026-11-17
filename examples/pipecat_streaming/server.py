@@ -13,6 +13,9 @@ Env:
     UNPOD_PLATFORM_TOKEN, UNPOD_ORG_HANDLE   SDK auth (org needs the call API on)
     UNPOD_WEBHOOK_SECRET                     client.telephony.webhook_secret
     UNPOD_FROM_NUMBER                        caller ID for outbound calls
+    START_API_KEY                            required as X-Api-Key on POST /start
+    PUBLIC_WS_BASE                           e.g. wss://bot.example.com when TLS ends
+                                             at a proxy/tunnel (checked, not Host)
     OPENAI_API_KEY, DEEPGRAM_API_KEY, CARTESIA_API_KEY
 
 Run:
@@ -22,6 +25,7 @@ Run:
 
 from __future__ import annotations
 
+import hmac
 import os
 from contextlib import asynccontextmanager
 
@@ -33,8 +37,14 @@ from fastapi.responses import Response
 from unpod import AsyncClient
 from unpod.pipecat import parse_unpod_websocket, verify_stream_request
 from unpod.telephony.answer import Response as Answer
+from unpod.telephony.stream import NonceCache
 
 WEBHOOK_SECRET = os.environ["UNPOD_WEBHOOK_SECRET"]
+PUBLIC_WS_BASE = os.environ.get("PUBLIC_WS_BASE") or None
+# Remembers accepted signatures so a captured upgrade cannot be replayed.
+NONCES = NonceCache()
+# /start places calls billed to the org: never expose it without a key.
+START_API_KEY = os.environ.get("START_API_KEY", "")
 
 
 @asynccontextmanager
@@ -56,7 +66,11 @@ def _ws_url(request: Request, direction: str) -> str:
 
 @app.api_route("/answer", methods=["GET", "POST"])
 async def answer(request: Request, direction: str = "inbound") -> Response:
-    """Tell the SBC to stream this call to our bot. Replies with XML."""
+    """Tell the SBC to stream this call to our bot. Replies with XML.
+
+    The SBC does not sign answer-URL fetches, so this route is open; it only
+    returns the stream URL, and /ws itself checks the SBC's signature.
+    """
     xml = Answer().stream(_ws_url(request, direction)).to_xml()
     return Response(content=xml, media_type="application/xml")
 
@@ -64,7 +78,13 @@ async def answer(request: Request, direction: str = "inbound") -> Response:
 @app.websocket("/ws")
 async def stream(websocket: WebSocket, direction: str = "inbound"):
     # Only Unpod's SBC holds the org's webhook secret.
-    if not verify_stream_request(websocket.headers, WEBHOOK_SECRET, url=str(websocket.url)):
+    if not verify_stream_request(
+        websocket.headers,
+        WEBHOOK_SECRET,
+        url=str(websocket.url),
+        public_base=PUBLIC_WS_BASE,
+        nonce_cache=NONCES,
+    ):
         await websocket.close(code=1008)
         return
     await websocket.accept()
@@ -74,7 +94,14 @@ async def stream(websocket: WebSocket, direction: str = "inbound"):
 
 @app.post("/start")
 async def start_outbound(request: Request) -> dict:
-    """Dial ``{"phone_number": "+1..."}``; once answered, the call streams to /ws."""
+    """Dial ``{"phone_number": "+1..."}``; once answered, the call streams to /ws.
+
+    Needs ``X-Api-Key: $START_API_KEY``: anyone who can reach an open /start
+    can place calls billed to the org.
+    """
+    key = request.headers.get("x-api-key", "")
+    if not START_API_KEY or not hmac.compare_digest(key, START_API_KEY):
+        raise HTTPException(401, "missing or wrong X-Api-Key")
     body = await request.json()
     to = body.get("phone_number")
     if not to:

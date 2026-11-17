@@ -9,7 +9,7 @@ While the SDK is pre-1.0, breaking changes ship in a **minor** bump.
 ## [Unreleased]
 
 ### Fixed
-- Stream status callbacks: `STREAM_STARTED` / `STREAM_STOPPED` / `STREAM_FAILED` now match what SuperSBC sends (`started`, `stopped`, `failed`; they were `StreamStartResult` ... and never matched), and `CallEvent.stream_reason` reads `StatusReason`. **Breaking** for code that compared against the old string values.
+- Stream status callbacks: `STREAM_STARTED` / `STREAM_STOPPED` / `STREAM_FAILED` now match what SuperSBC sends (`started`, `stopped`, `failed`; they were `StreamStarted` ... and never matched), and `CallEvent.stream_reason` reads `StatusReason`. **Breaking** for code that compared against the old string values.
 
 ### Added
 - `audio/x-alaw` (8 kHz) streams: `unpod.telephony.stream.ALAW`, `Response.stream(content_type=ALAW)` and A-law coding in `UnpodFrameSerializer`.
@@ -19,6 +19,7 @@ While the SDK is pre-1.0, breaking changes ship in a **minor** bump.
 - Stream protocol: `checkpoint_message()`, `send_dtmf_message()`, `StreamStart.extra_headers`; in Pipecat, `OutputDTMFFrame` → `sendDTMF` and `playedStream` / `clearedAudio` → `InputTransportMessageFrame`.
 
 ### Changed
+- **Breaking:** stream WebSocket upgrades are now verified with SuperSBC's `X-Unpod-Signature: t=…,n=…,v1=hex(HMAC-SHA256(secret, "ws.<t>.<n>.<url>"))`. `verify_stream_request(headers, secret, *, url, public_base=None, tolerance=300, nonce_cache=None)` checks the age and, with `NonceCache`, replays; the host comes from `url`/`public_base`, never from request headers. Removed: the Plivo V3 headers (`v3_signature`, `V3_SIGNATURE_HEADER`, `V3_NONCE_HEADER`; no timestamp, so replayable) and the fallback to `X-Webhook-Signature` over an empty body (any empty-body webhook signature could open a stream). Callbacks keep `X-Webhook-Signature`. Needs SuperSBC with `X-Unpod-Signature` (relay branch, 2026-11-17).
 - Stream formats are validated as the SBC does: μ-law and A-law 8 kHz only, L16 at 8, 16 or 24 kHz.
 
 ## [0.7.0] - 2026-11-13

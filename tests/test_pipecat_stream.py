@@ -84,11 +84,19 @@ def _media(payload: bytes, seq: int = 2) -> str:
     )
 
 
-def _sign(ts: int, body: bytes = b"") -> str:
+def _sign(
+    url: str,
+    ts: int | None = None,
+    nonce: str = "a1b2c3d4e5f60718",
+    secret: str = SECRET,
+) -> dict:
+    """The ``X-Unpod-Signature`` header SuperSBC puts on the upgrade
+    (``signer.rs`` ``stream_signature_header``), computed independently."""
+    ts = int(time.time()) if ts is None else ts
     mac = hmac.new(
-        SECRET.encode(), f"{ts}.".encode() + body, hashlib.sha256
+        secret.encode(), f"ws.{ts}.{nonce}.{url}".encode(), hashlib.sha256
     ).hexdigest()
-    return f"t={ts},v1={mac}"
+    return {"X-Unpod-Signature": f"t={ts},n={nonce},v1={mac}"}
 
 
 async def _setup(serializer: UnpodFrameSerializer, rate: int = 16000) -> None:
@@ -113,8 +121,11 @@ class _Hangups:
 
 
 class TestMediaFormat:
-    def test_defaults_to_mulaw_8k(self):
-        assert MediaFormat.parse(None) == MediaFormat(encoding=MULAW, sampleRate=8000)
+    def test_missing_format_is_the_sbc_default_l16_8k(self):
+        # SBC StreamFormat::DEFAULT_CONTENT_TYPE = "audio/x-l16;rate=8000".
+        assert MediaFormat.parse(None) == MediaFormat(encoding=L16, sampleRate=8000)
+        assert MediaFormat.parse({}) == MediaFormat(encoding=L16, sampleRate=8000)
+        assert MediaFormat.parse({"encoding": MULAW}).encoding == MULAW
 
     def test_reads_start_media_format(self):
         fmt = MediaFormat.parse({"encoding": "audio/x-l16", "sampleRate": 16000})
@@ -217,61 +228,91 @@ def test_play_and_clear_messages():
 
 
 class TestVerifyStreamRequest:
-    def test_valid_signature(self):
-        headers = {"x-webhook-signature": _sign(int(time.time()))}
-        assert verify_stream_request(headers, SECRET)
+    URL = "wss://bot.example.com/ws?token=t0k"
 
-    def test_wrong_secret_missing_header_and_stale(self):
-        now = int(time.time())
-        assert not verify_stream_request({"X-Webhook-Signature": _sign(now)}, "other")
-        assert not verify_stream_request({}, SECRET)
-        assert not verify_stream_request(
-            {"X-Webhook-Signature": _sign(now - 3600)}, SECRET
+    def test_matches_the_sbc_vector(self):
+        # Same vector as SuperSBC's signer.rs stream_signature_known_vector.
+        from unpod.telephony.stream import stream_signature
+
+        assert (
+            stream_signature("s", "wss://h/ws?a=1", 1714060800, "123")
+            == "4e160b6c04b3bf13758c9f2f9e5d91011ced0e50892fc0e54f6fc2c0c6acb326"
         )
 
-    # SuperSBC (UNPO-487) signs the upgrade with V3 headers over the
-    # dialled URL (ws(s) -> http(s)) + nonce.
-    def _v3(self, signed_url, secret=SECRET, nonce="12345"):
-        from unpod.telephony.stream import v3_signature
+    def test_valid(self):
+        assert verify_stream_request(_sign(self.URL), SECRET, url=self.URL)
 
-        return {
-            "X-Plivo-Signature-V3": v3_signature(secret, signed_url, nonce),
-            "X-Plivo-Signature-V3-Nonce": nonce,
-        }
+    def test_behind_a_proxy_uses_the_configured_public_base(self):
+        # TLS ends at the proxy: the server sees ws://localhost but the SBC
+        # dialled wss://bot.example.com. The host comes from public_base only.
+        h = _sign(self.URL)
+        local = "ws://localhost:7860/ws?token=t0k"
+        assert verify_stream_request(
+            h, SECRET, url=local, public_base="wss://bot.example.com"
+        )
+        assert not verify_stream_request(h, SECRET, url=local)
+        # A Host header naming the signed host no longer helps an attacker.
+        assert not verify_stream_request(
+            {**h, "host": "bot.example.com"}, SECRET, url=local
+        )
 
-    def test_v3_signature_matches_sbc_vector(self):
-        import hashlib
-        import hmac as _hmac
+    def test_rejects_wrong_secret_url_or_tampering(self):
+        h = _sign(self.URL)
+        assert not verify_stream_request(h, "other", url=self.URL)
+        assert not verify_stream_request(
+            h, SECRET, url="wss://bot.example.com/ws?token=other"
+        )
+        value = h["X-Unpod-Signature"]
+        for bad in (
+            value.replace("n=a1b2", "n=ffff"),
+            value.replace("t=", "t=1"),
+            value.split(",v1=")[0],
+        ):
+            assert not verify_stream_request(
+                {"X-Unpod-Signature": bad}, SECRET, url=self.URL
+            )
 
-        from unpod.telephony.stream import v3_signature
+    def test_old_signatures_fail_and_tolerance_can_be_off(self):
+        old = _sign(self.URL, ts=int(time.time()) - 3600)
+        assert not verify_stream_request(old, SECRET, url=self.URL)
+        assert verify_stream_request(old, SECRET, url=self.URL, tolerance=None)
 
-        want = base64.b64encode(
-            _hmac.new(b"s", b"https://h/ws?a=1123", hashlib.sha256).digest()
-        ).decode()
-        assert v3_signature("s", "https://h/ws?a=1", "123") == want
+    def test_nonce_cache_rejects_a_replay(self):
+        from unpod.telephony.stream import NonceCache
 
-    def test_v3_valid_direct_and_behind_tunnel(self):
-        h = self._v3("https://bot.example.com/ws?t=1")
-        assert verify_stream_request(h, SECRET, url="wss://bot.example.com/ws?t=1")
-        # A tunnel terminates TLS: the server sees ws://localhost:7860 but Host is public.
-        h2 = {**h, "host": "bot.example.com"}
-        assert verify_stream_request(h2, SECRET, url="ws://localhost:7860/ws?t=1")
+        cache = NonceCache()
+        h = _sign(self.URL)
+        assert verify_stream_request(h, SECRET, url=self.URL, nonce_cache=cache)
+        assert not verify_stream_request(h, SECRET, url=self.URL, nonce_cache=cache)
+        # A different nonce is a different request.
+        h2 = _sign(self.URL, nonce="0000000000000001")
+        assert verify_stream_request(h2, SECRET, url=self.URL, nonce_cache=cache)
 
-    def test_v3_rejects_wrong_secret_path_or_nonce(self):
-        h = self._v3("https://bot.example.com/ws")
-        assert not verify_stream_request(h, "other", url="wss://bot.example.com/ws")
-        assert not verify_stream_request(h, SECRET, url="wss://bot.example.com/other")
-        bad = {**h, "X-Plivo-Signature-V3-Nonce": "999"}
-        assert not verify_stream_request(bad, SECRET, url="wss://bot.example.com/ws")
+    def test_secret_rotation_accepts_either_v1(self):
+        h = _sign(self.URL)
+        other = _sign(self.URL, secret="old-secret")["X-Unpod-Signature"]
+        both = h["X-Unpod-Signature"] + ",v1=" + other.split("v1=")[1]
+        assert verify_stream_request({"X-Unpod-Signature": both}, SECRET, url=self.URL)
 
-    def test_v3_needs_url(self):
-        with pytest.raises(ValueError):
-            verify_stream_request(self._v3("https://h/ws"), SECRET)
+    def test_webhook_signature_and_plivo_v3_are_not_accepted(self):
+        # The old fallback (X-Webhook-Signature over an empty body) let any
+        # empty-body webhook signature open a stream; V3 had no timestamp.
+        ts = int(time.time())
+        webhook = hmac.new(
+            SECRET.encode(), f"{ts}.".encode(), hashlib.sha256
+        ).hexdigest()
+        assert not verify_stream_request(
+            {"X-Webhook-Signature": f"t={ts},v1={webhook}"}, SECRET, url=self.URL
+        )
+        assert not verify_stream_request(
+            {"X-Plivo-Signature-V3": "x", "X-Plivo-Signature-V3-Nonce": "1"},
+            SECRET,
+            url=self.URL,
+        )
+        assert not verify_stream_request({}, SECRET, url=self.URL)
 
     def test_empty_secret_never_verifies(self):
-        assert not verify_stream_request(
-            {"X-Webhook-Signature": _sign(int(time.time()))}, ""
-        )
+        assert not verify_stream_request(_sign(self.URL), "", url=self.URL)
 
 
 # ── handshake ───────────────────────────────────────────────────────────────
@@ -469,6 +510,53 @@ class TestSerializerControl:
         assert await ser.serialize(CancelFrame()) is None
         assert hangups.calls == ["call-7"]
 
+    async def test_end_waits_for_queued_audio_then_hangs_up(self, monkeypatch):
+        # 0.4 s of mu-law sent just before EndFrame: hang up only after it played.
+        import unpod.pipecat.serializer as mod
+
+        slept: list[float] = []
+
+        async def fake_sleep(secs):
+            slept.append(secs)
+
+        monkeypatch.setattr(mod.asyncio, "sleep", fake_sleep)
+        hangups = _Hangups()
+        ser = UnpodFrameSerializer("s", "c", hangup=hangups)
+        await _setup(ser, 8000)
+        for _ in range(20):  # 20 x 20 ms
+            await ser.serialize(
+                OutputAudioRawFrame(
+                    audio=b"\x00\x00" * 160, sample_rate=8000, num_channels=1
+                )
+            )
+        await ser.serialize(EndFrame())
+        assert hangups.calls == ["c"]
+        assert len(slept) == 1 and 0.3 < slept[0] <= 0.4
+
+    async def test_cancel_and_interruption_do_not_wait(self, monkeypatch):
+        import unpod.pipecat.serializer as mod
+
+        slept: list[float] = []
+
+        async def fake_sleep(secs):
+            slept.append(secs)
+
+        monkeypatch.setattr(mod.asyncio, "sleep", fake_sleep)
+        ser = UnpodFrameSerializer("s", "c", hangup=_Hangups())
+        await _setup(ser, 8000)
+        frame = OutputAudioRawFrame(
+            audio=b"\x00\x00" * 8000, sample_rate=8000, num_channels=1
+        )
+        await ser.serialize(frame)
+        await ser.serialize(CancelFrame())
+        assert slept == []
+        ser = UnpodFrameSerializer("s", "c", hangup=_Hangups())
+        await _setup(ser, 8000)
+        await ser.serialize(frame)
+        await ser.serialize(InterruptionFrame())  # clearAudio empties the queue
+        await ser.serialize(EndFrame())
+        assert slept == []
+
     async def test_no_hangup_when_disabled(self):
         hangups = _Hangups()
         ser = UnpodFrameSerializer(
@@ -628,19 +716,29 @@ class TestAnswerResponse:
     def test_other_verbs_xml(self):
         xml = (
             AnswerResponse()
-            .play("https://a/b.mp3", loop=2)
+            .play("https://a/b.mp3", loop=True)
             .wait(1)
             .dial("+15550100", caller_id="+15550199", ring_timeout=20)
             .hangup(reason="done")
             .to_xml()
         )
-        assert '<Play loop="2">https://a/b.mp3</Play>' in xml
+        assert '<Play loop="true">https://a/b.mp3</Play>' in xml
         assert '<Wait length="1"/>' in xml
         assert (
             '<Dial callerId="+15550199" timeout="20"><Number>+15550100</Number></Dial>'
             in xml
         )
         assert '<Hangup reason="done"/>' in xml
+
+    def test_loop_is_a_bool_as_the_sbc_reads_it(self):
+        # SBC PlayAction / SpeakAction: `loop: Option<bool>`; XML 0 = loop, 1 = once.
+        for given, sent in ((True, True), (False, False), (0, True), (1, False)):
+            action = AnswerResponse().play("https://a/b.mp3", loop=given).actions[0]
+            assert action["loop"] is sent
+            action = AnswerResponse().speak("hi", loop=given).actions[0]
+            assert action["loop"] is sent
+        with pytest.raises(ValueError, match="repeat count"):
+            AnswerResponse().play("https://a/b.mp3", loop=2)
 
     def test_stream_validation(self):
         with pytest.raises(ValueError, match="ws://"):
@@ -848,8 +946,8 @@ def test_fastapi_transport_echo_end_to_end():
         await PipelineRunner(handle_sigint=False).run(task)
 
     client = TestClient(app)
-    headers = {"X-Webhook-Signature": _sign(int(time.time()))}
-    with client.websocket_connect("/ws", headers=headers) as sbc:
+    # TestClient connects to ws://testserver/ws.
+    with client.websocket_connect("/ws", headers=_sign("ws://testserver/ws")) as sbc:
         sbc.send_text(json.dumps(_start()))
         for i in range(10):
             sbc.send_text(_media(b"\x7f" * 160, seq=i + 2))

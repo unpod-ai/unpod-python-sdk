@@ -25,10 +25,8 @@ from unpod.telephony.stream import (
     DEFAULT_ENCODING,
     DEFAULT_SAMPLE_RATE,
     MediaFormat,
-    extra_headers_str,
+    stream_options,
 )
-
-_WS_SCHEMES = ("ws://", "wss://")
 
 
 class Response:
@@ -79,43 +77,29 @@ class Response:
         ``noise_cancellation`` / ``noise_cancellation_level`` (60-100) ask the
         SBC to clean the caller audio before streaming it.
         """
-        if not url.startswith(_WS_SCHEMES):
-            raise ValueError("stream url must start with ws:// or wss://")
         MediaFormat(encoding=content_type, sampleRate=sample_rate).validate_supported()
-        if bidirectional and audio_track != "inbound":
-            raise ValueError(
-                'a bidirectional stream supports only audio_track="inbound"'
-            )
-        if stream_timeout is not None and stream_timeout < 1:
-            raise ValueError("stream_timeout must be at least 1 second")
-        if status_callback_method not in (None, "GET", "POST"):
-            raise ValueError('status_callback_method must be "GET" or "POST"')
-        if (
-            noise_cancellation_level is not None
-            and not 60 <= noise_cancellation_level <= 100
-        ):
-            raise ValueError("noise_cancellation_level must be between 60 and 100")
         action: dict[str, Any] = {
             "type": "stream",
             "url": url,
-            "bidirectional": bidirectional,
-            # The SBC reads the rate from the content type only (``audio/x-mulaw;rate=8000``).
-            "content_type": f"{content_type};rate={sample_rate}",
             "keep_call_alive": keep_call_alive,
-            "audio_track": audio_track,
-        }
-        if status_callback_url:
-            action["status_callback_url"] = status_callback_url
-        optional = {
-            "status_callback_method": status_callback_method,
-            "stream_timeout": stream_timeout,
-            "extra_headers": extra_headers_str(extra_headers)
-            if extra_headers
-            else None,
+            "status_callback_url": status_callback_url or None,
             "noise_cancellation": noise_cancellation,
-            "noise_cancellation_level": noise_cancellation_level,
         }
-        action.update({k: v for k, v in optional.items() if v is not None})
+        action.update(
+            stream_options(
+                url,
+                bidirectional=bidirectional,
+                audio_track=audio_track,
+                # The SBC reads the rate from the content type only
+                # (``audio/x-mulaw;rate=8000``).
+                content_type=f"{content_type};rate={sample_rate}",
+                stream_timeout=stream_timeout,
+                status_callback_method=status_callback_method,
+                extra_headers=extra_headers,
+                noise_cancellation_level=noise_cancellation_level,
+            )
+        )
+        action = {k: v for k, v in action.items() if v is not None}
         self._actions.append(action)
         return self
 
@@ -125,9 +109,14 @@ class Response:
         *,
         voice: str | None = None,
         language: str | None = None,
-        loop: int | None = None,
+        loop: bool | int | None = None,
     ) -> Response:
-        """Say ``text`` with the SBC's TTS."""
+        """Say ``text`` with the SBC's TTS.
+
+        ``loop``: ``True`` repeats until the call moves on, ``False`` says it
+        once. The SBC has no repeat count; ``0`` / ``1`` are accepted as the
+        ``<Speak loop>`` aliases for ``True`` / ``False``.
+        """
         self._actions.append(
             _drop_none(
                 {
@@ -135,15 +124,17 @@ class Response:
                     "text": text,
                     "voice": voice,
                     "language": language,
-                    "loop": loop,
+                    "loop": _loop_flag(loop),
                 }
             )
         )
         return self
 
-    def play(self, url: str, *, loop: int | None = None) -> Response:
-        """Play an MP3/WAV from an https URL."""
-        self._actions.append(_drop_none({"type": "play", "url": url, "loop": loop}))
+    def play(self, url: str, *, loop: bool | int | None = None) -> Response:
+        """Play an MP3/WAV from an https URL. ``loop`` as in :meth:`speak`."""
+        self._actions.append(
+            _drop_none({"type": "play", "url": url, "loop": _loop_flag(loop)})
+        )
         return self
 
     def wait(self, seconds: int) -> Response:
@@ -192,6 +183,21 @@ class Response:
         """``<Response>`` XML."""
         body = "".join(_xml_action(a) for a in self._actions)
         return f'<?xml version="1.0" encoding="UTF-8"?>\n<Response>{body}</Response>'
+
+
+def _loop_flag(loop: bool | int | None) -> bool | None:
+    """The SBC's ``loop`` is a bool (``PlayAction`` / ``SpeakAction``); ``0``
+    means loop and ``1`` play once, as in ``<Play loop="0">``."""
+    if loop is None or isinstance(loop, bool):
+        return loop
+    if loop == 0:
+        return True
+    if loop == 1:
+        return False
+    raise ValueError(
+        "loop is True/0 (repeat until the call moves on) or False/1 (once); "
+        "the SBC has no repeat count"
+    )
 
 
 def _drop_none(d: dict[str, Any]) -> dict[str, Any]:

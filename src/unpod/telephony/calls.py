@@ -380,8 +380,6 @@ def _leg_body(
     return body
 
 
-_WS_SCHEMES = ("ws://", "wss://")
-_AUDIO_TRACKS = ("inbound", "outbound", "both")
 
 
 def _stream_body(
@@ -396,38 +394,24 @@ def _stream_body(
     extra_headers: str | Mapping[str, str] | None,
     keep_call_alive: bool | None,
 ) -> dict[str, Any]:
-    from unpod.telephony.stream import (
-        MediaFormat,
-        extra_headers_str,
-    )
+    from unpod.telephony.stream import stream_options  # imported here to avoid a cycle
 
-    if not service_url.startswith(_WS_SCHEMES):
-        raise ValueError("service_url must start with ws:// or wss://")
-    if audio_track is not None and audio_track not in _AUDIO_TRACKS:
-        raise ValueError(f"audio_track must be one of {_AUDIO_TRACKS}")
-    if bidirectional and audio_track not in (None, "inbound"):
-        raise ValueError('a bidirectional stream supports only audio_track="inbound"')
-    if content_type is not None:
-        MediaFormat.from_content_type(content_type).validate_supported()
-    if stream_timeout is not None and stream_timeout < 1:
-        raise ValueError("stream_timeout must be at least 1 second")
-    if status_callback_method is not None and status_callback_method not in (
-        "GET",
-        "POST",
-    ):
-        raise ValueError('status_callback_method must be "GET" or "POST"')
     body: dict[str, Any] = {"service_url": service_url}
-    optional = {
-        "bidirectional": bidirectional,
-        "audio_track": audio_track,
-        "content_type": content_type,
-        "stream_timeout": stream_timeout,
-        "status_callback_url": status_callback_url,
-        "status_callback_method": status_callback_method,
-        "extra_headers": extra_headers_str(extra_headers) if extra_headers else None,
-        "keep_call_alive": keep_call_alive,
-    }
-    body.update({k: v for k, v in optional.items() if v is not None})
+    body.update(
+        stream_options(
+            service_url,
+            bidirectional=bidirectional,
+            audio_track=audio_track,
+            content_type=content_type,
+            stream_timeout=stream_timeout,
+            status_callback_method=status_callback_method,
+            extra_headers=extra_headers,
+        )
+    )
+    if status_callback_url:
+        body["status_callback_url"] = status_callback_url
+    if keep_call_alive is not None:
+        body["keep_call_alive"] = keep_call_alive
     return body
 
 

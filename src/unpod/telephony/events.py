@@ -418,6 +418,7 @@ def parse_digits_request(
 __all__ = [
     "DEFAULT_SIGNATURE_HEADER",
     "DEFAULT_TOLERANCE_SECS",
+    "STREAM_DEGRADED",
     "STREAM_EVENTS",
     "STREAM_FAILED",
     "STREAM_STARTED",

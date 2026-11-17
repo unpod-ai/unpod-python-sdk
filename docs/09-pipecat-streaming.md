@@ -28,7 +28,7 @@ pip install "unpod[pipecat]"
 | Piece | Where | What it does |
 |---|---|---|
 | `Answer().stream(url)` | `unpod.telephony.answer` | Builds the `answer_url` reply, as SBC JSON (`to_json()`) or XML (`to_xml()`) |
-| `verify_stream_request(headers, secret, url=...)` | `unpod.pipecat` | Checks the SBC's V3 signature (`X-Plivo-Signature-V3`) on the WebSocket upgrade, so only Unpod can reach your bot |
+| `verify_stream_request(headers, secret, url=...)` | `unpod.pipecat` | Checks the SBC's `X-Unpod-Signature` on the WebSocket upgrade (age and, with a `NonceCache`, replays), so only Unpod can reach your bot |
 | `parse_unpod_websocket(ws)` | `unpod.pipecat` | Reads the `start` event: `call_id`, `stream_id`, `account_id`, `media_format` |
 | `UnpodFrameSerializer` | `unpod.pipecat` | Pipecat frames ↔ stream messages. Hangs up through the Unpod call API |
 | `STREAM_STARTED` / `STOPPED` / `FAILED` / `DEGRADED` | `unpod.telephony` | Stream status callbacks (`Event=started\|stopped\|failed\|degraded`), parsed by `parse_call_event` (`CallEvent.stream_id`, `.stream_reason`, `.service_url`, `.error`, `.duration`) |
@@ -46,7 +46,11 @@ from unpod.pipecat import UnpodFrameSerializer, parse_unpod_websocket, verify_st
 
 @app.websocket("/ws")
 async def ws(websocket: WebSocket):
-    if not verify_stream_request(websocket.headers, WEBHOOK_SECRET):
+    if not verify_stream_request(
+        websocket.headers, WEBHOOK_SECRET, url=str(websocket.url),
+        public_base=PUBLIC_WS_BASE,  # e.g. "wss://bot.example.com" behind a proxy/tunnel
+        nonce_cache=NONCES,          # one NonceCache() shared by your handlers
+    ):
         await websocket.close(code=1008)
         return
     await websocket.accept()
@@ -121,6 +125,29 @@ Formats (what the SBC accepts): `audio/x-mulaw` 8 kHz (default), `audio/x-alaw`
 `stream()` also takes `stream_timeout`, `status_callback_method`,
 `extra_headers` (`[A-Za-z0-9_-]` keys and values, ≤ 512 bytes),
 `noise_cancellation` and `noise_cancellation_level` (60–100).
+
+## Verifying the stream signature
+
+The SBC signs every stream WebSocket upgrade with the org's webhook secret
+(`client.telephony.webhook_secret`) in one header:
+
+```
+X-Unpod-Signature: t=<unix seconds>,n=<nonce>,v1=<hex>
+v1 = hex(HMAC-SHA256(secret, "ws." + t + "." + n + "." + url))
+```
+
+`url` is the URL exactly as the SBC dialled it (`wss://host/path?query`).
+`verify_stream_request` checks the HMAC in constant time, rejects a `t` more
+than 300 s from now, and with a `NonceCache` rejects a nonce it has seen.
+Behind a proxy or tunnel pass `public_base` (your public `wss://host`); the
+host is never taken from request headers. While a secret is being rotated the
+header can carry two `v1` values; either may match.
+
+Without the SDK (any language): split the header on `,` and `=`, compute the
+HMAC above with your secret, compare to each `v1` in constant time, check
+`|now - t| <= 300`, and optionally remember `n` for 10 minutes. It is the same
+recipe as the webhook `X-Webhook-Signature` (`t=…,v1=…` over `"<t>." + body`),
+with the `ws.` prefix so neither can stand in for the other.
 
 ## Status callbacks
 

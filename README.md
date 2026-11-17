@@ -33,10 +33,10 @@ Since 0.6.0 (full notes in the [changelog](https://github.com/unpod-ai/unpod-pyt
 
 - **Pipecat bots on Unpod calls (preview)** — stream a call's audio to your own Pipecat pipeline over a WebSocket. `UnpodFrameSerializer` plugs into Pipecat's WebSocket transport; install with `pip install "unpod[pipecat]"`. See [Pipecat audio streaming](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/09-pipecat-streaming.md). The org needs audio streaming switched on at the SBC.
 - **`answer_url` replies** — `unpod.telephony.answer.Response` builds `stream`, `speak`, `play`, `wait`, `dial` and `hangup` actions as SBC JSON or XML; `stream()` takes `keep_call_alive` and `audio_track`.
-- **Signed stream connections** — `verify_stream_request(headers, secret, url=...)` checks the SBC's V3 signature on the WebSocket upgrade.
+- **Signed stream connections** — `verify_stream_request(headers, secret, url=...)` checks the SBC's `X-Unpod-Signature` on the WebSocket upgrade (timestamp, optional replay cache).
 - **SBC call control (preview)** — `client.telephony.calls` (create, hangup, play, speak, transfer, DTMF, record, ...), `parse_call_event()` for signed call webhooks, and `client.telephony.webhook_secret`.
 - **Streaming, matched to the SBC (unreleased)** — A-law streams, REST `calls.start_stream()` / `stop_stream()`, all `<Stream>` options, `checkpoint` / `sendDTMF`, and stream status callbacks parsed from what the SBC really sends (`started`/`stopped`/`failed`/`degraded`).
-- **Changed:** `<Stream>` carries the sample rate in `contentType` only; `verify_stream_request` needs `url=` when the upgrade carries V3 headers.
+- **Changed:** `<Stream>` carries the sample rate in `contentType` only; `verify_stream_request` needs `url=` and checks `X-Unpod-Signature` only.
 
 ## What's Inside
 

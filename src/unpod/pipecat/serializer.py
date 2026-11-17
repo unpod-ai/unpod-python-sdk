@@ -16,9 +16,11 @@ functions (deprecated in 1.16).
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
@@ -85,11 +87,17 @@ class UnpodFrameSerializer(FrameSerializer):
 
         Parameters:
             auto_hang_up: Hang the call up on ``EndFrame``/``CancelFrame``.
+            hangup_drain_secs: On ``EndFrame``, wait up to this long for the
+                audio already sent with ``playAudio`` to finish playing before
+                hanging up, so the bot's last words are not cut off. The SBC
+                plays in real time, so the wait is what is still queued there.
+                ``CancelFrame`` hangs up at once.
             output_format: Format for ``playAudio``. Defaults to the stream's
-                input format. SuperSBC v1 plays μ-law 8k only.
+                input format, which is what the SBC expects back.
         """
 
         auto_hang_up: bool = True
+        hangup_drain_secs: float = 5.0
         output_format: MediaFormat | None = None
 
     def __init__(
@@ -129,6 +137,8 @@ class UnpodFrameSerializer(FrameSerializer):
         self._in_resampler = create_stream_resampler()
         self._out_resampler = create_stream_resampler()
         self._out_rate = 0
+        # Monotonic time when the audio sent so far finishes playing at the SBC.
+        self._playout_until = 0.0
 
     @classmethod
     def from_start(
@@ -176,19 +186,26 @@ class UnpodFrameSerializer(FrameSerializer):
         if isinstance(frame, (EndFrame, CancelFrame)):
             if self._params.auto_hang_up and not self._hangup_attempted:
                 self._hangup_attempted = True
+                if isinstance(frame, EndFrame):
+                    await self._drain_playout()
                 await self._hang_up()
             return None
         if isinstance(frame, InterruptionFrame):
             # Drop the interrupted reply's tail still inside the resampler.
             self._out_resampler = create_stream_resampler()
+            self._playout_until = 0.0  # clearAudio empties the SBC's queue
             return clear_audio_message(self._stream_id)
         if isinstance(frame, AudioRawFrame):
             payload = await self._encode(frame)
             if not payload:
                 return None
+            self._track_playout(payload)
             return play_audio_message(self._stream_id, payload, self._out_format)
         if isinstance(frame, (OutputDTMFFrame, OutputDTMFUrgentFrame)):
-            buttons = frame.buttons or ([frame.button] if frame.button else [])
+            # `buttons` only exists from Pipecat ~1.3; 1.0 has `button` alone.
+            buttons = getattr(frame, "buttons", None) or (
+                [frame.button] if frame.button else []
+            )
             digits = "".join(str(b.value) for b in buttons)
             if not digits:
                 return None
@@ -219,6 +236,19 @@ class UnpodFrameSerializer(FrameSerializer):
         if fmt.encoding == ALAW:
             return pcm_to_alaw(pcm)
         return pcm
+
+    def _track_playout(self, payload: bytes) -> None:
+        fmt = self._out_format
+        samples = len(payload) // 2 if fmt.encoding == L16 else len(payload)
+        now = time.monotonic()
+        self._playout_until = max(self._playout_until, now) + samples / fmt.sample_rate
+
+    async def _drain_playout(self) -> None:
+        remaining = self._playout_until - time.monotonic()
+        wait = min(remaining, self._params.hangup_drain_secs)
+        if wait > 0:
+            logger.debug("waiting %.2fs for queued audio before hanging up", wait)
+            await asyncio.sleep(wait)
 
     async def _hang_up(self) -> None:
         if self._hangup_fn is None:

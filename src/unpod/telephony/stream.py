@@ -35,11 +35,15 @@ before it has played; ``clearAudio`` drops the queue (pending checkpoints get
 no reply) and is answered with ``clearedAudio``. ``sendDTMF`` sends digits
 (``0-9``, ``A-D``, ``*``, ``#``; at most 32 queued) to the caller.
 
-The SBC signs the WebSocket upgrade request with the org's webhook secret
-using a V3 scheme: ``X-Plivo-Signature-V3`` is
-``base64(HMAC-SHA256(secret, <request URL with ws(s) -> http(s)> + nonce))`` and
-``X-Plivo-Signature-V3-Nonce`` the nonce. :func:`verify_stream_request` checks
-it (and the older ``X-Webhook-Signature: t=<ts>,v1=<hex>`` form).
+The SBC signs the WebSocket upgrade request with the org's webhook secret in
+one header, the same family as the webhook ``X-Webhook-Signature``::
+
+    X-Unpod-Signature: t=<unix seconds>,n=<nonce>,v1=<hex>
+    v1 = hex(HMAC-SHA256(secret, "ws." + t + "." + n + "." + url))
+
+``url`` is the URL exactly as the SBC dialled it (``wss://host/path?query``).
+:func:`verify_stream_request` checks it, rejects signatures older than
+``tolerance`` and, with a :class:`NonceCache`, repeats.
 """
 
 from __future__ import annotations
@@ -49,17 +53,13 @@ import hashlib
 import hmac
 import json
 import re
+import time
 from collections.abc import Mapping
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from unpod.telephony.events import (
-    DEFAULT_SIGNATURE_HEADER,
-    DEFAULT_TOLERANCE_SECS,
-    _header,
-    verify_signature,
-)
+from unpod.telephony.events import DEFAULT_TOLERANCE_SECS, _header
 
 #: μ-law (G.711 PCMU), 8000 Hz. The default.
 MULAW = "audio/x-mulaw"
@@ -78,6 +78,10 @@ SAMPLE_RATES: dict[str, tuple[int, ...]] = {
 
 DEFAULT_ENCODING = MULAW
 DEFAULT_SAMPLE_RATE = 8000
+#: What the SBC streams when no ``contentType`` was given
+#: (``StreamFormat::DEFAULT_CONTENT_TYPE``): the fallback when a ``start``
+#: event carries no ``mediaFormat``.
+SBC_DEFAULT_CONTENT_TYPE = "audio/x-l16;rate=8000"
 
 
 class MediaFormat(BaseModel):
@@ -91,14 +95,17 @@ class MediaFormat(BaseModel):
     @classmethod
     def parse(cls, value: Any) -> MediaFormat:
         """Read ``start.mediaFormat``. ``"audio/x-mulaw;rate=8000"``
-        content types are accepted too; anything missing falls back to μ-law 8k."""
+        content types are accepted too. A missing format falls back to what the
+        SBC streams by default, L16 8 kHz."""
         if isinstance(value, MediaFormat):
             return value
         if isinstance(value, str):
             return cls.from_content_type(value)
         if not isinstance(value, Mapping):
-            return cls()
-        encoding = value.get("encoding") or value.get("contentType") or DEFAULT_ENCODING
+            return cls.from_content_type(SBC_DEFAULT_CONTENT_TYPE)
+        encoding = value.get("encoding") or value.get("contentType")
+        if not encoding:
+            return cls.from_content_type(SBC_DEFAULT_CONTENT_TYPE)
         fmt = cls.from_content_type(str(encoding))
         rate = value.get("sampleRate", value.get("sample_rate"))
         if rate not in (None, ""):
@@ -238,10 +245,6 @@ def send_dtmf_message(stream_id: str, digits: str) -> str:
     return json.dumps({"event": "sendDTMF", "streamId": stream_id, "dtmf": clean})
 
 
-V3_SIGNATURE_HEADER = "X-Plivo-Signature-V3"
-V3_NONCE_HEADER = "X-Plivo-Signature-V3-Nonce"
-
-
 _EXTRA_HEADER_TOKEN = re.compile(r"^[A-Za-z0-9_-]+$")
 MAX_STREAM_EXTRA_HEADERS_BYTES = 512
 
@@ -274,35 +277,125 @@ def extra_headers_str(value: str | Mapping[str, str]) -> str:
     return text
 
 
-def v3_signature(secret: str | bytes, url: str, nonce: str) -> str:
-    """``base64(HMAC-SHA256(secret, url + nonce))``, as SuperSBC signs the upgrade."""
+WS_SCHEMES = ("ws://", "wss://")
+AUDIO_TRACKS = ("inbound", "outbound", "both")
+
+
+def stream_options(
+    url: str,
+    *,
+    bidirectional: bool | None = None,
+    audio_track: str | None = None,
+    content_type: str | None = None,
+    stream_timeout: int | None = None,
+    status_callback_method: str | None = None,
+    extra_headers: str | Mapping[str, str] | None = None,
+    noise_cancellation_level: int | None = None,
+) -> dict[str, Any]:
+    """Validate a stream's options with SuperSBC's rules (``validate_stream``
+    in ``answer_url/actions.rs``) and return them as the SBC's snake_case keys,
+    ``None`` values dropped. One rule set for ``Response.stream()`` and
+    ``calls.start_stream()``; raises ``ValueError``."""
+    if not url.startswith(WS_SCHEMES):
+        raise ValueError("stream url must start with ws:// or wss://")
+    if audio_track is not None and audio_track not in AUDIO_TRACKS:
+        raise ValueError(f"audio_track must be one of {AUDIO_TRACKS}")
+    if bidirectional and audio_track not in (None, "inbound"):
+        raise ValueError('a bidirectional stream supports only audio_track="inbound"')
+    if content_type is not None:
+        MediaFormat.from_content_type(content_type).validate_supported()
+    if stream_timeout is not None and stream_timeout < 1:
+        raise ValueError("stream_timeout must be at least 1 second")
+    if status_callback_method not in (None, "GET", "POST"):
+        raise ValueError('status_callback_method must be "GET" or "POST"')
+    if noise_cancellation_level is not None and not (
+        60 <= noise_cancellation_level <= 100
+    ):
+        raise ValueError("noise_cancellation_level must be between 60 and 100")
+    options = {
+        "bidirectional": bidirectional,
+        "audio_track": audio_track,
+        "content_type": content_type,
+        "stream_timeout": stream_timeout,
+        "status_callback_method": status_callback_method,
+        "extra_headers": extra_headers_str(extra_headers) if extra_headers else None,
+        "noise_cancellation_level": noise_cancellation_level,
+    }
+    return {k: v for k, v in options.items() if v is not None}
+
+
+#: The header SuperSBC signs a stream's WebSocket upgrade with.
+SIGNATURE_HEADER = "X-Unpod-Signature"
+
+
+def stream_signature(secret: str | bytes, url: str, timestamp: int, nonce: str) -> str:
+    """``hex(HMAC-SHA256(secret, "ws.<t>.<n>.<url>"))``, as SuperSBC signs."""
     key = secret.encode() if isinstance(secret, str) else secret
-    digest = hmac.new(key, (url + nonce).encode(), hashlib.sha256).digest()
-    return base64.b64encode(digest).decode("ascii")
+    payload = f"ws.{timestamp}.{nonce}.{url}".encode()
+    return hmac.new(key, payload, hashlib.sha256).hexdigest()
 
 
-def _signed_url_candidates(url: str, headers: Mapping[str, str]) -> list[str]:
-    """The URLs the SBC may have signed: the one it dialled, with ws(s) as http(s).
+def _parse_signature(value: str) -> tuple[int | None, str | None, list[str]]:
+    """``t=..,n=..,v1=..[,v1=..]`` -> (t, n, [v1...]). Several ``v1`` appear
+    while the org's secret is being rotated."""
+    ts: int | None = None
+    nonce: str | None = None
+    sigs: list[str] = []
+    for part in value.split(","):
+        key, _, val = part.strip().partition("=")
+        if key == "t":
+            try:
+                ts = int(val)
+            except ValueError:
+                return None, None, []
+        elif key == "n":
+            nonce = val
+        elif key == "v1" and val:
+            sigs.append(val.lower())
+    return ts, nonce, sigs
 
-    Behind a TLS-terminating proxy or tunnel the server sees ``ws://`` while
-    the SBC dialled ``wss://``, so both schemes are tried, on the public host
-    (``X-Forwarded-Host``/``Host``) as well as the one in ``url``.
+
+class NonceCache:
+    """Remembers the nonces of accepted signatures, so a captured upgrade
+    request cannot be replayed even inside the ``tolerance`` window.
+
+    In-memory and per process: share one instance across your handlers. With
+    several bot processes, a replay could still land on another process.
     """
-    _, sep, rest = url.partition("://")
+
+    def __init__(self, ttl: float = DEFAULT_TOLERANCE_SECS * 2) -> None:
+        self._ttl = ttl
+        self._seen: dict[str, float] = {}
+
+    def seen_before(self, nonce: str, now: float | None = None) -> bool:
+        """Record ``nonce``; ``True`` when it was already used."""
+        current = time.time() if now is None else now
+        if len(self._seen) > 10_000:
+            self._seen = {n: t for n, t in self._seen.items() if t > current}
+        expires = self._seen.get(nonce)
+        if expires is not None and expires > current:
+            return True
+        self._seen[nonce] = current + self._ttl
+        return False
+
+
+def _with_base(url: str, public_base: str | None) -> list[str]:
+    """The URL(s) the SBC may have signed. ``public_base`` (``wss://host``)
+    replaces the scheme and host the server sees (behind a proxy or tunnel);
+    ``ws``/``wss`` are both tried, since TLS often ends at the proxy."""
+    scheme, sep, rest = url.partition("://")
     if not sep:
         return [url]
-    hosts = [rest.split("/", 1)[0]]
-    for name in ("x-forwarded-host", "host"):
-        value = _header(headers, name)
-        if value and value not in hosts:
-            hosts.append(value.split(",")[0].strip())
     path = "/" + rest.split("/", 1)[1] if "/" in rest else ""
-    out: list[str] = []
-    for host in hosts:
-        for http_scheme in ("https", "http"):
-            cand = f"{http_scheme}://{host}{path}"
-            if cand not in out:
-                out.append(cand)
+    if public_base:
+        scheme, _, host = public_base.rstrip("/").partition("://")
+    else:
+        host = rest.split("/", 1)[0]
+    out = []
+    for sch in (scheme, "wss" if scheme == "ws" else "ws"):
+        cand = f"{sch}://{host}{path}"
+        if cand not in out:
+            out.append(cand)
     return out
 
 
@@ -310,41 +403,48 @@ def verify_stream_request(
     headers: Mapping[str, str],
     secret: str | bytes,
     *,
-    url: str | None = None,
-    body: bytes = b"",
-    signature_header: str = DEFAULT_SIGNATURE_HEADER,
+    url: str,
+    public_base: str | None = None,
     tolerance: int | None = DEFAULT_TOLERANCE_SECS,
+    nonce_cache: NonceCache | None = None,
+    now: float | None = None,
 ) -> bool:
-    """True when the WebSocket upgrade request carries a valid SBC signature.
+    """True when the WebSocket upgrade carries a valid ``X-Unpod-Signature``.
 
     Call it before ``websocket.accept()`` and close the socket when it returns
-    False, so only Unpod's SBC can open a stream to your bot. ``secret`` is the
-    org's webhook secret (``client.telephony.webhook_secret``) and ``url`` the
-    request URL (``str(websocket.url)``), which the V3 signature covers.
+    False, so only Unpod's SBC can open a stream to your bot.
 
-    SuperSBC signs with V3 headers (see the module docs); the older
-    ``X-Webhook-Signature`` form (``"<t>."`` + ``body``) is accepted too.
+    ``secret`` is the org's webhook secret (``client.telephony.webhook_secret``).
+    ``url`` is the request URL (``str(websocket.url)``). Behind a proxy or
+    tunnel, pass ``public_base="wss://bot.example.com"``: the scheme and host
+    are taken from it, never from request headers (which the caller controls).
+    Signatures older than ``tolerance`` seconds fail (``None`` skips the age
+    check); with a ``nonce_cache`` a repeated signature fails too.
     """
     if not secret:
         return False
-    v3 = _header(headers, V3_SIGNATURE_HEADER)
-    nonce = _header(headers, V3_NONCE_HEADER)
-    if v3 and nonce is not None:
-        if not url:
-            raise ValueError("verify_stream_request needs url= to check a V3 signature")
-        sigs = [x.strip() for x in v3.split(",") if x.strip()]
-        for cand in _signed_url_candidates(url, headers):
-            want = v3_signature(secret, cand, nonce)
-            if any(hmac.compare_digest(want, sig) for sig in sigs):
-                return True
+    value = _header(headers, SIGNATURE_HEADER)
+    if not value:
         return False
-    return verify_signature(
-        body, _header(headers, signature_header), secret, tolerance=tolerance
+    ts, nonce, sigs = _parse_signature(value)
+    if ts is None or not nonce or not sigs:
+        return False
+    current = time.time() if now is None else now
+    if tolerance is not None and abs(current - ts) > tolerance:
+        return False
+    ok = any(
+        hmac.compare_digest(stream_signature(secret, cand, ts, nonce), sig)
+        for cand in _with_base(url, public_base)
+        for sig in sigs
     )
+    if ok and nonce_cache is not None and nonce_cache.seen_before(nonce, current):
+        return False
+    return ok
 
 
 __all__ = [
     "ALAW",
+    "AUDIO_TRACKS",
     "DEFAULT_ENCODING",
     "DEFAULT_SAMPLE_RATE",
     "ENCODINGS",
@@ -354,9 +454,11 @@ __all__ = [
     "MAX_STREAM_EXTRA_HEADERS_BYTES",
     "MULAW",
     "SAMPLE_RATES",
-    "V3_NONCE_HEADER",
-    "V3_SIGNATURE_HEADER",
+    "SBC_DEFAULT_CONTENT_TYPE",
+    "SIGNATURE_HEADER",
+    "WS_SCHEMES",
     "MediaFormat",
+    "NonceCache",
     "StreamStart",
     "checkpoint_message",
     "clear_audio_message",
@@ -365,6 +467,7 @@ __all__ = [
     "parse_start",
     "play_audio_message",
     "send_dtmf_message",
-    "v3_signature",
+    "stream_options",
+    "stream_signature",
     "verify_stream_request",
 ]
