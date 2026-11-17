@@ -18,6 +18,19 @@ While the SDK is pre-1.0, breaking changes ship in a **minor** bump.
 - `unpod.telephony.stream`: the stream wire protocol without a Pipecat dependency.
 - `CallEvent.stream_id` / `.stream_reason` and `STREAM_STARTED` / `STREAM_STOPPED` / `STREAM_FAILED` for stream lifecycle callbacks.
 
+- `answer.Response.stream(keep_call_alive=True, audio_track="inbound")`: emit the `keepCallAlive` and `audioTrack` attributes on `<Stream>`. With `keep_call_alive=False` the SBC runs the stream in the background and moves on to the next action (with none left it hangs up, "End Of XML Instructions", as on Plivo). A bidirectional stream must use `audio_track="inbound"`; anything else raises `ValueError`.
+- `verify_stream_request(..., url=)` and `unpod.telephony.stream.v3_signature()`: verify the SBC's Plivo-style V3 signature on the stream WebSocket upgrade (`X-Plivo-Signature-V3` + `X-Plivo-Signature-V3-Nonce`, `base64(HMAC-SHA256(secret, url + nonce))`). Behind a TLS-terminating proxy or tunnel both `ws://`/`wss://` and the `X-Forwarded-Host`/`Host` hosts are tried. The older `X-Webhook-Signature` form is still accepted. Exports `V3_SIGNATURE_HEADER` and `V3_NONCE_HEADER`.
+
+### Changed
+- `<Stream>` now carries the sample rate in `contentType` only (`audio/x-mulaw;rate=8000`), the shape the SBC reads; the separate `sample_rate` action field is gone.
+- `verify_stream_request` raises `ValueError` when the upgrade carries V3 headers and no `url=` is passed. Pass `url=str(websocket.url)`; `examples/pipecat_streaming/` is updated.
+
+### Fixed
+- `UnpodFrameSerializer` ignores media frames whose `track` is not `inbound`, so with `audioTrack="both"` the bot no longer hears the audio the SBC plays back to the caller.
+
+### Requires
+- The SBC org must have audio streaming switched on (`audio_stream_enabled`, default off); otherwise the stream fails with `start_failed` / "audio streaming is not enabled for this org".
+
 ## [0.6.0] - 2026-11-02
 
 ### Added
