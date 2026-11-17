@@ -114,3 +114,15 @@ def test_connect_proxy_rewrites_ws_url(monkeypatch) -> None:
     assert resp.json()["ws_url"] == "wss://sv.example.com/ws/audio"
     # the proxy forwarded to the supervoice /connect over https
     assert captured["url"] == "https://sv.example.com/connect"
+
+
+def test_build_runner_uses_platform_token_and_org_handle(monkeypatch) -> None:
+    # AgentRunner registers with a platform token + org handle (no api_key
+    # since 2c7c795); the restored agent.py must construct it that way.
+    monkeypatch.setenv("UNPOD_PLATFORM_TOKEN", "tok")
+    monkeypatch.setenv("UNPOD_ORG_HANDLE", "acme")
+    agent = _load("agent")
+    runner = agent.build_runner()
+    assert runner._platform_token == "tok"
+    assert runner._org_handle == "acme"
+    assert runner._agent_id == agent.AGENT_ID
