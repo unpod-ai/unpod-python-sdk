@@ -68,8 +68,10 @@ def _ws_url(request: Request, direction: str) -> str:
 async def answer(request: Request, direction: str = "inbound") -> Response:
     """Tell the SBC to stream this call to our bot. Replies with XML.
 
-    The SBC does not sign answer-URL fetches, so this route is open; it only
-    returns the stream URL, and /ws itself checks the SBC's signature.
+    A POST answer request carries ``X-Webhook-Signature`` when the org has a
+    webhook secret (verify it with ``unpod.telephony.parse_call_event``); a
+    GET has no body to sign. This route only returns the stream URL, and /ws
+    checks its own signature, so the example leaves it open.
     """
     xml = Answer().stream(_ws_url(request, direction)).to_xml()
     return Response(content=xml, media_type="application/xml")
