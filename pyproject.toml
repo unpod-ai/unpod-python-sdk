@@ -19,6 +19,7 @@ dependencies = [
 Homepage = "https://unpod.ai"
 Documentation = "https://github.com/unpod-ai/unpod-python-sdk/tree/main/docs"
 Repository = "https://github.com/unpod-ai/unpod-python-sdk"
+Changelog = "https://github.com/unpod-ai/unpod-python-sdk/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 observability = ["langfuse>=2.0"]
