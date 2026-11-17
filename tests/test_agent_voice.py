@@ -6,7 +6,6 @@ import pytest
 from unpod import AsyncClient, Client
 from unpod.agents import Runner
 
-
 _PIPE = {
     "pipe_id": "PIPE_1",
     "project_id": "proj_1",
@@ -63,9 +62,7 @@ async def test_agent_voice_requires_exactly_one_source() -> None:
     with pytest.raises(ValueError, match="received none"):
         await client.agent.voice.create(name="empty")
     with pytest.raises(ValueError, match="agent_id.*prompt"):
-        await client.agent.voice.create(
-            name="conflict", agent_id="a1", prompt="hello"
-        )
+        await client.agent.voice.create(name="conflict", agent_id="a1", prompt="hello")
 
 
 def test_sync_agent_voice_namespace_is_available() -> None:

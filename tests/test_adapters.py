@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
 from unpod.adapters.base import DialogAdapter
 
 

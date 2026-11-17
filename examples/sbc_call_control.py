@@ -29,10 +29,14 @@ async def main(from_: str, to_a: str, to_b: str) -> None:
         call = await calls.create(from_, to_a, role="agent", ring_timeout=30)
         print("call", call.call_id, call.state)
         try:
-            leg = await calls.add_participant(call.call_id, from_, to_b, role="customer")
+            leg = await calls.add_participant(
+                call.call_id, from_, to_b, role="customer"
+            )
             print("added leg", leg.leg_id)
             await asyncio.sleep(5)
-            played = await calls.play_audio(call.call_id, url="https://example.com/prompt.mp3")
+            played = await calls.play_audio(
+                call.call_id, url="https://example.com/prompt.mp3"
+            )
             print("playing", played.play_id)
             await asyncio.sleep(5)
         except TelephonyAPIError as exc:

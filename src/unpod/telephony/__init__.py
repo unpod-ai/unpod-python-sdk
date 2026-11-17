@@ -78,6 +78,7 @@ def _as_number_list(numbers: str | Sequence[str]) -> list[str]:
         return [numbers]
     return [str(n) for n in numbers]
 
+
 # ── models ───────────────────────────────────────────────────────────────────
 
 

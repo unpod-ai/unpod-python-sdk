@@ -247,7 +247,9 @@ deployment, and `numbers.attach` was posting to a route that no longer exists.
   await client.numbers.attach(number_id, pipe.pipe_id)
   # after
   await client.numbers.attach(number_id, pipe.agent_id)
-  await client.numbers.attach(number_id, agent_id, number="+919800000001")  # supervoice id
+  await client.numbers.attach(
+      number_id, agent_id, number="+919800000001"
+  )  # supervoice id
   ```
 
 - **`Call.transcript` now defaults to `None`, not `[]`.** `None` means the turns

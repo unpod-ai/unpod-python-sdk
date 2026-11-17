@@ -63,7 +63,11 @@ def _runner(**kw) -> AgentRunner:
         pass
 
     return AgentRunner(
-        entrypoint=entrypoint, agent_id="bot", platform_token="k", org_handle="acme", **kw
+        entrypoint=entrypoint,
+        agent_id="bot",
+        platform_token="k",
+        org_handle="acme",
+        **kw,
     )
 
 
@@ -150,9 +154,9 @@ async def test_job_assign_at_capacity_rejected() -> None:
 def test_backoff_schedule_caps_and_resets() -> None:
     r = _runner()
     delays = [r._next_backoff(attempt) for attempt in range(1, 8)]
-    assert delays[0] >= 0.5 and delays[0] <= 1.5           # ~1s with jitter
-    assert all(d <= 30.0 for d in delays)                   # capped after jitter
-    assert delays[-1] >= 15.0                               # escalated
+    assert delays[0] >= 0.5 and delays[0] <= 1.5  # ~1s with jitter
+    assert all(d <= 30.0 for d in delays)  # capped after jitter
+    assert delays[-1] >= 15.0  # escalated
 
 
 @pytest.mark.anyio

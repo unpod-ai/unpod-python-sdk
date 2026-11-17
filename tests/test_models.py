@@ -41,7 +41,6 @@ def test_number_optional_created_at():
     assert n.created_at is None
 
 
-
 def test_voice_profile_model():
     vp = VoiceProfile(
         id="vp_1",

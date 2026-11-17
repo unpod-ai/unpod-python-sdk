@@ -13,7 +13,6 @@ from unpod.models import (
     SessionTransferResult,
 )
 
-
 #: The speech proxy's canonical external mount (``config/urls.py``). The short
 #: ``/v1/...`` form these routes used before is not an API path on the
 #: deployment: the edge 308s it to the Next.js app, so the SDK got a redirect
@@ -60,7 +59,9 @@ class SessionsResource:
         body: dict[str, Any] = {"pipe_id": pipe_id}
         if metadata is not None:
             body["metadata"] = metadata
-        resp = unwrap_data(await self._http.post(f"{_SPEECH}/sessions/token", json=body))
+        resp = unwrap_data(
+            await self._http.post(f"{_SPEECH}/sessions/token", json=body)
+        )
         return SessionToken(**resp)
 
     async def end(self, session_id: str) -> SessionEndResult:

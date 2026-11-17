@@ -9,6 +9,7 @@ and getting results — there is deliberately no "run".
 from unittest.mock import AsyncMock, patch
 
 import pytest
+
 from unpod import AsyncClient
 
 _BLOCK = {
@@ -148,7 +149,9 @@ async def test_attach_and_detach(client: AsyncClient):
         client.analytics._http, "delete", new_callable=AsyncMock
     ) as mock_del:
         await client.analytics.detach("ABK_1", "agent-a")
-        mock_del.assert_called_once_with("/speech/v1/analytics-blocks/ABK_1/attach/agent-a")
+        mock_del.assert_called_once_with(
+            "/speech/v1/analytics-blocks/ABK_1/attach/agent-a"
+        )
 
 
 @pytest.mark.anyio
@@ -269,9 +272,7 @@ async def test_create_can_fork_a_template(client: AsyncClient):
         client.analytics._http, "post", new_callable=AsyncMock
     ) as mock_post:
         mock_post.return_value = {"data": _BLOCK}
-        await client.analytics.create(
-            name="Mine", prompt="p", from_template="success"
-        )
+        await client.analytics.create(name="Mine", prompt="p", from_template="success")
         path, _ = mock_post.call_args[0]
         assert path == "/speech/v1/analytics-blocks?from_template=success"
 
@@ -300,9 +301,7 @@ async def test_success_evaluation_parses_off_the_result(client: AsyncClient):
     with patch.object(
         client.analytics._http, "get", new_callable=AsyncMock
     ) as mock_get:
-        mock_get.return_value = {
-            "data": [{**_RESULT, "success_evaluation": "Partial"}]
-        }
+        mock_get.return_value = {"data": [{**_RESULT, "success_evaluation": "Partial"}]}
         results = await client.analytics.for_session("s-1")
         assert results[0].success_evaluation == "Partial"
 

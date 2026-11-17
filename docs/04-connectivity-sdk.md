@@ -11,7 +11,7 @@ such, and controls whose wire format the Speech Worker does not act on are in
 [Known gaps](#known-gaps).
 
 ```python
-from unpod import AgentRunner, CallContext   # Session comes attached to ctx
+from unpod import AgentRunner, CallContext  # Session comes attached to ctx
 ```
 
 `RunnerStats` and `CallMetrics` are not top-level exports —
@@ -22,11 +22,13 @@ from unpod import AgentRunner, CallContext   # Session comes attached to ctx
 ```python
 from unpod import AgentRunner, CallContext
 
+
 async def entrypoint(ctx: CallContext) -> None:
     """Called once per call, on its own bridge connection."""
     ctx.session.dialog_machine = my_dialog_machine
     await ctx.session.say("Hello!")
-    await ctx.session.run()          # blocks until the call ends
+    await ctx.session.run()  # blocks until the call ends
+
 
 AgentRunner(
     entrypoint=entrypoint,
@@ -104,9 +106,11 @@ error and is never fired at the runner level — `AgentRunner` contains no other
 ```python
 runner = AgentRunner(entrypoint=entrypoint, agent_id="my-voice-agent")
 
+
 @runner.on("call_start")
 async def _(ctx: CallContext) -> None:
     log.info("call started", call_id=ctx.call_id)
+
 
 @runner.on("call_end")
 async def _(ctx: CallContext, final_state: str) -> None:
@@ -252,18 +256,19 @@ which is why the [Known gaps](#known-gaps) row calls that one a supervoice bug.
 
 ```python
 async def entrypoint(ctx: CallContext) -> None:
-    session = ctx.session          # there is no module-level `session`
+    session = ctx.session  # there is no module-level `session`
 
     @session.on("error")
     async def _(code: str, message: str, severity: str, source: str) -> None:
-        log.error("bridge error", code=code, severity=severity, source=source,
-                  message=message)
+        log.error(
+            "bridge error", code=code, severity=severity, source=source, message=message
+        )
 
     @session.on("state")
     async def _(event) -> None:
         log.debug("conversation state", state=event.state, turn=event.turn_id)
 
-    await session.run()            # registration must precede run()
+    await session.run()  # registration must precede run()
 ```
 
 **`llm_call` and `turn_complete`** are fired with keyword arguments only, so
@@ -309,10 +314,10 @@ partials, tools and results.
 ### Controls
 
 ```python
-await session.say("Please hold while I check.")   # speak now, bypassing the adapter
-await session.interrupt()                          # end the current agent response
-await session.end(reason="completed")              # hang up
-session.data["verified"] = True                    # per-call scratch dict
+await session.say("Please hold while I check.")  # speak now, bypassing the adapter
+await session.interrupt()  # end the current agent response
+await session.end(reason="completed")  # hang up
+session.data["verified"] = True  # per-call scratch dict
 ```
 
 | Control | Wire verb | Effect |
@@ -335,9 +340,13 @@ One general method plus two conveniences, all sending `agent.transfer`:
 
 ```python
 # General form
-await session.transfer("+14155550100")                      # transfer_type="number"
-await session.transfer("tier2", transfer_type="human", mode="warm",
-                       announcement="Connecting you to a specialist.")
+await session.transfer("+14155550100")  # transfer_type="number"
+await session.transfer(
+    "tier2",
+    transfer_type="human",
+    mode="warm",
+    announcement="Connecting you to a specialist.",
+)
 
 # Specific forms — same kwargs
 await session.transfer_to_human("tier2", mode="cold")

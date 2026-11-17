@@ -300,10 +300,14 @@ def verify_signature(
         if abs(current - ts) > tolerance:
             return False
     key = secret.encode() if isinstance(secret, str) else secret
-    expected = hmac.new(key, f"{ts}.".encode() + body, hashlib.sha256).hexdigest().encode()
+    expected = (
+        hmac.new(key, f"{ts}.".encode() + body, hashlib.sha256).hexdigest().encode()
+    )
     # Compare bytes: compare_digest raises TypeError on non-ASCII str input,
     # and a forged header must fail verification, not crash the handler.
-    return any(hmac.compare_digest(sig.encode("utf-8").lower(), expected) for sig in sigs)
+    return any(
+        hmac.compare_digest(sig.encode("utf-8").lower(), expected) for sig in sigs
+    )
 
 
 def _decode(body: bytes, content_type: str | None) -> dict[str, Any]:

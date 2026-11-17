@@ -80,7 +80,7 @@ embedded = await client.agent.voice.create(
 profiles = await client.voice_profiles.list(language="en")
 pipe = await client.pipes.create(
     name="support-line",
-    voice_profile=profiles[0].id,   # a catalog name works too
+    voice_profile=profiles[0].id,  # a catalog name works too
     agent_id="my-voice-agent",
 )
 
@@ -115,7 +115,9 @@ UNPOD_ORG_HANDLE=<org handle from Settings → Workspace → General>
 from unpod import Client
 
 with Client() as client:
-    free = [n.number for n in client.telephony.numbers.list() if n.status == "not_assigned"]
+    free = [
+        n.number for n in client.telephony.numbers.list() if n.status == "not_assigned"
+    ]
     result = client.telephony.numbers.attach(free[0], agent_id="sales-agent")
     print(result.numbers[0].ok, result.numbers[0].error)
 ```

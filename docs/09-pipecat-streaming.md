@@ -42,14 +42,21 @@ A full inbound + outbound example lives in
 
 ```python
 from unpod import AsyncClient
-from unpod.pipecat import UnpodFrameSerializer, parse_unpod_websocket, verify_stream_request
+from unpod.pipecat import (
+    UnpodFrameSerializer,
+    parse_unpod_websocket,
+    verify_stream_request,
+)
+
 
 @app.websocket("/ws")
 async def ws(websocket: WebSocket):
     if not verify_stream_request(
-        websocket.headers, WEBHOOK_SECRET, url=str(websocket.url),
+        websocket.headers,
+        WEBHOOK_SECRET,
+        url=str(websocket.url),
         public_base=PUBLIC_WS_BASE,  # e.g. "wss://bot.example.com" behind a proxy/tunnel
-        nonce_cache=NONCES,          # one NonceCache() shared by your handlers
+        nonce_cache=NONCES,  # one NonceCache() shared by your handlers
     ):
         await websocket.close(code=1008)
         return
@@ -58,7 +65,9 @@ async def ws(websocket: WebSocket):
     transport = FastAPIWebsocketTransport(
         websocket=websocket,
         params=FastAPIWebsocketParams(
-            audio_in_enabled=True, audio_out_enabled=True, add_wav_header=False,
+            audio_in_enabled=True,
+            audio_out_enabled=True,
+            add_wav_header=False,
             serializer=UnpodFrameSerializer.from_start(start, client=unpod_client),
         ),
     )

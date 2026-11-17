@@ -9,23 +9,24 @@ import threading
 from typing import Any
 
 from dotenv import load_dotenv
+
 from unpod._base_url import platform_base, service_base
+from unpod.agents import AgentsNamespace
 from unpod.management._auth import Auth, BearerAuth, TokenAuth
 from unpod.management._http import AsyncHTTPClient
-from unpod.management.analytics import AnalyticsResource
 from unpod.management.agent import AgentNamespace
+from unpod.management.analytics import AnalyticsResource
 from unpod.management.api_keys import ApiKeysResource
-from unpod.agents import AgentsNamespace
-from unpod.management.calls import CallsResource
 from unpod.management.assistants import AssistantsResource
+from unpod.management.calls import CallsResource
 from unpod.management.domain_dictionaries import DomainDictionariesResource
 from unpod.management.flows import FlowsResource
 from unpod.management.journeys import JourneysResource
-from unpod.management.tools import ToolsResource
 from unpod.management.numbers import NumbersResource
 from unpod.management.pipes import PipesResource
 from unpod.management.recordings import RecordingsResource
 from unpod.management.sessions import SessionsResource
+from unpod.management.tools import ToolsResource
 from unpod.management.transcripts import TranscriptsResource
 from unpod.management.trunks import TrunksResource
 from unpod.management.voice_profiles import VoiceProfilesResource
@@ -189,9 +190,7 @@ class Client:
         # sub-resource needs its own blocking facade.
         self.numbers.agent = _SyncResource(self._async_client.numbers.agent)
         self.agents = _SyncAgentsNamespace(self._async_client.agents)
-        self.domain_dictionaries = _SyncResource(
-            self._async_client.domain_dictionaries
-        )
+        self.domain_dictionaries = _SyncResource(self._async_client.domain_dictionaries)
         self.tools = _SyncResource(self._async_client.tools)
         self.pipes = _SyncResource(self._async_client.pipes)
         self.agent = _SyncAgentNamespace(self._async_client.agent)
@@ -238,7 +237,6 @@ class _SyncResource:
             return result
 
         return _call
-
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         result = self._async(*args, **kwargs)
@@ -294,9 +292,7 @@ class _SyncAgentsNamespace:
         return _run_blocking(self._async.get(agent_id))
 
     def create(self, agent_id: str, *, brain: Any, **kwargs: Any) -> Any:
-        return _run_blocking(
-            self._async.create(agent_id, brain=brain, **kwargs)
-        )
+        return _run_blocking(self._async.create(agent_id, brain=brain, **kwargs))
 
     def update(self, agent_id: str, **kwargs: Any) -> Any:
         return _run_blocking(self._async.update(agent_id, **kwargs))

@@ -40,7 +40,9 @@ dev = [
   "pipecat-ai>=1.0",
   "pytest-asyncio>=0.23",
   "anyio>=4",
-  "ruff>=0.4",
+  # Bounded: uv.lock is git-ignored, so CI installs the newest allowed ruff;
+  # an unbounded pin let a ruff release change lint/format results under us.
+  "ruff>=0.16,<0.18",
   "pyrefly>=0.1",
   "superdialog>=0.2,<0.3",
   "fastapi>=0.115",
@@ -66,6 +68,11 @@ packages = ["src/unpod"]
 [tool.ruff]
 line-length = 88
 target-version = "py312"
+
+# Explicit rule set (ruff's classic defaults + import sorting) so a ruff
+# upgrade that changes the default selection cannot break CI.
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

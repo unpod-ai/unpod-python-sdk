@@ -96,7 +96,9 @@ class AnalyticsResource:
 
     async def get(self, block_id: str) -> AnalyticsBlock:
         """Get one block, including the agents it is attached to."""
-        resp = unwrap_data(await self._http.get(f"/speech/v1/analytics-blocks/{block_id}"))
+        resp = unwrap_data(
+            await self._http.get(f"/speech/v1/analytics-blocks/{block_id}")
+        )
         return AnalyticsBlock(**resp)
 
     async def update(

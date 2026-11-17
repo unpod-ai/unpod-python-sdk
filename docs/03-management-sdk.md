@@ -140,9 +140,9 @@ platform agent carrying that handle (the precondition below).
 ### `telephony.numbers.attach` — the primary flow
 
 ```python
-available = await client.telephony.numbers.list()   # status "not_assigned" = attachable
+available = await client.telephony.numbers.list()  # status "not_assigned" = attachable
 result = await client.telephony.numbers.attach(
-    "+14155550101",                # one E.164 string, or a sequence of them
+    "+14155550101",  # one E.164 string, or a sequence of them
     agent_id="my-voice-agent",
 )
 r = result.numbers[0]
@@ -176,9 +176,9 @@ force every supervoice agent to keep a Django twin. It costs one extra argument:
 ```python
 result = await client.telephony.numbers.attach(
     "+14155550101",
-    agent_id="my-voice-agent",       # opaque here — no Pilot row needed
+    agent_id="my-voice-agent",  # opaque here — no Pilot row needed
     attach_type="pipeline",
-    pipe_id=pipe.pipe_id,            # required on this path
+    pipe_id=pipe.pipe_id,  # required on this path
 )
 ```
 
@@ -245,7 +245,7 @@ above).
 
 ```python
 summary = await client.numbers.sync()
-print(summary)                    # {"synced": 12, "new": 2}
+print(summary)  # {"synced": 12, "new": 2}
 ```
 
 Those keys are supervoice's own return value
@@ -413,7 +413,7 @@ either to an agent:
 ```python
 catalog = await client.tools.list()
 for t in catalog.builtin:
-    print(t.name, t.availability, t.config_key)   # always | opt-in
+    print(t.name, t.availability, t.config_key)  # always | opt-in
 print(catalog.custom.methods, catalog.custom.max_timeout_s)
 ```
 
@@ -425,7 +425,7 @@ get missed keep calling the old URL in silence.
 
 ```python
 tool = await client.tools.create(
-    "check_order_status",                       # the name the MODEL calls
+    "check_order_status",  # the name the MODEL calls
     url="https://api.example.com/orders/{{ args.order_id }}",
     description="Look up the status of a customer order by its id.",
     method="GET",
@@ -440,8 +440,8 @@ tool = await client.tools.create(
     timeout=8,
 )
 
-await client.tools.attach("check_order_status", agent_id)   # your own tool
-await client.tools.attach("handover_tool", agent_id)        # a built-in
+await client.tools.attach("check_order_status", agent_id)  # your own tool
+await client.tools.attach("handover_tool", agent_id)  # a built-in
 ```
 
 `create` is create-or-**replace** (`PUT`) — a second call with the same
@@ -587,8 +587,8 @@ A Pipe binds a voice profile to an `agent_id`. The real signature
 pipe = await client.pipes.create(
     name="my-voice-agent",
     voice_profile="VP_openai_alloy",  # optional; profile_id or catalog name
-    agent_id="my-voice-agent",      # must match your AgentRunner's agent_id
-    agent_endpoint=None,            # optional static fallback URL (legacy serve transport)
+    agent_id="my-voice-agent",  # must match your AgentRunner's agent_id
+    agent_endpoint=None,  # optional static fallback URL (legacy serve transport)
     recording=False,
     max_call_duration_s=3600,
 )
@@ -603,13 +603,13 @@ supervoice's only pipe-update verb. `get`, `list` and `delete` complete the set.
 
 ```python
 call = await client.calls.create(
-    agent_id="my-voice-agent",      # takes priority over pipe_id
+    agent_id="my-voice-agent",  # takes priority over pipe_id
     to_number="+19995550001",
     from_number="+14155550101",
     instructions="Customer prefers Hindi.",
     data={"customer_id": "C123"},
 )
-print(call.call_id, call.status)    # SCL_…  pending
+print(call.call_id, call.status)  # SCL_…  pending
 ```
 
 `management/calls.py::CallsResource.create` resolves its arguments like this:
@@ -635,11 +635,11 @@ registered Agent Runner alone does not satisfy — see
 
 ```python
 call = await client.calls.attach(
-    room_name="my-livekit-room",    # existing room in the same LiveKit project
-    agent_id="my-voice-agent",      # agent_id OR pipe_id, one is required
+    room_name="my-livekit-room",  # existing room in the same LiveKit project
+    agent_id="my-voice-agent",  # agent_id OR pipe_id, one is required
     from_number="+14155550101",
     to_number="+19995550001",
-    direction="inbound",            # or "outbound"
+    direction="inbound",  # or "outbound"
     data={"metadata": {"task_id": "T1"}, "context": {"tier": "gold"}},
     callback_url="https://example.com/call-events",
     callback_secret="whsec_…",
@@ -695,20 +695,20 @@ Lifecycle operations run on the **orchestrator** client, not the platform one
 backend-core proxy, which fronts the management plane only:
 
 ```python
-end = await client.sessions.end("RM_abc")             # → SessionEndResult
+end = await client.sessions.end("RM_abc")  # → SessionEndResult
 tr = await client.sessions.transfer(
     "RM_abc",
-    to_type="sip",                                    # "sip" | "agent" | "webrtc" | "livekit"
+    to_type="sip",  # "sip" | "agent" | "webrtc" | "livekit"
     to_config={"number": "+15551230000"},
-    mode="warm",                                      # "cold" (default) | "warm"
+    mode="warm",  # "cold" (default) | "warm"
     warm_handoff_ms=4000,
     drop_participant_id=None,
-)                                                     # → SessionTransferResult
+)  # → SessionTransferResult
 mg = await client.sessions.merge(
     primary_session_id="RM_primary",
     secondary_session_ids=["RM_other"],
     drop_participants=None,
-)                                                     # → SessionMergeResult
+)  # → SessionMergeResult
 ```
 
 `SessionMergeResult.outcomes` reports one `MergeOutcome` per secondary session
@@ -725,8 +725,8 @@ for s in await client.recordings.list(call_id=None):
     print(s.session_id, s.recording_url)
 
 for s in await client.transcripts.list():
-    for turn in s.transcript:                  # list[TranscriptEntry]
-        print(turn.role, turn.content)         # "agent" | "user", then the text
+    for turn in s.transcript:  # list[TranscriptEntry]
+        print(turn.role, turn.content)  # "agent" | "user", then the text
 ```
 
 `transcripts.get(session_id)` is a session read too — there is no per-transcript
@@ -752,12 +752,18 @@ troubleshooting) see [08-telephony.md](08-telephony.md).
 from unpod.telephony import TelephonyAPIError, parse_call_event
 
 call = await client.telephony.calls.create(
-    "+9180XXXXXXXX", "+9198XXXXXXXX", role="agent",
-    status_callback_url="https://you.example/events", status_callback_format="json",
+    "+9180XXXXXXXX",
+    "+9198XXXXXXXX",
+    role="agent",
+    status_callback_url="https://you.example/events",
+    status_callback_format="json",
 )
 leg_b = await client.telephony.calls.add_participant(
-    call.call_id, "+9180XXXXXXXX", "+9197XXXXXXXX", role="customer")
-await client.telephony.calls.play_audio(call.call_id, url="https://you.example/hold.mp3")
+    call.call_id, "+9180XXXXXXXX", "+9197XXXXXXXX", role="customer"
+)
+await client.telephony.calls.play_audio(
+    call.call_id, url="https://you.example/hold.mp3"
+)
 await client.telephony.calls.end(call.call_id)
 
 # In your webhook handler: pass the RAW body and the headers.
@@ -801,10 +807,13 @@ against a supervoice you address directly:
 from unpod.models import TrunkCreate
 
 trunks = await client.trunks.list()
-trunk = await client.trunks.create(TrunkCreate(
-    name="main-trunk", type="livekit",           # "livekit" | "byo"
-    provider_trunk_id="lk-trunk-id",
-))
+trunk = await client.trunks.create(
+    TrunkCreate(
+        name="main-trunk",
+        type="livekit",  # "livekit" | "byo"
+        provider_trunk_id="lk-trunk-id",
+    )
+)
 await client.trunks.delete(trunk.trunk_id)
 ```
 
@@ -822,7 +831,7 @@ path deliberately omits.
 
 ```python
 key = await client.api_keys.create(name="ci-pipeline", org_id="ORG_abc")
-print(key.raw_key)     # plaintext — returned once, at creation only
+print(key.raw_key)  # plaintext — returned once, at creation only
 ```
 
 `project_id` is optional and defaults to `org_id` server-side. `create` is the
@@ -987,15 +996,22 @@ from unpod import Client
 
 client = Client()  # UNPOD_API_KEY, or a platform token + UNPOD_ORG_HANDLE
 
-client.journeys.ping()                                    # {"ok": True, "checks": [...]} — setup check
-client.flows.channels("my-space")                         # accounts a step can send from (account_id)
-client.flows.agentic_profiles()                           # values for a flow's agentic_profile
-flow = client.flows.create("my-space", {"name": "Support", "steps": [...]})  # flow_id picked for you
+client.journeys.ping()  # {"ok": True, "checks": [...]} — setup check
+client.flows.channels("my-space")  # accounts a step can send from (account_id)
+client.flows.agentic_profiles()  # values for a flow's agentic_profile
+flow = client.flows.create(
+    "my-space", {"name": "Support", "steps": [...]}
+)  # flow_id picked for you
 client.flows.activate(flow.flow_id)
-client.journeys.set_approval("my-space", "autonomous")    # let the agent send without review
+client.journeys.set_approval(
+    "my-space", "autonomous"
+)  # let the agent send without review
 
-[started] = client.journeys.start(flow.flow_id, participant_id="em-ankit",
-                                  contact={"email": "ankit@example.com", "name": "Ankit"})
+[started] = client.journeys.start(
+    flow.flow_id,
+    participant_id="em-ankit",
+    contact={"email": "ankit@example.com", "name": "Ankit"},
+)
 journey = client.journeys.get(started.journey_id)
 for message in client.journeys.conversation(journey):
     print(message.direction, message.text)
@@ -1011,19 +1027,22 @@ mailbox a flow sends from. A space can be given as its handle, its token, or a
 ```python
 from unpod.flows import AgentStep, Flow, MessageStep
 
-channels = client.flows.channels.list("my-space")        # Channel objects; .ready once usable
+channels = client.flows.channels.list("my-space")  # Channel objects; .ready once usable
 gmail = next(c for c in channels if c.type == "gmail" and c.ready)
 # not ready yet? client.flows.channels.connect(channel) links it to the space,
 # or returns a Google sign-in URL for a new mailbox (wait=True, on_sign_in_url=print waits for it)
 
-flow = client.flows.create("my-space", Flow(
-    name="Support inbox",
-    goal="Answer customer emails",                       # the agent's objective
-    steps=[AgentStep(channel=gmail, agent="sv:support-bot")],
-    review_sensitive=True,                               # hold sensitive replies for a person
-    review_topics=["pricing negotiations"],              # optional, on top of the built-in list
-))
-client.flows.link(flow, gmail)                           # agent steps send from it; new mail starts journeys
+flow = client.flows.create(
+    "my-space",
+    Flow(
+        name="Support inbox",
+        goal="Answer customer emails",  # the agent's objective
+        steps=[AgentStep(channel=gmail, agent="sv:support-bot")],
+        review_sensitive=True,  # hold sensitive replies for a person
+        review_topics=["pricing negotiations"],  # optional, on top of the built-in list
+    ),
+)
+client.flows.link(flow, gmail)  # agent steps send from it; new mail starts journeys
 client.flows.activate(flow)
 ```
 
@@ -1080,7 +1099,7 @@ try:
     client.flows.validate("my-space", draft)
 except FlowValidationError as err:
     for problem in err.problems:
-        print(problem)    # step 'step_1': fixed email content needs a body; ...
+        print(problem)  # step 'step_1': fixed email content needs a body; ...
 ```
 
 **Which agent a step uses.** A step's `agent_id` is a pilot handle from the

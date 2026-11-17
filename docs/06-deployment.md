@@ -171,8 +171,8 @@ Attaching a number is the one deployment step with a first-class SDK call:
 
 ```python
 result = await client.telephony.numbers.attach(
-    "+14155550101",              # one E.164 string, or a sequence of them
-    agent_id="my-voice-agent",   # the same handle your Agent Runner registers under
+    "+14155550101",  # one E.164 string, or a sequence of them
+    agent_id="my-voice-agent",  # the same handle your Agent Runner registers under
 )
 r = result.numbers[0]
 print(r.ok, r.connection_state, r.error)
