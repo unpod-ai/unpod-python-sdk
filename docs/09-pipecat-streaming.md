@@ -109,15 +109,19 @@ from pipecat.transports.websocket.fastapi import (
 from pipecat.workers.runner import WorkerRunner
 
 from unpod import AsyncClient
-from unpod.pipecat import UnpodFrameSerializer, parse_unpod_websocket, verify_stream_request
+from unpod.pipecat import (
+    UnpodFrameSerializer,
+    parse_unpod_websocket,
+    verify_stream_request,
+)
 from unpod.telephony import WebhookSignatureError, parse_call_event
 from unpod.telephony.answer import Response as Answer
 from unpod.telephony.stream import NonceCache
 
 SECRET = os.environ["UNPOD_WEBHOOK_SECRET"]
-PUBLIC_HOST = os.environ["PUBLIC_HOST"]          # e.g. abc123.ngrok.app
+PUBLIC_HOST = os.environ["PUBLIC_HOST"]  # e.g. abc123.ngrok.app
 STREAM_URL = f"wss://{PUBLIC_HOST}/ws"
-NONCES = NonceCache()                            # one per process: blocks replayed upgrades
+NONCES = NonceCache()  # one per process: blocks replayed upgrades
 app = FastAPI()
 unpod = AsyncClient()
 
@@ -133,15 +137,15 @@ async def answer(request: Request):
         ev = parse_call_event(await request.body(), request.headers, secret=SECRET)
     except WebhookSignatureError:
         raise HTTPException(401)
-    if ev.event == "StartApp":                   # a new call: stream it to the bot
+    if ev.event == "StartApp":  # a new call: stream it to the bot
         return stream_reply()
-    return Response(status_code=200)             # Hangup / RecordStop: acknowledge
+    return Response(status_code=200)  # Hangup / RecordStop: acknowledge
 
 
 @app.post("/outbound")
 async def outbound(request: Request):
     ev = parse_call_event(await request.body(), request.headers, secret=SECRET)
-    if ev.event == "StartApp":                   # the person answered
+    if ev.event == "StartApp":  # the person answered
         return stream_reply()
     return Response(status_code=200)
 
@@ -153,13 +157,13 @@ async def ws(websocket: WebSocket):
         websocket.headers,
         SECRET,
         url=str(websocket.url),
-        public_base=f"wss://{PUBLIC_HOST}",      # the tunnel: your server sees its own host
+        public_base=f"wss://{PUBLIC_HOST}",  # the tunnel: your server sees its own host
         nonce_cache=NONCES,
     ):
         await websocket.close(code=1008)
         return
     await websocket.accept()
-    start = await parse_unpod_websocket(websocket)   # call id, stream id, audio format
+    start = await parse_unpod_websocket(websocket)  # call id, stream id, audio format
 
     transport = FastAPIWebsocketTransport(
         websocket=websocket,
@@ -182,14 +186,18 @@ async def ws(websocket: WebSocket):
     )
     tts = CartesiaTTSService(
         api_key=os.environ["CARTESIA_API_KEY"],
-        settings=CartesiaTTSService.Settings(voice="71a7ad14-091c-4e8e-a314-022ece01c121"),
+        settings=CartesiaTTSService.Settings(
+            voice="71a7ad14-091c-4e8e-a314-022ece01c121"
+        ),
     )
     context = LLMContext()
     user, assistant = LLMContextAggregatorPair(
         context, user_params=LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer())
     )
     worker = PipelineWorker(
-        Pipeline([transport.input(), stt, user, llm, tts, transport.output(), assistant]),
+        Pipeline(
+            [transport.input(), stt, user, llm, tts, transport.output(), assistant]
+        ),
         params=PipelineParams(audio_in_sample_rate=8000, audio_out_sample_rate=8000),
     )
     runner = WorkerRunner(handle_sigint=False)
@@ -197,12 +205,14 @@ async def ws(websocket: WebSocket):
 
     @transport.event_handler("on_client_connected")
     async def greet(transport, client):
-        context.add_message({"role": "user", "content": "Greet the caller in one short sentence."})
+        context.add_message(
+            {"role": "user", "content": "Greet the caller in one short sentence."}
+        )
         await worker.queue_frames([LLMRunFrame()])
 
     @transport.event_handler("on_client_disconnected")
     async def gone(transport, client):
-        await runner.cancel()                    # the caller hung up
+        await runner.cancel()  # the caller hung up
 
     await runner.run()
 
@@ -236,11 +246,14 @@ from unpod.telephony import InboundConfig
 URL = "https://abc123.ngrok.app/answer"
 
 with Client() as client:
-    client.telephony.inbound.set_did("+919000000001", InboundConfig(
-        answer_url=URL,
-        answer_method="POST",
-        status_callback_url=URL,
-    ))
+    client.telephony.inbound.set_did(
+        "+919000000001",
+        InboundConfig(
+            answer_url=URL,
+            answer_method="POST",
+            status_callback_url=URL,
+        ),
+    )
 ```
 
 ```bash
@@ -298,7 +311,7 @@ async with AsyncClient() as client:
     )
     print(started.stream_id)
 
-    await calls.stop_stream(call_id)   # the call carries on
+    await calls.stop_stream(call_id)  # the call carries on
 ```
 
 One stream per call at a time. See the
