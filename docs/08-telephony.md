@@ -510,7 +510,7 @@ All under `client.telephony`. Source: `src/unpod/telephony/`.
 | `calls.stop_audio(call_id, *, leg_id=, play_id=)` | `None` |
 | `calls.speak(call_id, text, *, voice=, language=, leg_id=, loop=)` | `PlayResult` |
 | `calls.send_dtmf(call_id, digits, *, leg=)` | `None` |
-| `calls.transfer(call_id, target, *, type="blind", leg_id=)` | `None` |
+| `calls.transfer(call_id, target, *, type="blind", leg=)` | `None` |
 | `calls.transfer_complete(call_id, consult_leg)` / `calls.transfer_cancel(call_id, consult_leg)` | `None` |
 | `calls.record(call_id, *, transcribe=)` | `None` |
 | `calls.pause_recording(call_id)` / `resume_recording` / `stop_recording` *(0.7.0)* | `None` |

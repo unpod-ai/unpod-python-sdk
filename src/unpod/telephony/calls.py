@@ -88,6 +88,22 @@ CALL_API_PATHS: dict[str, str] = {
 }
 
 
+def _caller_or_callee(method: str, leg: str | None, leg_id: str | None) -> str | None:
+    """``leg`` for the SBC body: ``"caller"``/``"callee"``; ``leg_id`` is a deprecated alias."""
+    if leg_id is not None:
+        if leg is not None:
+            raise ValueError("pass leg or leg_id, not both")
+        warnings.warn(
+            f"{method}(leg_id=...) is deprecated; use leg='caller'|'callee'",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        leg = leg_id
+    if leg is not None and leg not in ("caller", "callee"):
+        raise ValueError('leg must be "caller" or "callee"')
+    return leg
+
+
 def _path(op: str, **params: str) -> str:
     """Build the route for ``op``, URL-quoting each path parameter.
 
@@ -783,17 +799,21 @@ class CallsResource:
         target: str,
         *,
         type: Literal["blind", "attended"] = "blind",
+        leg: Literal["caller", "callee"] | None = None,
         leg_id: str | None = None,
     ) -> None:
         """Transfer the call to ``target``.
 
         ``type="blind"`` hands the call over at once. ``type="attended"`` first
         connects you to the target; finish with :meth:`transfer_complete` or
-        :meth:`transfer_cancel`.
+        :meth:`transfer_cancel`. ``leg`` is the side that is transferred,
+        ``"caller"`` or ``"callee"`` (server default: ``"callee"``). ``leg_id``
+        is a deprecated alias for ``leg`` with the same two values.
         """
+        leg = _caller_or_callee("transfer", leg, leg_id)  # type: ignore[assignment]
         body: dict[str, Any] = {"type": type, "target": target}
-        if leg_id is not None:
-            body["leg"] = leg_id
+        if leg is not None:
+            body["leg"] = leg
         await _call(self._http.post(_path("transfer", call_id=call_id), json=body))
 
     async def transfer_complete(self, call_id: str, consult_leg: str) -> None:
@@ -867,17 +887,7 @@ class CallsResource:
         """
         if not digits or any(d not in "0123456789ABCD*#" for d in digits):
             raise ValueError("digits must match ^[0-9A-D*#]+$")
-        if leg_id is not None:
-            if leg is not None:
-                raise ValueError("pass leg or leg_id, not both")
-            warnings.warn(
-                "send_dtmf(leg_id=...) is deprecated; use leg='caller'|'callee'",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            leg = leg_id  # type: ignore[assignment]
-        if leg is not None and leg not in ("caller", "callee"):
-            raise ValueError('leg must be "caller" or "callee"')
+        leg = _caller_or_callee("send_dtmf", leg, leg_id)  # type: ignore[assignment]
         body: dict[str, Any] = {"digits": digits}
         if leg is not None:
             body["leg"] = leg
