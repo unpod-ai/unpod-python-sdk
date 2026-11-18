@@ -281,10 +281,20 @@ async def test_transfer_dtmf_record_recording():
         _p("transfer_complete", call_id="c1"),
         _p("transfer_cancel", call_id="c1"),
     ]
-    await ns.calls.send_dtmf("c1", "12#", leg_id="l1")
-    assert http.calls[3][2] == {"digits": "12#", "leg": "l1"}
+    await ns.calls.send_dtmf("c1", "12#", leg="callee")
+    assert http.calls[3][2] == {"digits": "12#", "leg": "callee"}
     with pytest.raises(ValueError):
         await ns.calls.send_dtmf("c1", "12x")
+    # the SBC takes only caller/callee: a participant leg id is refused here
+    with pytest.raises(ValueError):
+        await ns.calls.send_dtmf("c1", "1", leg="l1")  # type: ignore[arg-type]
+    with pytest.raises(ValueError):
+        await ns.calls.send_dtmf("c1", "1", leg="caller", leg_id="caller")
+    n = len(http.calls)
+    with pytest.warns(DeprecationWarning):
+        await ns.calls.send_dtmf("c1", "1", leg_id="caller")
+    assert http.calls[n][2] == {"digits": "1", "leg": "caller"}
+    del http.calls[n:]
     await ns.calls.record("c1", transcribe=True)
     assert http.calls[4][2] == {"transcribe": True}
     recording = await ns.calls.get_recording("c1")

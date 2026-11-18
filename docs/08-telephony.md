@@ -251,7 +251,7 @@ first leg's `Answered` event arrives, instead of right after `create`.
 | Play an audio file | `play_audio(call_id, url="https://.../hold.mp3", leg_id=None, loop=False)` → `PlayResult.play_id` |
 | Stop audio | `stop_audio(call_id, leg_id=None, play_id=None)` |
 | Speak text (max 1000 chars) | `speak(call_id, text, voice=None, language=None, leg_id=None)` |
-| Send keypad tones | `send_dtmf(call_id, "1234#", leg_id=None)` |
+| Send keypad tones | `send_dtmf(call_id, "1234#", leg=None)` (`leg`: `"caller"` / `"callee"`) |
 | Transfer | `transfer(call_id, target, type="blind")`; for `type="attended"` finish with `transfer_complete(call_id, consult_leg)` or `transfer_cancel(...)` |
 | Record | `record(call_id)` to start; `get_recording(call_id)` → `Recording.url` (two-channel WAV, first leg left, second right) |
 | Pause, resume or stop recording *(0.7.0)* | `pause_recording(call_id)`, `resume_recording(call_id)`, `stop_recording(call_id)` |
@@ -509,7 +509,7 @@ All under `client.telephony`. Source: `src/unpod/telephony/`.
 | `calls.play_audio(call_id, *, url=, leg_id=, loop=, length=, interrupt_on_dtmf=)` | `PlayResult` |
 | `calls.stop_audio(call_id, *, leg_id=, play_id=)` | `None` |
 | `calls.speak(call_id, text, *, voice=, language=, leg_id=, loop=)` | `PlayResult` |
-| `calls.send_dtmf(call_id, digits, *, leg_id=)` | `None` |
+| `calls.send_dtmf(call_id, digits, *, leg=)` | `None` |
 | `calls.transfer(call_id, target, *, type="blind", leg_id=)` | `None` |
 | `calls.transfer_complete(call_id, consult_leg)` / `calls.transfer_cancel(call_id, consult_leg)` | `None` |
 | `calls.record(call_id, *, transcribe=)` | `None` |

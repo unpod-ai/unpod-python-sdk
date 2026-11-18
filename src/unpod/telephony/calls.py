@@ -33,6 +33,7 @@ import os
 import re
 import tempfile
 import uuid
+import warnings
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Literal
@@ -850,14 +851,36 @@ class CallsResource:
         )
 
     async def send_dtmf(
-        self, call_id: str, digits: str, *, leg_id: str | None = None
+        self,
+        call_id: str,
+        digits: str,
+        *,
+        leg: Literal["caller", "callee"] | None = None,
+        leg_id: str | None = None,
     ) -> None:
-        """Send keypad tones: ``0-9``, ``A-D``, ``*``, ``#``."""
+        """Send keypad tones: ``0-9``, ``A-D``, ``*``, ``#``.
+
+        ``leg`` is the side that hears the tones, ``"caller"`` or ``"callee"``;
+        omitted, the server picks it from the call's direction. ``leg_id`` is a
+        deprecated alias for ``leg`` and takes the same two values (the server
+        does not accept a participant leg id here).
+        """
         if not digits or any(d not in "0123456789ABCD*#" for d in digits):
             raise ValueError("digits must match ^[0-9A-D*#]+$")
-        body: dict[str, Any] = {"digits": digits}
         if leg_id is not None:
-            body["leg"] = leg_id
+            if leg is not None:
+                raise ValueError("pass leg or leg_id, not both")
+            warnings.warn(
+                "send_dtmf(leg_id=...) is deprecated; use leg='caller'|'callee'",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            leg = leg_id  # type: ignore[assignment]
+        if leg is not None and leg not in ("caller", "callee"):
+            raise ValueError('leg must be "caller" or "callee"')
+        body: dict[str, Any] = {"digits": digits}
+        if leg is not None:
+            body["leg"] = leg
         await _call(self._http.post(_path("send_dtmf", call_id=call_id), json=body))
 
     async def record(self, call_id: str, *, transcribe: bool | None = None) -> None:
