@@ -9,6 +9,7 @@ feed the enveloped shape so they exercise the true contract.
 from __future__ import annotations
 
 import pytest
+
 from unpod._base_url import platform_base
 from unpod.telephony import (
     AgentAttachResult,
@@ -134,9 +135,7 @@ async def test_numbers_attach_to_agent():
     }
     http = _FakeHTTP({("POST", "/telephony/numbers/attach/"): resp})
     ns = TelephonyNamespace(http)
-    res = await ns.numbers.attach(
-        ["+1555"], agent_id="asst_sales", bridge_slug="b"
-    )
+    res = await ns.numbers.attach(["+1555"], agent_id="asst_sales", bridge_slug="b")
     assert isinstance(res, AgentAttachResult)
     assert res.agent_id == "asst_sales"
     assert res.numbers[0].ok is True
@@ -245,8 +244,18 @@ async def test_list_sends_include_assigned():
                 "status_code": 200,
                 "message": "ok",
                 "data": [
-                    {"id": 1, "number": "+919876543210", "state": "ASSIGNED", "active": True},
-                    {"id": 2, "number": "+14155551234", "state": "NOT_ASSIGNED", "active": True},
+                    {
+                        "id": 1,
+                        "number": "+919876543210",
+                        "state": "ASSIGNED",
+                        "active": True,
+                    },
+                    {
+                        "id": 2,
+                        "number": "+14155551234",
+                        "state": "NOT_ASSIGNED",
+                        "active": True,
+                    },
                 ],
             }
         }

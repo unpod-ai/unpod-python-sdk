@@ -14,6 +14,7 @@ import uuid
 from typing import Any
 
 from pydantic import BaseModel
+
 from unpod._protocol import BridgeEvent, HelloAckEvent, HelloEvent, parse_bridge_event
 
 

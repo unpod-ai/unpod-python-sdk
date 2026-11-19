@@ -65,11 +65,13 @@ If you have a LiveKit SIP trunk, register it and sync numbers:
 ```python
 from unpod.models import TrunkCreate
 
-trunk = await client.trunks.create(TrunkCreate(
-    name="main-trunk",
-    type="livekit",
-    provider_trunk_id="your-livekit-trunk-id",
-))
+trunk = await client.trunks.create(
+    TrunkCreate(
+        name="main-trunk",
+        type="livekit",
+        provider_trunk_id="your-livekit-trunk-id",
+    )
+)
 
 # Sync phone numbers from all LiveKit trunks
 synced = await client.numbers.sync()
@@ -94,9 +96,11 @@ flow = create_dialog_flow(
     llm="openai/gpt-4.1-mini",
 )
 
+
 def lookup_customer(aadhaar_last_4: str) -> dict:
     """Look up customer by Aadhaar last 4 digits."""
     return {"name": "Rajesh Kumar", "status": "pending_kyc"}
+
 
 dm = DialogMachine(
     flow=flow,
@@ -110,11 +114,13 @@ dm = DialogMachine(
 ```python
 from unpod import AgentRunner, CallContext
 
+
 async def entrypoint(ctx: CallContext):
     dm = DialogMachine(flow=flow, llm="anthropic/claude-haiku-4-5", tools=[...])
     ctx.session.dialog_machine = dm
     await ctx.session.say("Namaste! I'm calling from Unpod.")
     await ctx.session.run()
+
 
 AgentRunner(
     entrypoint=entrypoint,
@@ -129,11 +135,11 @@ AgentRunner(
 ```python
 pipe = await client.pipes.create(
     name="kyc-bot",
-    voice_profile=vp.name,              # name (case-insensitive) or profile_id
+    voice_profile=vp.name,  # name (case-insensitive) or profile_id
     system_prompt="Verify customer KYC. Ask for Aadhaar last 4 digits.",
     first_message="Namaste! Main Unpod se bol raha hoon.",
     first_speaker="agent",
-    agent_id="kyc-bot",                 # matches AgentRunner's agent_id
+    agent_id="kyc-bot",  # matches AgentRunner's agent_id
     recording=True,
 )
 print(f"Speech Pipe {pipe.pipe_id} created")

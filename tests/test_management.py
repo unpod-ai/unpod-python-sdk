@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
+
 from unpod import AsyncClient
 from unpod.management.sessions import SessionsResource
 
@@ -65,12 +66,27 @@ async def test_voice_profiles_list(client: AsyncClient):
 
 
 @pytest.mark.anyio
-async def test_voice_profiles_delete(client: AsyncClient):
+async def test_voice_profiles_get(client: AsyncClient):
+    # Voice profiles are read-only on the backend-core platform plane; delete()
+    # was removed in 00c5b8f, so cover get() and its route instead.
     with patch.object(
-        client.voice_profiles._http, "delete", new_callable=AsyncMock
-    ) as mock_del:
-        await client.voice_profiles.delete("vp_1")
-        mock_del.assert_called_once_with("/v1/voice-profiles/vp_1")
+        client.voice_profiles._http, "get", new_callable=AsyncMock
+    ) as mock_get:
+        mock_get.return_value = {
+            "data": {
+                "data": {
+                    "id": "vp_1",
+                    "persona": "hindi-female-warm-hd",
+                    "language": "hi",
+                    "quality_tier": "hd",
+                    "price_per_minute": 2.5,
+                    "latency_p95_ms": 240,
+                }
+            }
+        }
+        profile = await client.voice_profiles.get("vp_1")
+        assert profile.profile_id == "vp_1"
+        mock_get.assert_called_once_with("/voice-profiles/vp_1/")
 
 
 @pytest.mark.anyio
@@ -119,7 +135,7 @@ async def test_pipes_update(client: AsyncClient):
 async def test_pipes_delete(client: AsyncClient):
     with patch.object(client.pipes._http, "delete", new_callable=AsyncMock) as mock_del:
         await client.pipes.delete("pipe_1")
-        mock_del.assert_called_once_with("/v1/pipes/pipe_1")
+        mock_del.assert_called_once_with("/api/v2/platform/speech/v1/pipes/pipe_1")
 
 
 @pytest.mark.anyio
@@ -145,7 +161,9 @@ ATTACH_PATH = "/api/v2/platform/speech/v1/calls/attach"
 @pytest.mark.anyio
 async def test_calls_attach(client: AsyncClient):
     with patch.object(client.calls._http, "post", new_callable=AsyncMock) as mock_post:
-        mock_post.return_value = {"data": {"call_id": "call_9", "room_name": "r1", "status": "active"}}
+        mock_post.return_value = {
+            "data": {"call_id": "call_9", "room_name": "r1", "status": "active"}
+        }
         data = {"metadata": {"task_id": "T"}, "context": {"m": 1}}
         call = await client.calls.attach(
             room_name="r1",
@@ -178,7 +196,8 @@ async def test_calls_attach_omits_none(client: AsyncClient):
         mock_post.return_value = {"call_id": "call_9"}
         await client.calls.attach(room_name="r1", pipe_id="p1")
         mock_post.assert_awaited_once_with(
-            ATTACH_PATH, json={"room_name": "r1", "pipe_id": "p1", "direction": "inbound"}
+            ATTACH_PATH,
+            json={"room_name": "r1", "pipe_id": "p1", "direction": "inbound"},
         )
 
 
@@ -204,7 +223,9 @@ def test_sync_client_calls_attach():
 
     sync = Client(api_key="unpod_sk_test", base_url="https://api.example.test")
     try:
-        with patch.object(sync._async_client.calls._http, "post", new_callable=AsyncMock) as mock_post:
+        with patch.object(
+            sync._async_client.calls._http, "post", new_callable=AsyncMock
+        ) as mock_post:
             mock_post.return_value = {"data": {"call_id": "call_9"}}
             call = sync.calls.attach(room_name="r1", agent_id="a1")
         assert isinstance(call, Call)
@@ -239,7 +260,9 @@ async def test_calls_hangup(client: AsyncClient):
     with patch.object(client.calls._http, "post", new_callable=AsyncMock) as mock_post:
         mock_post.return_value = {}
         await client.calls.hangup("call_1")
-        mock_post.assert_called_once_with("/v1/calls/call_1/hangup", json=None)
+        mock_post.assert_called_once_with(
+            "/api/v2/platform/speech/v1/calls/call_1/hangup", json=None
+        )
 
 
 @pytest.mark.anyio
@@ -262,7 +285,9 @@ async def test_recordings_list(client: AsyncClient):
         recordings = await client.recordings.list(call_id="call_1")
         assert recordings[0].session_id == "sess_1"
         assert recordings[0].recording_url == "https://rec.example/1.wav"
-        mock_get.assert_called_once_with("/api/v2/platform/speech/v1/recordings", params={"call_id": "call_1"})
+        mock_get.assert_called_once_with(
+            "/api/v2/platform/speech/v1/recordings", params={"call_id": "call_1"}
+        )
 
 
 @pytest.mark.anyio
@@ -478,7 +503,7 @@ async def test_api_keys_create_includes_project_id_when_provided():
 
 @pytest.mark.anyio
 async def test_calls_create_contract_unchanged():
-    """Regression guard: calls.create still POSTs the same body to /v1/calls.
+    """Regression guard: calls.create still POSTs the same body to the calls route.
 
     The platform now enqueues calls asynchronously via the orchestration
     queue, but the wire contract is unchanged. If this fails, the contract
@@ -489,7 +514,7 @@ async def test_calls_create_contract_unchanged():
     fake = _FakePost({"data": {"id": "c1", "status": "queued"}})
     res = CallsResource(http=fake)  # type: ignore[arg-type]
     await res.create(pipe_id="pipe-1", to_number="+15551230000")
-    assert fake.path == "/v1/calls"
+    assert fake.path == "/api/v2/platform/speech/v1/calls"
     assert fake.json is not None
     assert fake.json["pipe_id"] == "pipe-1"
     assert fake.json["to_number"] == "+15551230000"

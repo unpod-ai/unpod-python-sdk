@@ -129,12 +129,14 @@ Same recipe as 2.1: run existing tests for both endpoints first, extract the sha
 ```python
 from unittest.mock import patch
 
+
 # 1. attach → provision fires after commit
 @patch("unpod.telephony.provisioning.provision")
 def test_v2_attach_fires_inline_provision(mock_provision, api_client, org, agent):
     resp = api_client.post("/api/v2/platform/telephony/numbers/attach/", {...})
     assert resp.status_code == 200
-    mock_provision.assert_called_once()          # with (org, vbn)
+    mock_provision.assert_called_once()  # with (org, vbn)
+
 
 # 2. a provision exception never fails the response
 @patch("unpod.telephony.provisioning.provision", side_effect=RuntimeError("sv down"))
@@ -254,12 +256,14 @@ def test_agent_attach_warns_but_succeeds_when_no_pipe(...):
 
 ```python
 """Read-only pipe lookups against supervoice (verification, not lifecycle)."""
+
 from __future__ import annotations
 import logging
 from .client import SupervoiceClient
 from .credentials import get_or_provision_key
 
 logger = logging.getLogger("unpod.speech")
+
 
 def pipe_exists_for_agent(org, agent_id: str) -> bool | None:
     """True/False if supervoice answered; None when the check itself failed.
@@ -277,8 +281,7 @@ def pipe_exists_for_agent(org, agent_id: str) -> bool | None:
         if result.status_code != 200 or not isinstance(result.data, list):
             return None
         return any(
-            isinstance(p, dict) and p.get("agent_id") == agent_id
-            for p in result.data
+            isinstance(p, dict) and p.get("agent_id") == agent_id for p in result.data
         )
     except Exception:  # noqa: BLE001 — verification must never crash attach
         logger.warning("pipe_verify_failed", extra={"org_id": getattr(org, "id", None)})
@@ -289,6 +292,7 @@ In `attach_number`, inside the `kind == PIPELINE` branch **before any write** (V
 
 ```python
 from unpod.speech.pipes import pipe_exists_for_agent
+
 exists = pipe_exists_for_agent(org, termination.agent_id)
 if exists is False:
     raise AttachError(
@@ -355,7 +359,9 @@ Branch: `feat/one-plane-via-django` in this repo. Run tests with `uv run pytest 
 ```python
 def test_service_base_removed():
     import unpod._base_url as b
+
     assert not hasattr(b, "service_base")
+
 
 def test_speech_base(monkeypatch):
     monkeypatch.setenv("UNPOD_BASE_URL", "api.unpod.ai")
@@ -409,8 +415,10 @@ def test_speech_full_url_composition(monkeypatch):
         "https://api.unpod.ai/api/v2/platform/speech/v1/numbers"
     )
 
-def test_telephony_full_url_composition(monkeypatch):
-    ...  # same for https://api.unpod.ai/api/v2/platform + /telephony/numbers/
+
+def test_telephony_full_url_composition(
+    monkeypatch,
+): ...  # same for https://api.unpod.ai/api/v2/platform + /telephony/numbers/
 ```
 
 **Step 2: Run, verify fail.**
@@ -423,6 +431,7 @@ def test_telephony_full_url_composition(monkeypatch):
 
 ```python
 """client.speech — the supervoice management plane via the Django proxy."""
+
 from unpod.management.calls import CallsResource
 from unpod.management.numbers import NumbersResource
 from unpod.management.pipes import PipesResource

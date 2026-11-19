@@ -17,6 +17,45 @@ While the SDK is pre-1.0, breaking changes ship in a **minor** bump.
 - `CallEvent`: `request_uuid`, `bill_duration`, `call_mode`, `participant_call_uuid`, `participant_role`, `mpc_end_reason`; `EventName` constants for the MPC and participant events.
 - `parse_digits_request()` / `DigitsRequest` for `<GetDigits>` / `<GetInput>` action requests.
 - `client.telephony.webhook_secret.reveal()`: the current full secret (org admin only). `get()` still returns it masked. Needs the backend `GET /sbc/webhook-secret/reveal` route.
+- Preview: Pipecat bots on Unpod calls via audio streaming (needs an SBC with the `stream` answer action, and audio streaming switched on for the org). `unpod.pipecat.UnpodFrameSerializer` (built with `from_start()`, takes `InputParams`, G.711 coding in `unpod.pipecat.g711`; reads the stream's audio format, hangs up through the Unpod call API), `parse_unpod_websocket()`, `verify_stream_request()`; install with `unpod[pipecat]`. See `docs/09-pipecat-streaming.md` and `examples/pipecat_streaming/`.
+- `unpod.telephony.answer.Response` (also `unpod.telephony.AnswerResponse`): build `answer_url` replies (`stream`, `speak`, `play`, `wait`, `dial`, `hangup`) as SBC JSON or XML.
+- `unpod.telephony.stream`: the stream wire protocol without a Pipecat dependency (`MediaFormat`, `StreamStart`, `parse_start`, `decode_message`, `play_audio_message`, `clear_audio_message`).
+- `CallEvent.stream_id` / `.stream_reason` and `STREAM_STARTED` / `STREAM_STOPPED` / `STREAM_FAILED` (and the `STREAM_EVENTS` set) for stream lifecycle callbacks.
+- `answer.Response.stream(keep_call_alive=True, audio_track="inbound")`: emit the `keepCallAlive` and `audioTrack` attributes on `<Stream>`. With `keep_call_alive=False` the SBC runs the stream in the background and moves on to the next action (with none left it hangs up, "End Of XML Instructions"). A bidirectional stream must use `audio_track="inbound"`; anything else raises `ValueError`.
+- Docs: a telephony guide (`docs/08-telephony.md`) and a Pipecat streaming guide (`docs/09-pipecat-streaming.md`) with a runnable example in `examples/pipecat_streaming/`. `pyproject.toml` gains a `pipecat` extra and a `Changelog` project link.
+- `audio/x-alaw` (8 kHz) streams: `unpod.telephony.stream.ALAW`, `Response.stream(content_type=ALAW)` and A-law coding in `UnpodFrameSerializer`.
+- `STREAM_DEGRADED` and `CallEvent.service_url`, `.extra_headers`, `.error`, `.event_time` (the ISO `Timestamp` of stream callbacks).
+- REST streams on a live call: `client.telephony.calls.start_stream()`, `list_streams()`, `get_stream()`, `stop_stream()` (`CallStream`, `StreamStartResult`).
+- `Response.stream()`: `stream_timeout`, `status_callback_method`, `extra_headers` (str or dict), `noise_cancellation`, `noise_cancellation_level`.
+- Stream protocol: `checkpoint_message()`, `send_dtmf_message()`, `StreamStart.extra_headers`; in Pipecat, `OutputDTMFFrame` → `sendDTMF` and `playedStream` / `clearedAudio` → `InputTransportMessageFrame`.
+
+### Changed
+- `calls.send_dtmf()` and `calls.transfer()` take `leg="caller"|"callee"`, the side of the call (what the SBC accepts; a participant leg id got `400`). `leg_id=` still works for those two values and emits a `DeprecationWarning`; any other value raises `ValueError`.
+- `<Stream>` now carries the sample rate in `contentType` only (`audio/x-mulaw;rate=8000`), the shape the SBC reads; the separate `sample_rate` action field is gone.
+- Stream WebSocket upgrades are verified with SuperSBC's `X-Unpod-Signature: t=…,n=…,v1=hex(HMAC-SHA256(secret, "ws.<t>.<n>.<url>"))`. `verify_stream_request(headers, secret, *, url, public_base=None, tolerance=300, nonce_cache=None)` checks the age and, with `NonceCache`, replays; the host comes from `url`/`public_base`, never from request headers. `url=` is required. It does not accept `X-Webhook-Signature` on the upgrade (that header signs an empty body there). Callbacks keep `X-Webhook-Signature`. Needs a SuperSBC that sends `X-Unpod-Signature` (relay branch, 2026-11-17).
+- Stream formats are validated as the SBC does: μ-law and A-law 8 kHz only, L16 at 8, 16 or 24 kHz.
+
+### Fixed
+- `UnpodFrameSerializer` ignores media frames whose `track` is not `inbound`, so with `audioTrack="both"` the bot no longer hears the audio the SBC plays back to the caller.
+- Stream status callbacks: `STREAM_STARTED` / `STREAM_STOPPED` / `STREAM_FAILED` match what SuperSBC sends (`started`, `stopped`, `failed`), and `CallEvent.stream_reason` reads `StatusReason`.
+
+### Requires
+- A SuperSBC that signs stream upgrades with `X-Unpod-Signature` (relay branch, 2026-11-17). `verify_stream_request` no longer accepts the older V3 headers; bots must pass `url=`.
+- The SBC org must have audio streaming switched on (`audio_stream_enabled`, default off); otherwise the stream fails with `start_failed` / "audio streaming is not enabled for this org".
+
+## [0.6.2] - 2026-11-04
+
+Aligns the call-control preview with the SBC wire format (UNPO-183).
+
+### Added
+- `calls.create()` / `calls.add_participant()`: `answer_url` and `answer_method`, to run an answer-URL app (play, speak, dial, ...) on that leg once it connects instead of only bridging it.
+- `CallEvent`: `start_time`, `answer_time`, `end_time`, `timestamp` and `record_file`. The snake_case JSON field names (`call_id`, `leg_id`, `call_status`, `hangup_cause`, `sip_code`, `digit`, ...) now map onto `CallEvent` as well as the form-encoded names, so an event parses the same in either format.
+- `numbers.attach(attach_type="human_call")` documented: routes a number to a human-to-human call with no agent (omit `agent_id`).
+
+### Fixed
+- `calls.transfer()` and `calls.send_dtmf()` send the leg as `leg` (the SBC's field name), not `leg_id`.
+
+## [0.6.1] - 2026-11-03
 
 ### Added
 - Preview: SBC call control at `client.telephony.calls` (`create`, `list`, `get`, `end`, `hangup`, `add_participant`, `remove_participant`, `play_audio`, `stop_audio`, `speak`, `transfer`, `transfer_complete`, `transfer_cancel`, `send_dtmf`, `record`, `get_recording`) and `client.telephony.inbound` (trunk and DID inbound config), per the SuperSBC call API contract, through the unpod proxy at `/api/v2/platform/sbc/v1/...` (`unpod.telephony.CALL_API_PATHS`). `inbound.*` is not proxied yet.
@@ -219,7 +258,9 @@ deployment, and `numbers.attach` was posting to a route that no longer exists.
   await client.numbers.attach(number_id, pipe.pipe_id)
   # after
   await client.numbers.attach(number_id, pipe.agent_id)
-  await client.numbers.attach(number_id, agent_id, number="+919800000001")  # supervoice id
+  await client.numbers.attach(
+      number_id, agent_id, number="+919800000001"
+  )  # supervoice id
   ```
 
 - **`Call.transcript` now defaults to `None`, not `[]`.** `None` means the turns

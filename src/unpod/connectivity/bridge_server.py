@@ -17,6 +17,7 @@ import asyncio
 from typing import Any, Awaitable, Callable
 
 from pydantic import BaseModel
+
 from unpod._logging import get_logger
 from unpod._protocol import (
     BridgeEvent,
@@ -45,6 +46,7 @@ class BridgeHandshakeError(Exception):
     not a completed call. A silent return would look identical to a call that
     ran and ended, black-holing the call.
     """
+
 
 _PROTOCOL_VERSION = 2
 _SUPPORTED_EVENTS = [
@@ -255,8 +257,7 @@ async def handle_bridge_connection(
                     )
         except TimeoutError as exc:
             logger.error(
-                "handshake: timed out after %.1fs waiting for "
-                "hello.ack + call.started",
+                "handshake: timed out after %.1fs waiting for hello.ack + call.started",
                 handshake_timeout_s,
             )
             raise BridgeHandshakeError("handshake timed out") from exc
@@ -268,8 +269,7 @@ async def handle_bridge_connection(
         session = Session(bridge=transport)
         ctx = _context_from_call_started(started, agent_id=agent_id, session=session)
         logger.info(
-            "handshake complete session_id=%s job_id=%s room=%s — "
-            "running entrypoint",
+            "handshake complete session_id=%s job_id=%s room=%s — running entrypoint",
             getattr(ctx, "session_id", ""),
             getattr(ctx, "job_id", ""),
             getattr(ctx, "room_id", ""),

@@ -28,10 +28,9 @@ from unpod._protocol import (
 from unpod.connectivity.bridge_auth import verify_connection
 from unpod.connectivity.bridge_server import handle_bridge_connection
 from unpod.connectivity.call_context import CallContext
-from unpod.connectivity.host_info import placement
 from unpod.connectivity.hooks import HookRegistry
+from unpod.connectivity.host_info import placement
 from unpod.models.session import RunnerStats
-
 
 logger = get_logger("runner")
 

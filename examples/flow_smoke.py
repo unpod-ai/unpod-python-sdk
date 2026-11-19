@@ -58,13 +58,17 @@ def _handler(request: httpx.Request) -> httpx.Response:
         ("POST", "/v1/pipes"): {"data": _PIPE},
         ("GET", "/v1/pipes"): {"data": [_PIPE]},
         ("POST", "/v1/calls"): {"data": _CALL},
-        ("GET", "/v1/calls/call_1"): {"data": {**_CALL, "status": "completed", "duration_s": 12}},
+        ("GET", "/v1/calls/call_1"): {
+            "data": {**_CALL, "status": "completed", "duration_s": 12}
+        },
     }
     body = routes.get(key)
     if body is None:
         return httpx.Response(404, json={"error": f"no route {key}"})
-    print(f"  → {request.method} {request.url.path}  "
-          f"body={request.content.decode() or '-'}")
+    print(
+        f"  → {request.method} {request.url.path}  "
+        f"body={request.content.decode() or '-'}"
+    )
     return httpx.Response(200, json=body)
 
 
@@ -83,14 +87,17 @@ async def main() -> None:
 
     print("[2] create speech pipe")
     pipe = await client.pipes.create(
-        name="smoke-pipe", voice_profile=profile.name,
-        agent_id="smoke-agent", recording=True,
+        name="smoke-pipe",
+        voice_profile=profile.name,
+        agent_id="smoke-agent",
+        recording=True,
     )
     print(f"    pipe_id={pipe.pipe_id}\n")
 
     print("[3] dispatch call")
     call = await client.calls.create(
-        pipe_id=pipe.pipe_id, to_number="+19995550001",
+        pipe_id=pipe.pipe_id,
+        to_number="+19995550001",
         instructions="Greet warmly.",
     )
     print(f"    call_id={call.call_id} status={call.status}\n")

@@ -19,7 +19,9 @@ def client() -> AsyncClient:
     """Proxy mode: the PUT reassign route is backend-core's."""
     from unpod import TokenAuth
 
-    return AsyncClient(auth=TokenAuth("tok", "org"), base_url="https://api.example.test")
+    return AsyncClient(
+        auth=TokenAuth("tok", "org"), base_url="https://api.example.test"
+    )
 
 
 async def test_change_puts_reassign_by_e164(client):
@@ -41,14 +43,22 @@ async def test_change_by_id(client):
 
 def _http_error(status: int, body: dict) -> httpx.HTTPStatusError:
     req = httpx.Request("PUT", "http://x")
-    return httpx.HTTPStatusError("err", request=req, response=httpx.Response(status, json=body, request=req))
+    return httpx.HTTPStatusError(
+        "err", request=req, response=httpx.Response(status, json=body, request=req)
+    )
 
 
 async def test_update_with_number_reassigns(client):
-    with patch.object(client.agents._http, "put", new_callable=AsyncMock) as put, \
-         patch.object(client.agents._http, "get", new_callable=AsyncMock) as get:
-        put.return_value = get.return_value = {"data": {"agent_id": "AG_dev", "voices": []}}
-        with patch.object(client.agents, "_numbers_change", new_callable=AsyncMock) as change:
+    with (
+        patch.object(client.agents._http, "put", new_callable=AsyncMock) as put,
+        patch.object(client.agents._http, "get", new_callable=AsyncMock) as get,
+    ):
+        put.return_value = get.return_value = {
+            "data": {"agent_id": "AG_dev", "voices": []}
+        }
+        with patch.object(
+            client.agents, "_numbers_change", new_callable=AsyncMock
+        ) as change:
             await client.agents.update("AG_dev", name="x", number="+14155550100")
     change.assert_awaited_once_with("+14155550100", "AG_dev")
 
@@ -57,9 +67,11 @@ async def test_update_falls_back_to_attach_when_not_attached(client):
     change = AsyncMock(side_effect=_http_error(409, {"code": "not_attached"}))
     attach = AsyncMock(return_value={})
     get = AsyncMock(return_value={"data": {"agent_id": "AG_dev", "voices": []}})
-    with patch.object(client.agents, "_numbers_change", change), \
-         patch.object(client.agents, "_numbers_attach", attach), \
-         patch.object(client.agents._http, "get", get):
+    with (
+        patch.object(client.agents, "_numbers_change", change),
+        patch.object(client.agents, "_numbers_attach", attach),
+        patch.object(client.agents._http, "get", get),
+    ):
         await client.agents.update("AG_dev", number="+14155550100")
     attach.assert_awaited_once_with("+14155550100", "AG_dev")
 
@@ -68,9 +80,11 @@ async def test_update_does_not_attach_on_404(client):
     change = AsyncMock(side_effect=_http_error(404, {"code": "not_found"}))
     attach = AsyncMock()
     get = AsyncMock(return_value={"data": {"agent_id": "AG_dev", "voices": []}})
-    with patch.object(client.agents, "_numbers_change", change), \
-         patch.object(client.agents, "_numbers_attach", attach), \
-         patch.object(client.agents._http, "get", get):
+    with (
+        patch.object(client.agents, "_numbers_change", change),
+        patch.object(client.agents, "_numbers_attach", attach),
+        patch.object(client.agents._http, "get", get),
+    ):
         with pytest.raises(httpx.HTTPStatusError):
             await client.agents.update("AG_dev", number="+19990000000")
     attach.assert_not_awaited()
@@ -104,12 +118,16 @@ def direct() -> AsyncClient:
 def proxy() -> AsyncClient:
     from unpod import TokenAuth
 
-    return AsyncClient(auth=TokenAuth("tok", "org"), base_url="https://api.example.test")
+    return AsyncClient(
+        auth=TokenAuth("tok", "org"), base_url="https://api.example.test"
+    )
 
 
 async def test_direct_change_patches_sv_number(direct):
-    with patch.object(direct.numbers._http, "patch", new_callable=AsyncMock) as p, \
-         patch.object(direct.numbers._http, "put", new_callable=AsyncMock) as put:
+    with (
+        patch.object(direct.numbers._http, "patch", new_callable=AsyncMock) as p,
+        patch.object(direct.numbers._http, "put", new_callable=AsyncMock) as put,
+    ):
         p.return_value = {"number_id": "NUM_1", "agent_id": "AG_dev"}
         await direct.numbers.agent.change("NUM_1", "AG_dev")
     p.assert_awaited_once_with("/v1/numbers/NUM_1", json={"agent_id": "AG_dev"})
@@ -117,12 +135,16 @@ async def test_direct_change_patches_sv_number(direct):
 
 
 async def test_direct_change_resolves_e164_to_number_id(direct):
-    get = AsyncMock(return_value=[
-        {"id": "NUM_9", "number": "+14155550199"},
-        {"id": "NUM_1", "number": "+14155550100"},
-    ])
-    with patch.object(direct.numbers._http, "get", get), \
-         patch.object(direct.numbers._http, "patch", new_callable=AsyncMock) as p:
+    get = AsyncMock(
+        return_value=[
+            {"id": "NUM_9", "number": "+14155550199"},
+            {"id": "NUM_1", "number": "+14155550100"},
+        ]
+    )
+    with (
+        patch.object(direct.numbers._http, "get", get),
+        patch.object(direct.numbers._http, "patch", new_callable=AsyncMock) as p,
+    ):
         p.return_value = {}
         await direct.numbers.agent.change("+14155550100", "AG_dev")
     p.assert_awaited_once_with("/v1/numbers/NUM_1", json={"agent_id": "AG_dev"})
@@ -137,22 +159,27 @@ async def test_direct_change_unknown_e164_raises(direct):
 
 async def test_direct_list_delete_release_use_sv_routes(direct):
     http = direct.numbers._http
-    with patch.object(http, "get", new_callable=AsyncMock) as get, \
-         patch.object(http, "delete", new_callable=AsyncMock) as delete:
+    with (
+        patch.object(http, "get", new_callable=AsyncMock) as get,
+        patch.object(http, "delete", new_callable=AsyncMock) as delete,
+    ):
         get.return_value = []
         await direct.numbers.list(status="assigned")
         await direct.numbers.delete("NUM_1")
         await direct.numbers.release("NUM_2")
     get.assert_awaited_once_with("/v1/numbers", params={"status_filter": "assigned"})
     assert [c.args for c in delete.await_args_list] == [
-        ("/v1/numbers/NUM_1",), ("/v1/numbers/NUM_2",)
+        ("/v1/numbers/NUM_1",),
+        ("/v1/numbers/NUM_2",),
     ]
 
 
 async def test_proxy_list_delete_keep_proxy_routes(proxy):
     http = proxy.numbers._http
-    with patch.object(http, "get", new_callable=AsyncMock) as get, \
-         patch.object(http, "delete", new_callable=AsyncMock) as delete:
+    with (
+        patch.object(http, "get", new_callable=AsyncMock) as get,
+        patch.object(http, "delete", new_callable=AsyncMock) as delete,
+    ):
         get.return_value = []
         await proxy.numbers.list(status="assigned")
         await proxy.numbers.delete("124")
@@ -163,11 +190,19 @@ async def test_proxy_list_delete_keep_proxy_routes(proxy):
 
 
 async def test_update_with_number_returns_refetched_agent(client):
-    put = AsyncMock(return_value={"data": {"agent_id": "AG_dev", "number": None, "voices": []}})
-    get = AsyncMock(return_value={"data": {"agent_id": "AG_dev", "number": "+14155550100", "voices": []}})
-    with patch.object(client.agents._http, "put", put), \
-         patch.object(client.agents._http, "get", get), \
-         patch.object(client.agents, "_numbers_change", new_callable=AsyncMock):
+    put = AsyncMock(
+        return_value={"data": {"agent_id": "AG_dev", "number": None, "voices": []}}
+    )
+    get = AsyncMock(
+        return_value={
+            "data": {"agent_id": "AG_dev", "number": "+14155550100", "voices": []}
+        }
+    )
+    with (
+        patch.object(client.agents._http, "put", put),
+        patch.object(client.agents._http, "get", get),
+        patch.object(client.agents, "_numbers_change", new_callable=AsyncMock),
+    ):
         agent = await client.agents.update("AG_dev", name="x", number="+14155550100")
     assert agent.number == "+14155550100"
     get.assert_awaited_once_with("/api/v2/platform/speech/v1/agents/AG_dev")

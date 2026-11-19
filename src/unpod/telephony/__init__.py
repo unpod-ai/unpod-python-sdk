@@ -35,21 +35,29 @@ from collections.abc import Sequence
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from unpod.management._http import AsyncHTTPClient, unwrap_data
+from unpod.telephony.answer import Response as AnswerResponse
 from unpod.telephony.calls import (
     CALL_API_PATHS,
     CallList,
     CallsResource,
+    CallStream,
     InboundConfig,
     InboundResource,
     Leg,
     PlayResult,
     Recording,
+    StreamStartResult,
     TelephonyAPIError,
     TelephonyCall,
     WebhookSecret,
     WebhookSecretResource,
 )
 from unpod.telephony.events import (
+    STREAM_DEGRADED,
+    STREAM_EVENTS,
+    STREAM_FAILED,
+    STREAM_STARTED,
+    STREAM_STOPPED,
     CallEvent,
     DigitsRequest,
     EventName,
@@ -60,7 +68,7 @@ from unpod.telephony.events import (
 )
 
 
-def _as_number_list(numbers: "str | Sequence[str]") -> list[str]:
+def _as_number_list(numbers: str | Sequence[str]) -> list[str]:
     """Coerce one E.164 number or a sequence of them to ``list[str]``.
 
     A bare ``str`` is ONE number, never iterated character-by-character
@@ -69,6 +77,7 @@ def _as_number_list(numbers: "str | Sequence[str]") -> list[str]:
     if isinstance(numbers, str):
         return [numbers]
     return [str(n) for n in numbers]
+
 
 # ── models ───────────────────────────────────────────────────────────────────
 
@@ -239,7 +248,7 @@ class NumbersResource:
 
     async def attach(
         self,
-        numbers: "str | Sequence[str]",
+        numbers: str | Sequence[str],
         *,
         agent_id: str | None = None,
         attach_type: str | None = None,
@@ -278,8 +287,8 @@ class NumbersResource:
         resp = await self._http.post("/telephony/numbers/attach/", json=body)
         return AgentAttachResult(**unwrap_data(resp))
 
-    async def detach(self, numbers: "str | Sequence[str]") -> AgentDetachResult:
-        """Detach one or more E.164 numbers; the inverse of :meth:`attach`.
+    async def detach(self, numbers: str | Sequence[str]) -> AgentDetachResult:
+        """Detach numbers by E.164 number — the inverse of :meth:`attach`.
 
         Only the numbers are needed. A detached number is released, not deleted,
         so it can be attached again later. Partial-success, like ``attach``.
@@ -391,11 +400,18 @@ class TelephonyNamespace:
 
 __all__ = [
     "CALL_API_PATHS",
+    "STREAM_DEGRADED",
+    "STREAM_EVENTS",
+    "STREAM_FAILED",
+    "STREAM_STARTED",
+    "STREAM_STOPPED",
     "AgentAttachResult",
     "AgentDetachResult",
+    "AnswerResponse",
     "AttachResult",
     "CallEvent",
     "CallList",
+    "CallStream",
     "CallsResource",
     "DetachResult",
     "DigitsRequest",
@@ -410,6 +426,7 @@ __all__ = [
     "OriginEndpoint",
     "PlayResult",
     "Recording",
+    "StreamStartResult",
     "TelephonyAPIError",
     "TelephonyCall",
     "TelephonyNamespace",

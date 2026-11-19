@@ -45,17 +45,24 @@ class JourneysResource:
         """
         if participants is None:
             if not participant_id:
-                raise ValueError("journeys.start needs a participant_id or participants")
+                raise ValueError(
+                    "journeys.start needs a participant_id or participants"
+                )
             participants = [{"participant_id": participant_id, **(contact or {})}]
         resp = unwrap_data(
             await refused_as_validation(
-                self._http.post(f"{JOURNEY_BASE}/flows/{flow_id}/journeys", json={"participants": participants})
+                self._http.post(
+                    f"{JOURNEY_BASE}/flows/{flow_id}/journeys",
+                    json={"participants": participants},
+                )
             )
         )
         return [JourneyStartResult(**r) for r in resp.get("results", [])]
 
     async def get(self, journey_id: str) -> Journey:
-        resp = unwrap_data(await self._http.get(f"{JOURNEY_BASE}/journeys/{journey_id}", params=None))
+        resp = unwrap_data(
+            await self._http.get(f"{JOURNEY_BASE}/journeys/{journey_id}", params=None)
+        )
         return Journey(**resp)
 
     async def list(
@@ -68,14 +75,24 @@ class JourneysResource:
         if not space_id:
             raise ValueError("journeys.list needs a space_id")
         params = {"space_id": space_id}
-        for key, value in (("flow_id", flow_id), ("participant_id", participant_id), ("status", status)):
+        for key, value in (
+            ("flow_id", flow_id),
+            ("participant_id", participant_id),
+            ("status", status),
+        ):
             if value:
                 params[key] = value
-        resp = unwrap_data(await self._http.get(f"{JOURNEY_BASE}/journeys", params=params))
+        resp = unwrap_data(
+            await self._http.get(f"{JOURNEY_BASE}/journeys", params=params)
+        )
         return [Journey(**item) for item in resp]
 
     async def cancel(self, journey_id: str) -> dict[str, Any]:
-        return unwrap_data(await self._http.post(f"{JOURNEY_BASE}/journeys/{journey_id}/cancel", json=None))
+        return unwrap_data(
+            await self._http.post(
+                f"{JOURNEY_BASE}/journeys/{journey_id}/cancel", json=None
+            )
+        )
 
     async def send_event(
         self,
@@ -88,23 +105,41 @@ class JourneysResource:
         task_id: str | None = None,
     ) -> dict[str, Any]:
         """Signal a running journey (a ``reply``, an ``approval``, ...)."""
-        body: dict[str, Any] = {"type": type, "outcome": outcome or {}, "summary": summary}
+        body: dict[str, Any] = {
+            "type": type,
+            "outcome": outcome or {},
+            "summary": summary,
+        }
         if content is not None:
             body["content"] = content
         if channel:
             body["channel"] = channel
         if task_id:
             body["task_id"] = task_id
-        return unwrap_data(await self._http.post(f"{JOURNEY_BASE}/journeys/{journey_id}/events", json=body))
+        return unwrap_data(
+            await self._http.post(
+                f"{JOURNEY_BASE}/journeys/{journey_id}/events", json=body
+            )
+        )
 
     # ── operator actions: what the inbox does, from code ──────────────────
 
-    async def _act(self, journey_id: str, action: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
-        return unwrap_data(await self._http.post(f"{JOURNEY_BASE}/journeys/{journey_id}/{action}", json=body))
+    async def _act(
+        self, journey_id: str, action: str, body: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        return unwrap_data(
+            await self._http.post(
+                f"{JOURNEY_BASE}/journeys/{journey_id}/{action}", json=body
+            )
+        )
 
     async def draft(self, journey_id: str) -> dict[str, Any]:
         """The message the agent wrote and is holding for review (``human_review``)."""
-        return unwrap_data(await self._http.get(f"{JOURNEY_BASE}/journeys/{journey_id}/draft", params=None))
+        return unwrap_data(
+            await self._http.get(
+                f"{JOURNEY_BASE}/journeys/{journey_id}/draft", params=None
+            )
+        )
 
     async def approve(
         self,
@@ -148,25 +183,39 @@ class JourneysResource:
         body["pause_agent"] = pause_agent
         return await self._act(journey_id, "reply", body)
 
-    async def takeover(self, journey_id: str, operator: str = "", reason: str = "") -> dict[str, Any]:
+    async def takeover(
+        self, journey_id: str, operator: str = "", reason: str = ""
+    ) -> dict[str, Any]:
         """Pause the agent so a person handles the conversation."""
-        return await self._act(journey_id, "takeover", {"operator": operator, "reason": reason})
+        return await self._act(
+            journey_id, "takeover", {"operator": operator, "reason": reason}
+        )
 
-    async def release(self, journey_id: str, operator: str = "", reason: str = "") -> dict[str, Any]:
+    async def release(
+        self, journey_id: str, operator: str = "", reason: str = ""
+    ) -> dict[str, Any]:
         """Hand the conversation back to the agent (ends a takeover or a needs-a-person hold)."""
-        return await self._act(journey_id, "release", {"operator": operator, "reason": reason})
+        return await self._act(
+            journey_id, "release", {"operator": operator, "reason": reason}
+        )
 
     async def resume(self, journey_id: str) -> dict[str, Any]:
         """Resume a paused journey."""
         return await self._act(journey_id, "resume")
 
-    async def opt_out(self, journey_id: str, channel: str | None = None) -> dict[str, Any]:
+    async def opt_out(
+        self, journey_id: str, channel: str | None = None
+    ) -> dict[str, Any]:
         """Record that the contact opted out: of everything, or of one ``channel``."""
         if channel is None:
             return await self._act(journey_id, "opt-out", {"scope": "contact"})
         if channel not in OPT_OUT_CHANNELS:
-            raise ValueError(f"channel must be one of: {', '.join(sorted(OPT_OUT_CHANNELS))}")
-        return await self._act(journey_id, "opt-out", {"scope": "channel", "channel": channel})
+            raise ValueError(
+                f"channel must be one of: {', '.join(sorted(OPT_OUT_CHANNELS))}"
+            )
+        return await self._act(
+            journey_id, "opt-out", {"scope": "channel", "channel": channel}
+        )
 
     async def reactivate(self, journey_id: str) -> dict[str, Any]:
         """Start an ended journey again for the same contact (a new cycle)."""
@@ -189,17 +238,26 @@ class JourneysResource:
             params["before"] = before
         if before_id:
             params["before_id"] = before_id
-        return unwrap_data(await self._http.get(f"{JOURNEY_BASE}/spaces/{space_id}/alerts", params=params))
-
-    async def stuck_tasks(self, space_id: str, older_than_minutes: int = 15) -> list[dict[str, Any]]:
-        """Sends that started but never finished. Never resent automatically: check, then act."""
         return unwrap_data(
             await self._http.get(
-                f"{JOURNEY_BASE}/spaces/{space_id}/tasks/stuck", params={"older_than_minutes": older_than_minutes}
+                f"{JOURNEY_BASE}/spaces/{space_id}/alerts", params=params
             )
         )
 
-    async def conversation(self, journey: Journey | str, limit: int = 200) -> list[ConversationMessage]:
+    async def stuck_tasks(
+        self, space_id: str, older_than_minutes: int = 15
+    ) -> list[dict[str, Any]]:
+        """Sends that started but never finished. Never resent automatically: check, then act."""
+        return unwrap_data(
+            await self._http.get(
+                f"{JOURNEY_BASE}/spaces/{space_id}/tasks/stuck",
+                params={"older_than_minutes": older_than_minutes},
+            )
+        )
+
+    async def conversation(
+        self, journey: Journey | str, limit: int = 200
+    ) -> list[ConversationMessage]:
         """The journey's inbox thread, oldest first; ``[]`` before a thread exists."""
         if isinstance(journey, str):
             journey = await self.get(journey)
@@ -215,7 +273,9 @@ class JourneysResource:
 
     async def ping(self) -> dict[str, Any]:
         """Can this org reach the autonomous-agent service? ``{ok, checks[], hint}``."""
-        return unwrap_data(await self._http.get("/api/v2/platform/journey/connection/", params=None))
+        return unwrap_data(
+            await self._http.get("/api/v2/platform/journey/connection/", params=None)
+        )
 
     async def set_approval(self, space_id: str, approval: str) -> dict[str, Any]:
         """Set whether the space's agent may send on its own.
@@ -225,9 +285,12 @@ class JourneysResource:
         nothing. Owners and editors of the space only (checked server-side).
         """
         if approval not in APPROVAL_LEVELS:
-            raise ValueError(f"approval must be one of: {', '.join(sorted(APPROVAL_LEVELS))}")
+            raise ValueError(
+                f"approval must be one of: {', '.join(sorted(APPROVAL_LEVELS))}"
+            )
         return unwrap_data(
             await self._http.post(
-                f"/api/v1/autonomous-agents/spaces/{space_id}/agent-approval/", json={"approval": approval}
+                f"/api/v1/autonomous-agents/spaces/{space_id}/agent-approval/",
+                json={"approval": approval},
             )
         )

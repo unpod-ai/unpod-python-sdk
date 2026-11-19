@@ -137,7 +137,10 @@ class ConversationMessage(BaseModel):
             data = value["data"]
             value = {
                 **value,
-                "text": value.get("text") or data.get("content") or data.get("body") or "",
+                "text": value.get("text")
+                or data.get("content")
+                or data.get("body")
+                or "",
                 "subject": value.get("subject") or data.get("subject") or "",
             }
         return value

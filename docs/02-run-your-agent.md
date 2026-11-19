@@ -245,18 +245,22 @@ Three consequences worth internalising:
 ```python
 from unpod import AgentRunner, CallContext
 
+
 async def entrypoint(ctx: CallContext) -> None:
     @ctx.session.on("call_end")
     async def on_session_end(reason: str) -> None:
-        print(f"{ctx.session_id} stopped because: {reason}")   # hangup | error
+        print(f"{ctx.session_id} stopped because: {reason}")  # hangup | error
 
     await ctx.session.run()
 
+
 runner = AgentRunner(entrypoint=entrypoint, agent_id="my-voice-agent")
+
 
 @runner.on("call_end")
 async def on_runner_end(ctx: CallContext, final_state: str) -> None:
-    print(f"{ctx.session_id} finished: {final_state}")         # ended | failed
+    print(f"{ctx.session_id} finished: {final_state}")  # ended | failed
+
 
 runner.start()
 ```

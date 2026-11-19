@@ -6,7 +6,6 @@ from unpod.management._auth import BearerAuth
 from unpod.management._http import AsyncHTTPClient, unwrap_data
 from unpod.models import Number
 
-
 #: backend-core proxy route (addressed from the host root by ``_http._url``).
 _NUMBERS = "/api/v2/platform/speech/v1/numbers"
 #: supervoice-native route, relative to the ``<host>/platform`` base
@@ -60,21 +59,29 @@ class NumberAgentResource:
             if number.startswith("+"):
                 rows = unwrap_data(await self._http.get(_SV_NUMBERS))
                 match = next(
-                    (r for r in rows if isinstance(r, dict) and r.get("number") == number),
+                    (
+                        r
+                        for r in rows
+                        if isinstance(r, dict) and r.get("number") == number
+                    ),
                     None,
                 )
                 if match is None:
                     raise LookupError(f"number {number} not found in this project")
                 number_id = str(match.get("number_id") or match.get("id"))
             return unwrap_data(  # type: ignore[return-value]
-                await self._http.patch(f"{_SV_NUMBERS}/{number_id}", json={"agent_id": agent_id})
+                await self._http.patch(
+                    f"{_SV_NUMBERS}/{number_id}", json={"agent_id": agent_id}
+                )
             )
         body: dict[str, str] = {"agent_id": agent_id}
         if number.startswith("+"):
             body["number"] = number
         if attach_type:
             body["attach_type"] = attach_type
-        return unwrap_data(await self._http.put(f"{_NUMBERS}/{number}/attach", json=body))  # type: ignore[return-value]
+        return unwrap_data(
+            await self._http.put(f"{_NUMBERS}/{number}/attach", json=body)
+        )  # type: ignore[return-value]
 
 
 class NumbersResource:
@@ -133,7 +140,9 @@ class NumbersResource:
         resp = unwrap_data(await self._http.post(f"{_NUMBERS}/sync", json=None))
         return resp  # type: ignore[return-value]
 
-    async def attach(self, number_id: str, agent_id: str, number: str | None = None) -> Number:
+    async def attach(
+        self, number_id: str, agent_id: str, number: str | None = None
+    ) -> Number:
         """Attach a number to an agent.
 
         ``agent_id`` is the binding — the pipe pin is gone, because supervoice

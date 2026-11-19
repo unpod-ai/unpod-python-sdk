@@ -52,9 +52,7 @@ async def dial_bridge(
     import websockets
 
     safe_url = redact_url(bridge_url)
-    logger.debug(
-        "connecting to %s (open_timeout=%.1fs)", safe_url, connect_timeout_s
-    )
+    logger.debug("connecting to %s (open_timeout=%.1fs)", safe_url, connect_timeout_s)
     async with websockets.connect(
         _with_token(bridge_url, call_token), open_timeout=connect_timeout_s
     ) as ws:

@@ -202,8 +202,8 @@ import asyncio
 from unpod import AsyncClient
 from unpod.telephony import TelephonyAPIError
 
-FROM = "+919000000001"      # your Unpod number
-AGENT = "+919811111111"     # first person
+FROM = "+919000000001"  # your Unpod number
+AGENT = "+919811111111"  # first person
 CUSTOMER = "+919822222222"  # second person
 
 
@@ -214,7 +214,8 @@ async def main() -> None:
         # 1. Dial the first person. Returns at once with state "initiated";
         #    progress arrives as events at status_callback_url.
         call = await calls.create(
-            FROM, AGENT,
+            FROM,
+            AGENT,
             role="agent",
             ring_timeout=30,
             status_callback_url="https://your-app.example.com/call-events",
@@ -224,7 +225,9 @@ async def main() -> None:
 
         try:
             # 2. Dial the second person; Unpod bridges them when they answer.
-            leg = await calls.add_participant(call.call_id, FROM, CUSTOMER, role="customer")
+            leg = await calls.add_participant(
+                call.call_id, FROM, CUSTOMER, role="customer"
+            )
             print("leg", leg.leg_id)
 
             # 3. Say something to both legs.
@@ -248,7 +251,7 @@ first leg's `Answered` event arrives, instead of right after `create`.
 | Play an audio file | `play_audio(call_id, url="https://.../hold.mp3", leg_id=None, loop=False)` → `PlayResult.play_id` |
 | Stop audio | `stop_audio(call_id, leg_id=None, play_id=None)` |
 | Speak text (max 1000 chars) | `speak(call_id, text, voice=None, language=None, leg_id=None)` |
-| Send keypad tones | `send_dtmf(call_id, "1234#", leg_id=None)` |
+| Send keypad tones | `send_dtmf(call_id, "1234#", leg=None)` (`leg`: `"caller"` / `"callee"`) |
 | Transfer | `transfer(call_id, target, type="blind")`; for `type="attended"` finish with `transfer_complete(call_id, consult_leg)` or `transfer_cancel(...)` |
 | Record | `record(call_id)` to start; `get_recording(call_id)` → `Recording.url` (two-channel WAV, first leg left, second right) |
 | Pause, resume or stop recording *(0.7.0)* | `pause_recording(call_id)`, `resume_recording(call_id)`, `stop_recording(call_id)` |
@@ -303,12 +306,12 @@ override it per number; the number override wins field by field.
 from unpod.telephony import InboundConfig
 
 cfg = InboundConfig(
-    answer_url="https://your-app.example.com/answer",       # your app decides what to do
-    answer_fallback="static_routing",                       # if your answer URL fails
+    answer_url="https://your-app.example.com/answer",  # your app decides what to do
+    answer_fallback="static_routing",  # if your answer URL fails
     status_callback_url="https://your-app.example.com/call-events",
     status_callback_format="json",
 )
-client.telephony.inbound.set_did("+919000000001", cfg)   # one number
+client.telephony.inbound.set_did("+919000000001", cfg)  # one number
 print(client.telephony.inbound.get_did("+919000000001"))  # effective config
 ```
 
@@ -506,8 +509,8 @@ All under `client.telephony`. Source: `src/unpod/telephony/`.
 | `calls.play_audio(call_id, *, url=, leg_id=, loop=, length=, interrupt_on_dtmf=)` | `PlayResult` |
 | `calls.stop_audio(call_id, *, leg_id=, play_id=)` | `None` |
 | `calls.speak(call_id, text, *, voice=, language=, leg_id=, loop=)` | `PlayResult` |
-| `calls.send_dtmf(call_id, digits, *, leg_id=)` | `None` |
-| `calls.transfer(call_id, target, *, type="blind", leg_id=)` | `None` |
+| `calls.send_dtmf(call_id, digits, *, leg=)` | `None` |
+| `calls.transfer(call_id, target, *, type="blind", leg=)` | `None` |
 | `calls.transfer_complete(call_id, consult_leg)` / `calls.transfer_cancel(call_id, consult_leg)` | `None` |
 | `calls.record(call_id, *, transcribe=)` | `None` |
 | `calls.pause_recording(call_id)` / `resume_recording` / `stop_recording` *(0.7.0)* | `None` |

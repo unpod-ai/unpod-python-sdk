@@ -28,7 +28,7 @@ def test_sync_client_resource_methods_are_blocking() -> None:
 
     assert profiles == []
     client.voice_profiles._async._http.get.assert_awaited_once_with(
-        "/v1/voice-profiles", params=None
+        "/voice-profiles/", params=None
     )
 
 
@@ -103,7 +103,9 @@ def test_routing_identity_survives_a_nested_data_payload() -> None:
     )
 
     ctx = _context_from_call_started(
-        started, agent_id="my-support-agent", session=object()  # type: ignore[arg-type]
+        started,
+        agent_id="my-support-agent",
+        session=object(),  # type: ignore[arg-type]
     )
 
     assert ctx.data["agent_id"] == "my-support-agent"
@@ -125,7 +127,9 @@ def test_request_data_cannot_rename_the_answering_agent() -> None:
     )
 
     ctx = _context_from_call_started(
-        started, agent_id="real-agent", session=object()  # type: ignore[arg-type]
+        started,
+        agent_id="real-agent",
+        session=object(),  # type: ignore[arg-type]
     )
 
     assert ctx.data["agent_id"] == "real-agent"
@@ -143,7 +147,9 @@ def test_call_started_metadata_dict_is_not_mutated() -> None:
     )
 
     _context_from_call_started(
-        started, agent_id="a", session=object()  # type: ignore[arg-type]
+        started,
+        agent_id="a",
+        session=object(),  # type: ignore[arg-type]
     )
 
     assert payload == {"customer_id": "C1"}
