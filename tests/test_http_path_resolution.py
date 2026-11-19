@@ -14,6 +14,7 @@ the failure appears from a MISSING variable rather than a wrong one.
 from __future__ import annotations
 
 import pytest
+
 from unpod.management._auth import BearerAuth
 from unpod.management._http import AsyncHTTPClient
 
@@ -66,5 +67,7 @@ def test_relative_paths_are_untouched(base: str, path: str) -> None:
 
 
 def test_port_and_scheme_survive_the_rewrite() -> None:
-    url = _client("https://qa.unpod.tv:8443/platform")._url("/api/v2/platform/speech/v1/calls")
+    url = _client("https://qa.unpod.tv:8443/platform")._url(
+        "/api/v2/platform/speech/v1/calls"
+    )
     assert url == "https://qa.unpod.tv:8443/api/v2/platform/speech/v1/calls"

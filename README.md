@@ -33,9 +33,10 @@ In 0.7.0 (since 0.6.2; full notes in the [changelog](https://github.com/unpod-ai
 
 - **Pipecat bots on Unpod calls (preview)** — stream a call's audio to your own Pipecat pipeline over a WebSocket. `UnpodFrameSerializer` plugs into Pipecat's WebSocket transport; install with `pip install "unpod[pipecat]"`. See [Pipecat audio streaming](https://github.com/unpod-ai/unpod-python-sdk/blob/main/docs/09-pipecat-streaming.md). The org needs audio streaming switched on at the SBC.
 - **`answer_url` replies** — `unpod.telephony.answer.Response` builds `stream`, `speak`, `play`, `wait`, `dial` and `hangup` actions as SBC JSON or XML; `stream()` takes `keep_call_alive` and `audio_track`.
-- **Signed stream connections** — `verify_stream_request(headers, secret, url=...)` checks the SBC's V3 signature on the WebSocket upgrade.
+- **Signed stream connections** — `verify_stream_request(headers, secret, url=...)` checks the SBC's `X-Unpod-Signature` on the WebSocket upgrade (timestamp, optional replay cache).
+- **Streaming, matched to the SBC** — A-law streams, REST `calls.start_stream()` / `stop_stream()`, all `<Stream>` options, `checkpoint` / `sendDTMF`, and stream status callbacks parsed from what the SBC really sends (`started`/`stopped`/`failed`/`degraded`).
 - **More call control** — `time_limit`, `sip_headers`, `fallback_url`, `status_callback_events` and `end_mpc_on_exit` on `calls.create()` / `add_participant()`; `stop_recording`, `pause_recording`, `resume_recording` and `download_recording`; `play_audio(loop=, length=, mix=)`; richer `CallEvent` fields; `parse_digits_request()`; `webhook_secret.reveal()`.
-- **Changed:** `<Stream>` carries the sample rate in `contentType` only; `verify_stream_request` needs `url=` when the upgrade carries V3 headers.
+- **Changed:** `<Stream>` carries the sample rate in `contentType` only; `verify_stream_request` needs `url=` and checks `X-Unpod-Signature` only.
 
 ## What's Inside
 
@@ -79,7 +80,7 @@ embedded = await client.agent.voice.create(
 profiles = await client.voice_profiles.list(language="en")
 pipe = await client.pipes.create(
     name="support-line",
-    voice_profile=profiles[0].id,   # a catalog name works too
+    voice_profile=profiles[0].id,  # a catalog name works too
     agent_id="my-voice-agent",
 )
 
@@ -114,7 +115,9 @@ UNPOD_ORG_HANDLE=<org handle from Settings → Workspace → General>
 from unpod import Client
 
 with Client() as client:
-    free = [n.number for n in client.telephony.numbers.list() if n.status == "not_assigned"]
+    free = [
+        n.number for n in client.telephony.numbers.list() if n.status == "not_assigned"
+    ]
     result = client.telephony.numbers.attach(free[0], agent_id="sales-agent")
     print(result.numbers[0].ok, result.numbers[0].error)
 ```

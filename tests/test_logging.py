@@ -18,7 +18,6 @@ from unpod._logging import close_code_of, enable_logging, get_logger, redact_url
 from unpod._protocol import JobAssign, Register, Registered
 from unpod.connectivity.runner import AgentRunner, RunnerAuthError
 
-
 # -- library hygiene --------------------------------------------------------
 
 
@@ -84,7 +83,11 @@ def _runner(**kw):
         pass
 
     return AgentRunner(
-        entrypoint=entrypoint, agent_id="bot", platform_token="k", org_handle="acme", **kw
+        entrypoint=entrypoint,
+        agent_id="bot",
+        platform_token="k",
+        org_handle="acme",
+        **kw,
     )
 
 
@@ -216,9 +219,7 @@ def test_bridge_auth_logs_each_rejection_reason(caplog) -> None:
         # Stale timestamp.
         assert not verify_signed_url(nonce="n1", ts=1, signature="x", **kw)
         # Bad signature (fresh ts).
-        assert not verify_signed_url(
-            nonce="n2", ts=1_000_000, signature="wrong", **kw
-        )
+        assert not verify_signed_url(nonce="n2", ts=1_000_000, signature="wrong", **kw)
         # Replay.
         seen.add("n3")
         assert not verify_signed_url(nonce="n3", ts=1_000_000, signature="x", **kw)
@@ -336,4 +337,6 @@ async def test_auth_close_is_fatal_and_logged(monkeypatch, caplog) -> None:
         with pytest.raises(RunnerAuthError):
             await r.run()
 
-    assert "UNPOD_PLATFORM_TOKEN" in "\n".join(rec.getMessage() for rec in caplog.records)
+    assert "UNPOD_PLATFORM_TOKEN" in "\n".join(
+        rec.getMessage() for rec in caplog.records
+    )

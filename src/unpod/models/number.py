@@ -10,7 +10,9 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 class Number(BaseModel):
     """A provisioned phone number (matches sv_numbers response shape)."""
 
-    model_config = ConfigDict(populate_by_name=True, extra="allow", coerce_numbers_to_str=True)
+    model_config = ConfigDict(
+        populate_by_name=True, extra="allow", coerce_numbers_to_str=True
+    )
 
     number_id: str = Field(alias="id")
     project_id: str | None = None
@@ -20,7 +22,9 @@ class Number(BaseModel):
     trunk_type: str = "livekit"
     country: str | None = Field(default=None)
     capabilities: list[str] = Field(default_factory=list)
-    status: str = Field(default="available", validation_alias=AliasChoices("status", "state"))
+    status: str = Field(
+        default="available", validation_alias=AliasChoices("status", "state")
+    )
     pipe_id: str | None = None
     active_call_id: str | None = None
     created: datetime | None = Field(default=None, alias="created_at")
@@ -33,4 +37,3 @@ class Number(BaseModel):
     @property
     def created_at(self) -> datetime | None:
         return self.created
-

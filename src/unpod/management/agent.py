@@ -72,7 +72,8 @@ class VoiceAgentResource:
             "playbook": playbook,
         }
         present = [
-            key for key, value in sources.items()
+            key
+            for key, value in sources.items()
             if value is not None and str(value).strip()
         ]
         if not present:
@@ -98,7 +99,9 @@ class VoiceAgentResource:
         if background_sound_enabled is not None:
             body["background_sound_enabled"] = background_sound_enabled
         if background_sound_volume is not None:
-            body["background_sound_volume"] = check_background_volume(background_sound_volume)
+            body["background_sound_volume"] = check_background_volume(
+                background_sound_volume
+            )
         # Same rule: omitted leaves the deployment's canceller in charge, which
         # is NOT what "none" means.
         if noise_cancellation is not None:

@@ -25,7 +25,9 @@ class PipesResource:
     async def get(self, pipe_id: str) -> Pipe:
         """Get an agent row through the deprecated pipe route."""
         _warn_deprecated()
-        resp = unwrap_data(await self._http.get(f"/api/v2/platform/speech/v1/pipes/{pipe_id}"))
+        resp = unwrap_data(
+            await self._http.get(f"/api/v2/platform/speech/v1/pipes/{pipe_id}")
+        )
         return Pipe(**resp)
 
     async def create(
@@ -68,16 +70,24 @@ class PipesResource:
         if background_sound_enabled is not None:
             body["background_sound_enabled"] = background_sound_enabled
         if background_sound_volume is not None:
-            body["background_sound_volume"] = check_background_volume(background_sound_volume)
+            body["background_sound_volume"] = check_background_volume(
+                background_sound_volume
+            )
         if noise_cancellation is not None:
             body["noise_cancellation"] = str(noise_cancellation)
-        resp = unwrap_data(await self._http.post("/api/v2/platform/speech/v1/pipes", json=body))
+        resp = unwrap_data(
+            await self._http.post("/api/v2/platform/speech/v1/pipes", json=body)
+        )
         return Pipe(**resp)
 
     async def update(self, pipe_id: str, **kwargs: Any) -> Pipe:
         """Update an existing pipe (PATCH — supervoice's only pipe-update verb)."""
         _warn_deprecated()
-        resp = unwrap_data(await self._http.patch(f"/api/v2/platform/speech/v1/pipes/{pipe_id}", json=kwargs))
+        resp = unwrap_data(
+            await self._http.patch(
+                f"/api/v2/platform/speech/v1/pipes/{pipe_id}", json=kwargs
+            )
+        )
         return Pipe(**resp)
 
     async def delete(self, pipe_id: str) -> None:

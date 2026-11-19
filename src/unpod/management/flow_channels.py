@@ -61,7 +61,9 @@ class ChannelsResource:
         """
         requires_proxy_auth(self._http, "channels.list")
         slug = await self._spaces.slug(space)
-        connections = _django_data(await self._http.get(_CONNECTIONS, params=None)) or []
+        connections = (
+            _django_data(await self._http.get(_CONNECTIONS, params=None)) or []
+        )
         accounts = {
             a["account_id"]: a
             for a in await self._accounts(slug)
@@ -108,20 +110,30 @@ class ChannelsResource:
         if app_name is None:
             raise ValueError(f"connect {channel.type} in the Unpod app first")
         if wait and on_sign_in_url is None:
-            raise ValueError("wait=True needs on_sign_in_url: the person signing in must see the URL")
+            raise ValueError(
+                "wait=True needs on_sign_in_url: the person signing in must see the URL"
+            )
         # Taken before the sign-in starts, so a mailbox signed in at once is
         # still new to it.
         ready_before = (
-            {c.connection_id for c in await self.list(channel.space) if c.ready} if wait else set()
+            {c.connection_id for c in await self.list(channel.space) if c.ready}
+            if wait
+            else set()
         )
-        resp: Any = await self._http.post(_GOOGLE_AUTH, json={"name": app_name, "space": channel.space})
+        resp: Any = await self._http.post(
+            _GOOGLE_AUTH, json={"name": app_name, "space": channel.space}
+        )
         url = (_django_data(resp) or {}).get("redirect_url")
         if not url:
-            raise ValueError(_message(resp) or f"could not start the {app_name} sign-in")
+            raise ValueError(
+                _message(resp) or f"could not start the {app_name} sign-in"
+            )
         if not wait:
             return ConnectResult(sign_in_url=url)
         on_sign_in_url(url)
-        return await self._wait_until_ready(channel, ready_before, url, timeout, poll_interval)
+        return await self._wait_until_ready(
+            channel, ready_before, url, timeout, poll_interval
+        )
 
     async def _link(self, channel: Channel) -> Channel:
         _django_data(
@@ -131,7 +143,11 @@ class ChannelsResource:
             )
         )
         linked = next(
-            (c for c in await self.list(channel.space) if c.connection_id == channel.connection_id),
+            (
+                c
+                for c in await self.list(channel.space)
+                if c.connection_id == channel.connection_id
+            ),
             None,
         )
         if linked is None or not linked.ready:
@@ -168,8 +184,12 @@ class ChannelsResource:
                     return ConnectResult(channel=found, sign_in_url=url)
                 if found.account_id is None:
                     # Signed in, not linked to this space yet.
-                    return ConnectResult(channel=await self._link(found), sign_in_url=url)
-        raise TimeoutError(f"the {channel.type} sign-in was not finished within {timeout:.0f}s")
+                    return ConnectResult(
+                        channel=await self._link(found), sign_in_url=url
+                    )
+        raise TimeoutError(
+            f"the {channel.type} sign-in was not finished within {timeout:.0f}s"
+        )
 
 
 def _django_data(resp: Any) -> Any:

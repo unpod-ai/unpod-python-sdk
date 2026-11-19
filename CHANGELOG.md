@@ -22,15 +22,21 @@ While the SDK is pre-1.0, breaking changes ship in a **minor** bump.
 - `unpod.telephony.stream`: the stream wire protocol without a Pipecat dependency (`MediaFormat`, `StreamStart`, `parse_start`, `decode_message`, `play_audio_message`, `clear_audio_message`).
 - `CallEvent.stream_id` / `.stream_reason` and `STREAM_STARTED` / `STREAM_STOPPED` / `STREAM_FAILED` (and the `STREAM_EVENTS` set) for stream lifecycle callbacks.
 - `answer.Response.stream(keep_call_alive=True, audio_track="inbound")`: emit the `keepCallAlive` and `audioTrack` attributes on `<Stream>`. With `keep_call_alive=False` the SBC runs the stream in the background and moves on to the next action (with none left it hangs up, "End Of XML Instructions"). A bidirectional stream must use `audio_track="inbound"`; anything else raises `ValueError`.
-- `verify_stream_request(..., url=)` and `unpod.telephony.stream.v3_signature()`: verify the SBC's V3 signature on the stream WebSocket upgrade (`X-Plivo-Signature-V3` + `X-Plivo-Signature-V3-Nonce`, `base64(HMAC-SHA256(secret, url + nonce))`). Behind a TLS-terminating proxy or tunnel both `ws://`/`wss://` and the `X-Forwarded-Host`/`Host` hosts are tried. The older `X-Webhook-Signature` form is still accepted. Exports `V3_SIGNATURE_HEADER` and `V3_NONCE_HEADER`.
 - Docs: a telephony guide (`docs/08-telephony.md`) and a Pipecat streaming guide (`docs/09-pipecat-streaming.md`) with a runnable example in `examples/pipecat_streaming/`. `pyproject.toml` gains a `pipecat` extra and a `Changelog` project link.
+- `audio/x-alaw` (8 kHz) streams: `unpod.telephony.stream.ALAW`, `Response.stream(content_type=ALAW)` and A-law coding in `UnpodFrameSerializer`.
+- `STREAM_DEGRADED` and `CallEvent.service_url`, `.extra_headers`, `.error`, `.event_time` (the ISO `Timestamp` of stream callbacks).
+- REST streams on a live call: `client.telephony.calls.start_stream()`, `list_streams()`, `get_stream()`, `stop_stream()` (`CallStream`, `StreamStartResult`).
+- `Response.stream()`: `stream_timeout`, `status_callback_method`, `extra_headers` (str or dict), `noise_cancellation`, `noise_cancellation_level`.
+- Stream protocol: `checkpoint_message()`, `send_dtmf_message()`, `StreamStart.extra_headers`; in Pipecat, `OutputDTMFFrame` → `sendDTMF` and `playedStream` / `clearedAudio` → `InputTransportMessageFrame`.
 
 ### Changed
 - `<Stream>` now carries the sample rate in `contentType` only (`audio/x-mulaw;rate=8000`), the shape the SBC reads; the separate `sample_rate` action field is gone.
-- `verify_stream_request` raises `ValueError` when the upgrade carries V3 headers and no `url=` is passed. Pass `url=str(websocket.url)`; `examples/pipecat_streaming/` is updated.
+- Stream WebSocket upgrades are verified with SuperSBC's `X-Unpod-Signature: t=…,n=…,v1=hex(HMAC-SHA256(secret, "ws.<t>.<n>.<url>"))`. `verify_stream_request(headers, secret, *, url, public_base=None, tolerance=300, nonce_cache=None)` checks the age and, with `NonceCache`, replays; the host comes from `url`/`public_base`, never from request headers. `url=` is required. It does not accept `X-Webhook-Signature` on the upgrade (that header signs an empty body there). Callbacks keep `X-Webhook-Signature`. Needs a SuperSBC that sends `X-Unpod-Signature` (relay branch, 2026-11-17).
+- Stream formats are validated as the SBC does: μ-law and A-law 8 kHz only, L16 at 8, 16 or 24 kHz.
 
 ### Fixed
 - `UnpodFrameSerializer` ignores media frames whose `track` is not `inbound`, so with `audioTrack="both"` the bot no longer hears the audio the SBC plays back to the caller.
+- Stream status callbacks: `STREAM_STARTED` / `STREAM_STOPPED` / `STREAM_FAILED` match what SuperSBC sends (`started`, `stopped`, `failed`), and `CallEvent.stream_reason` reads `StatusReason`.
 
 ### Requires
 - The SBC org must have audio streaming switched on (`audio_stream_enabled`, default off); otherwise the stream fails with `start_failed` / "audio streaming is not enabled for this org".
@@ -250,7 +256,9 @@ deployment, and `numbers.attach` was posting to a route that no longer exists.
   await client.numbers.attach(number_id, pipe.pipe_id)
   # after
   await client.numbers.attach(number_id, pipe.agent_id)
-  await client.numbers.attach(number_id, agent_id, number="+919800000001")  # supervoice id
+  await client.numbers.attach(
+      number_id, agent_id, number="+919800000001"
+  )  # supervoice id
   ```
 
 - **`Call.transcript` now defaults to `None`, not `[]`.** `None` means the turns

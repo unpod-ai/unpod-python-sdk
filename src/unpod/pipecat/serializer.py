@@ -3,7 +3,8 @@
 Built for Pipecat's ``FastAPIWebsocketTransport``; the constructor takes the
 stream id and call id. Notes:
 
-* the audio format comes from the ``start`` event (μ-law 8k or L16 8k/16k),
+* the audio format comes from the ``start`` event (μ-law or A-law 8k, or L16
+  8k/16k/24k),
   instead of being assumed;
 * the bot's hangup goes through the Unpod call API
   (``client.telephony.calls.hangup``).
@@ -15,9 +16,11 @@ functions (deprecated in 1.16).
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
@@ -30,15 +33,19 @@ from pipecat.frames.frames import (
     Frame,
     InputAudioRawFrame,
     InputDTMFFrame,
+    InputTransportMessageFrame,
     InterruptionFrame,
+    OutputDTMFFrame,
+    OutputDTMFUrgentFrame,
     OutputTransportMessageFrame,
     OutputTransportMessageUrgentFrame,
 )
 from pipecat.processors.frame_processor import FrameProcessorSetup
 from pipecat.serializers.base_serializer import FrameSerializer
 
-from unpod.pipecat.g711 import pcm_to_ulaw, ulaw_to_pcm
+from unpod.pipecat.g711 import alaw_to_pcm, pcm_to_alaw, pcm_to_ulaw, ulaw_to_pcm
 from unpod.telephony.stream import (
+    ALAW,
     L16,
     MULAW,
     MediaFormat,
@@ -46,6 +53,7 @@ from unpod.telephony.stream import (
     clear_audio_message,
     decode_message,
     play_audio_message,
+    send_dtmf_message,
 )
 
 if TYPE_CHECKING:
@@ -79,11 +87,17 @@ class UnpodFrameSerializer(FrameSerializer):
 
         Parameters:
             auto_hang_up: Hang the call up on ``EndFrame``/``CancelFrame``.
+            hangup_drain_secs: On ``EndFrame``, wait up to this long for the
+                audio already sent with ``playAudio`` to finish playing before
+                hanging up, so the bot's last words are not cut off. The SBC
+                plays in real time, so the wait is what is still queued there.
+                ``CancelFrame`` hangs up at once.
             output_format: Format for ``playAudio``. Defaults to the stream's
-                input format. SuperSBC v1 plays μ-law 8k only.
+                input format, which is what the SBC expects back.
         """
 
         auto_hang_up: bool = True
+        hangup_drain_secs: float = 5.0
         output_format: MediaFormat | None = None
 
     def __init__(
@@ -123,6 +137,8 @@ class UnpodFrameSerializer(FrameSerializer):
         self._in_resampler = create_stream_resampler()
         self._out_resampler = create_stream_resampler()
         self._out_rate = 0
+        # Monotonic time when the audio sent so far finishes playing at the SBC.
+        self._playout_until = 0.0
 
     @classmethod
     def from_start(
@@ -170,17 +186,34 @@ class UnpodFrameSerializer(FrameSerializer):
         if isinstance(frame, (EndFrame, CancelFrame)):
             if self._params.auto_hang_up and not self._hangup_attempted:
                 self._hangup_attempted = True
+                if isinstance(frame, EndFrame):
+                    await self._drain_playout()
                 await self._hang_up()
             return None
         if isinstance(frame, InterruptionFrame):
             # Drop the interrupted reply's tail still inside the resampler.
             self._out_resampler = create_stream_resampler()
+            self._playout_until = 0.0  # clearAudio empties the SBC's queue
             return clear_audio_message(self._stream_id)
         if isinstance(frame, AudioRawFrame):
             payload = await self._encode(frame)
             if not payload:
                 return None
+            self._track_playout(payload)
             return play_audio_message(self._stream_id, payload, self._out_format)
+        if isinstance(frame, (OutputDTMFFrame, OutputDTMFUrgentFrame)):
+            # `buttons` only exists from Pipecat ~1.3; 1.0 has `button` alone.
+            buttons = getattr(frame, "buttons", None) or (
+                [frame.button] if frame.button else []
+            )
+            digits = "".join(str(b.value) for b in buttons)
+            if not digits:
+                return None
+            try:
+                return send_dtmf_message(self._stream_id, digits)
+            except ValueError:
+                logger.warning("ignoring invalid DTMF digits %r", digits)
+                return None
         if isinstance(
             frame, (OutputTransportMessageFrame, OutputTransportMessageUrgentFrame)
         ):
@@ -198,7 +231,24 @@ class UnpodFrameSerializer(FrameSerializer):
         pcm = await self._out_resampler.resample(
             frame.audio, frame.sample_rate, fmt.sample_rate
         )
-        return pcm_to_ulaw(pcm) if fmt.encoding == MULAW else pcm
+        if fmt.encoding == MULAW:
+            return pcm_to_ulaw(pcm)
+        if fmt.encoding == ALAW:
+            return pcm_to_alaw(pcm)
+        return pcm
+
+    def _track_playout(self, payload: bytes) -> None:
+        fmt = self._out_format
+        samples = len(payload) // 2 if fmt.encoding == L16 else len(payload)
+        now = time.monotonic()
+        self._playout_until = max(self._playout_until, now) + samples / fmt.sample_rate
+
+    async def _drain_playout(self) -> None:
+        remaining = self._playout_until - time.monotonic()
+        wait = min(remaining, self._params.hangup_drain_secs)
+        if wait > 0:
+            logger.debug("waiting %.2fs for queued audio before hanging up", wait)
+            await asyncio.sleep(wait)
 
     async def _hang_up(self) -> None:
         if self._hangup_fn is None:
@@ -234,8 +284,12 @@ class UnpodFrameSerializer(FrameSerializer):
             except ValueError:
                 logger.warning("ignoring invalid DTMF digit %r", digit)
                 return None
-        # `start` is consumed by parse_unpod_websocket; `stop` and unknown
-        # events carry nothing for the pipeline (the transport sees the close).
+        if event in ("playedStream", "clearedAudio"):
+            # Replies to the bot's own `checkpoint` / `clearAudio`; surfaced as
+            # transport messages so a processor can wait on a checkpoint.
+            return InputTransportMessageFrame(message=message)
+        # `start` is consumed by parse_unpod_websocket; unknown events carry
+        # nothing for the pipeline (the SBC ends a stream by closing the socket).
         return None
 
     async def _decode_media(self, media: dict[str, Any]) -> Frame | None:
@@ -251,6 +305,8 @@ class UnpodFrameSerializer(FrameSerializer):
         fmt = self._in_format
         if fmt.encoding == MULAW:
             raw = ulaw_to_pcm(raw)
+        elif fmt.encoding == ALAW:
+            raw = alaw_to_pcm(raw)
         elif fmt.encoding != L16:  # pragma: no cover - rejected in __init__
             return None
         pcm = await self._in_resampler.resample(raw, fmt.sample_rate, rate)

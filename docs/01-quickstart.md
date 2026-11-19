@@ -153,11 +153,11 @@ client = AsyncClient()
 pipe = await client.pipes.create(
     name="my-voice-agent",
     voice_profile="VP_openai_alloy",  # optional; profile_id or catalog name
-    agent_id="my-voice-agent",        # must match your AgentRunner's agent_id
+    agent_id="my-voice-agent",  # must match your AgentRunner's agent_id
     recording=False,
     max_call_duration_s=600,
 )
-print(pipe.pipe_id)                   # PIPE_...
+print(pipe.pipe_id)  # PIPE_...
 ```
 
 *Verified against code, not yet run live via the SDK (known gap #1). The
@@ -201,6 +201,7 @@ Notes, all observed live:
 ```python
 from unpod import AgentRunner, CallContext
 
+
 async def entrypoint(ctx: CallContext) -> None:
     from superdialog import LLMAgent
 
@@ -214,9 +215,10 @@ async def entrypoint(ctx: CallContext) -> None:
     await ctx.session.say("Hello! How can I help you today?")
     await ctx.session.run()
 
+
 AgentRunner(
     entrypoint=entrypoint,
-    agent_id="my-voice-agent",    # same agent_id as the Pipe
+    agent_id="my-voice-agent",  # same agent_id as the Pipe
     max_concurrent_calls=1,
 ).start()
 ```
@@ -269,9 +271,9 @@ The primary flow is `client.telephony.numbers.attach` with your `agent_id`
 (`telephony/__init__.py::NumbersResource.attach`):
 
 ```python
-available = await client.telephony.numbers.list()   # status "not_assigned" = attachable
+available = await client.telephony.numbers.list()  # status "not_assigned" = attachable
 result = await client.telephony.numbers.attach(
-    "+14155550101",               # one E.164 string, or a list of them
+    "+14155550101",  # one E.164 string, or a list of them
     agent_id="my-voice-agent",
 )
 r = result.numbers[0]
@@ -291,7 +293,7 @@ verification run's scope.*
 
 ```python
 summary = await client.numbers.sync()
-print(summary)                    # {"synced": 12, "new": 2}
+print(summary)  # {"synced": 12, "new": 2}
 ```
 
 *Verified against code, not yet run live via the SDK (known gap #1).

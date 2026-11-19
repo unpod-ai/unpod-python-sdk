@@ -40,17 +40,20 @@ from unpod.telephony.calls import (
     CALL_API_PATHS,
     CallList,
     CallsResource,
+    CallStream,
     InboundConfig,
     InboundResource,
     Leg,
     PlayResult,
     Recording,
+    StreamStartResult,
     TelephonyAPIError,
     TelephonyCall,
     WebhookSecret,
     WebhookSecretResource,
 )
 from unpod.telephony.events import (
+    STREAM_DEGRADED,
     STREAM_EVENTS,
     STREAM_FAILED,
     STREAM_STARTED,
@@ -74,6 +77,7 @@ def _as_number_list(numbers: str | Sequence[str]) -> list[str]:
     if isinstance(numbers, str):
         return [numbers]
     return [str(n) for n in numbers]
+
 
 # ── models ───────────────────────────────────────────────────────────────────
 
@@ -283,8 +287,8 @@ class NumbersResource:
         resp = await self._http.post("/telephony/numbers/attach/", json=body)
         return AgentAttachResult(**unwrap_data(resp))
 
-    async def detach(self, numbers: "str | Sequence[str]") -> AgentDetachResult:
-        """Detach one or more E.164 numbers; the inverse of :meth:`attach`.
+    async def detach(self, numbers: str | Sequence[str]) -> AgentDetachResult:
+        """Detach numbers by E.164 number — the inverse of :meth:`attach`.
 
         Only the numbers are needed. A detached number is released, not deleted,
         so it can be attached again later. Partial-success, like ``attach``.
@@ -396,6 +400,7 @@ class TelephonyNamespace:
 
 __all__ = [
     "CALL_API_PATHS",
+    "STREAM_DEGRADED",
     "STREAM_EVENTS",
     "STREAM_FAILED",
     "STREAM_STARTED",
@@ -406,6 +411,7 @@ __all__ = [
     "AttachResult",
     "CallEvent",
     "CallList",
+    "CallStream",
     "CallsResource",
     "DetachResult",
     "DigitsRequest",
@@ -420,6 +426,7 @@ __all__ = [
     "OriginEndpoint",
     "PlayResult",
     "Recording",
+    "StreamStartResult",
     "TelephonyAPIError",
     "TelephonyCall",
     "TelephonyNamespace",

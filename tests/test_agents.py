@@ -201,7 +201,10 @@ async def test_get_returns_the_group_with_its_voices() -> None:
             "name": "Gamestop Support",
             "brain": {"type": "playbook", "ref": "PB_abc"},
             "brain_execution": "embedded",
-            "voices": [_ROW, {**_ROW, "voice_profile_id": "VP_en", "is_default": False}],
+            "voices": [
+                _ROW,
+                {**_ROW, "voice_profile_id": "VP_en", "is_default": False},
+            ],
         }
     )
 
@@ -217,7 +220,10 @@ async def test_update_sends_the_brain_as_one_object() -> None:
     await ns.update("gamestop-support", brain=Prompt("You are a bot."))
 
     method, path, body = http.calls[0]
-    assert (method, path) == ("PUT", "/api/v2/platform/speech/v1/agents/gamestop-support")
+    assert (method, path) == (
+        "PUT",
+        "/api/v2/platform/speech/v1/agents/gamestop-support",
+    )
     assert body["brain"] == {"type": "prompt", "ref": "You are a bot."}
 
 

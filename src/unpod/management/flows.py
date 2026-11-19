@@ -78,7 +78,9 @@ async def refused_as_validation(call: Awaitable[_T]) -> _T:
             body = exc.response.json()
         except ValueError:
             body = exc.response.text
-        detail = body.get("detail", body.get("message")) if isinstance(body, dict) else body
+        detail = (
+            body.get("detail", body.get("message")) if isinstance(body, dict) else body
+        )
         raise FlowValidationError(exc.response.status_code, _problems(detail)) from exc
 
 
@@ -119,7 +121,10 @@ class FlowsResource:
         self.channels = ChannelsResource(http, self._spaces)
 
     async def create(
-        self, space_id: SpaceRef, flow: Flow | FlowBuilder | dict[str, Any], idempotency_key: str | None = None
+        self,
+        space_id: SpaceRef,
+        flow: Flow | FlowBuilder | dict[str, Any],
+        idempotency_key: str | None = None,
     ) -> Flow:
         """Save a new flow, created off. Leave out ``flow_id`` and the service
         picks one (returned on the result). Raises ``FlowValidationError``.
@@ -131,7 +136,9 @@ class FlowsResource:
         resp = unwrap_data(
             await refused_as_validation(
                 self._http.post(
-                    f"{JOURNEY_BASE}/spaces/{await self._spaces.slug(space_id)}/flows", json=_body(flow), **_idempotency(idempotency_key)
+                    f"{JOURNEY_BASE}/spaces/{await self._spaces.slug(space_id)}/flows",
+                    json=_body(flow),
+                    **_idempotency(idempotency_key),
                 )
             )
         )
@@ -160,11 +167,15 @@ class FlowsResource:
 
     async def templates(self) -> list[dict[str, Any]]:
         """Ready-made flows: ``[{template_id, name}]``."""
-        return unwrap_data(await self._http.get(f"{JOURNEY_BASE}/flows/templates", params=None))
+        return unwrap_data(
+            await self._http.get(f"{JOURNEY_BASE}/flows/templates", params=None)
+        )
 
     async def agentic_profiles(self) -> list[dict[str, Any]]:
         """Values a flow's ``agentic_profile`` may take: ``[{profile_id, name, description}]``."""
-        return unwrap_data(await self._http.get(f"{JOURNEY_BASE}/agentic-profiles", params=None))
+        return unwrap_data(
+            await self._http.get(f"{JOURNEY_BASE}/agentic-profiles", params=None)
+        )
 
     async def agents(self) -> list[dict[str, Any]]:
         """Every agent a flow step can use: the org's pilots and its SDK agents.
@@ -177,53 +188,89 @@ class FlowsResource:
         """
         if "Org-Handle" not in self._http._headers():
             # Pilots are listed per org; without the header the route 400s.
-            raise ValueError("flows.agents needs an org: set UNPOD_ORG_HANDLE (platform-token mode)")
+            raise ValueError(
+                "flows.agents needs an org: set UNPOD_ORG_HANDLE (platform-token mode)"
+            )
         resp = await self._http.get(_PILOTS_PATH, params=None)
         pilots = resp.get("data", []) if isinstance(resp, dict) else resp
         voice_agents = unwrap_data(await self._http.get(_SDK_AGENTS_PATH, params=None))
         handles = {p["handle"] for p in pilots}
         listed: list[dict[str, Any]] = [
-            {"agent_id": p["handle"], "name": p.get("name", ""), "kind": "pilot"} for p in pilots
+            {"agent_id": p["handle"], "name": p.get("name", ""), "kind": "pilot"}
+            for p in pilots
         ]
         for agent in voice_agents:
             brain = (agent.get("brain") or {}).get("type")
             if brain in _MESSAGE_BRAINS and agent["agent_id"] not in handles:
                 listed.append(
-                    {"agent_id": f"sv:{agent['agent_id']}", "name": agent.get("name", ""), "kind": "agent", "brain": brain}
+                    {
+                        "agent_id": f"sv:{agent['agent_id']}",
+                        "name": agent.get("name", ""),
+                        "kind": "agent",
+                        "brain": brain,
+                    }
                 )
         return listed
 
-    async def validate(self, space_id: SpaceRef, flow: Flow | FlowBuilder | dict[str, Any]) -> dict[str, Any]:
+    async def validate(
+        self, space_id: SpaceRef, flow: Flow | FlowBuilder | dict[str, Any]
+    ) -> dict[str, Any]:
         """Check a flow without saving it. Raises ``FlowValidationError``."""
         return unwrap_data(
             await refused_as_validation(
-                self._http.post(f"{JOURNEY_BASE}/spaces/{await self._spaces.slug(space_id)}/flows/validate", json=_body(flow))
+                self._http.post(
+                    f"{JOURNEY_BASE}/spaces/{await self._spaces.slug(space_id)}/flows/validate",
+                    json=_body(flow),
+                )
             )
         )
 
-    async def update(self, flow_id: FlowRef, flow: Flow | FlowBuilder | dict[str, Any]) -> Flow:
+    async def update(
+        self, flow_id: FlowRef, flow: Flow | FlowBuilder | dict[str, Any]
+    ) -> Flow:
         """Save a new version; running journeys keep the version they started on."""
         resp = unwrap_data(
-            await refused_as_validation(self._http.put(f"{JOURNEY_BASE}/flows/{_flow_id(flow_id)}", json=_body(flow)))
+            await refused_as_validation(
+                self._http.put(
+                    f"{JOURNEY_BASE}/flows/{_flow_id(flow_id)}", json=_body(flow)
+                )
+            )
         )
         return Flow(**resp)
 
     async def get(self, flow_id: FlowRef, version: int | None = None) -> Flow:
         params = {"version": version} if version is not None else None
-        resp = unwrap_data(await self._http.get(f"{JOURNEY_BASE}/flows/{_flow_id(flow_id)}", params=params))
+        resp = unwrap_data(
+            await self._http.get(
+                f"{JOURNEY_BASE}/flows/{_flow_id(flow_id)}", params=params
+            )
+        )
         return Flow(**resp)
 
     async def list(self, space_id: SpaceRef) -> list[Flow]:
-        resp = unwrap_data(await self._http.get(f"{JOURNEY_BASE}/spaces/{await self._spaces.slug(space_id)}/flows", params=None))
+        resp = unwrap_data(
+            await self._http.get(
+                f"{JOURNEY_BASE}/spaces/{await self._spaces.slug(space_id)}/flows",
+                params=None,
+            )
+        )
         return [Flow(**item) for item in resp]
 
     async def versions(self, flow_id: FlowRef) -> list[dict[str, Any]]:
-        return unwrap_data(await self._http.get(f"{JOURNEY_BASE}/flows/{_flow_id(flow_id)}/versions", params=None))
+        return unwrap_data(
+            await self._http.get(
+                f"{JOURNEY_BASE}/flows/{_flow_id(flow_id)}/versions", params=None
+            )
+        )
 
     async def activate(self, flow_id: FlowRef) -> dict[str, Any]:
         """Turn the flow on. Raises ``FlowValidationError`` if it no longer validates."""
         return unwrap_data(
-            await refused_as_validation(self._http.post(f"{JOURNEY_BASE}/flows/{_flow_id(flow_id)}/activate", json=None))
+            await refused_as_validation(
+                self._http.post(
+                    f"{JOURNEY_BASE}/flows/{_flow_id(flow_id)}/activate", json=None
+                )
+            )
         )
 
     async def status(self, flow_id: FlowRef) -> dict[str, Any]:
@@ -237,7 +284,8 @@ class FlowsResource:
         flow = await self.get(flow_id)
         journeys = unwrap_data(
             await self._http.get(
-                f"{JOURNEY_BASE}/journeys", params={"space_id": flow.space_id, "flow_id": flow.flow_id}
+                f"{JOURNEY_BASE}/journeys",
+                params={"space_id": flow.space_id, "flow_id": flow.flow_id},
             )
         )
         # ponytail: counts the rows the list returns; a per-flow count endpoint if flows outgrow it.
@@ -251,15 +299,27 @@ class FlowsResource:
 
     async def pause(self, flow_id: FlowRef) -> dict[str, Any]:
         """Turn the flow off: no new journeys start; running ones finish."""
-        return unwrap_data(await self._http.post(f"{JOURNEY_BASE}/flows/{_flow_id(flow_id)}/deactivate", json=None))
+        return unwrap_data(
+            await self._http.post(
+                f"{JOURNEY_BASE}/flows/{_flow_id(flow_id)}/deactivate", json=None
+            )
+        )
 
     async def archive(self, flow_id: FlowRef) -> dict[str, Any]:
-        return unwrap_data(await self._http.post(f"{JOURNEY_BASE}/flows/{_flow_id(flow_id)}/archive", json=None))
+        return unwrap_data(
+            await self._http.post(
+                f"{JOURNEY_BASE}/flows/{_flow_id(flow_id)}/archive", json=None
+            )
+        )
 
     # ── lead sources: where a flow's contacts come from ───────────────────
 
     async def lead_sources(self, flow_id: FlowRef) -> list[dict[str, Any]]:
-        return unwrap_data(await self._http.get(f"{JOURNEY_BASE}/flows/{_flow_id(flow_id)}/lead-sources", params=None))
+        return unwrap_data(
+            await self._http.get(
+                f"{JOURNEY_BASE}/flows/{_flow_id(flow_id)}/lead-sources", params=None
+            )
+        )
 
     async def add_lead_source(
         self,
@@ -274,28 +334,42 @@ class FlowsResource:
         ``email`` needs the mailbox's ``account_id`` (see ``channels``).
         """
         if type not in LEAD_SOURCE_TYPES:
-            raise ValueError(f"type must be one of: {', '.join(sorted(LEAD_SOURCE_TYPES))}")
+            raise ValueError(
+                f"type must be one of: {', '.join(sorted(LEAD_SOURCE_TYPES))}"
+            )
         body: dict[str, Any] = {"type": type, "mode": mode}
         if account_id:
             body["account_id"] = account_id
         if label:
             body["label"] = label
-        return unwrap_data(await self._http.post(f"{JOURNEY_BASE}/flows/{_flow_id(flow_id)}/lead-sources", json=body))
+        return unwrap_data(
+            await self._http.post(
+                f"{JOURNEY_BASE}/flows/{_flow_id(flow_id)}/lead-sources", json=body
+            )
+        )
 
-    async def enroll_leads(self, flow_id: FlowRef, source_id: str, leads: list[dict[str, Any]]) -> dict[str, Any]:
+    async def enroll_leads(
+        self, flow_id: FlowRef, source_id: str, leads: list[dict[str, Any]]
+    ) -> dict[str, Any]:
         """Start the flow for a batch of leads (rows of a CSV), e.g. ``[{"email": ..., "name": ...}]``."""
         return unwrap_data(
             await refused_as_validation(
                 self._http.post(
-                    f"{JOURNEY_BASE}/flows/{_flow_id(flow_id)}/lead-sources/{source_id}/enroll", json={"leads": leads}
+                    f"{JOURNEY_BASE}/flows/{_flow_id(flow_id)}/lead-sources/{source_id}/enroll",
+                    json={"leads": leads},
                 )
             )
         )
 
-    async def _lead_source_action(self, flow_id: FlowRef, source_id: str, action: str) -> dict[str, Any]:
+    async def _lead_source_action(
+        self, flow_id: FlowRef, source_id: str, action: str
+    ) -> dict[str, Any]:
         return unwrap_data(
             await refused_as_validation(
-                self._http.post(f"{JOURNEY_BASE}/flows/{_flow_id(flow_id)}/lead-sources/{source_id}/{action}", json=None)
+                self._http.post(
+                    f"{JOURNEY_BASE}/flows/{_flow_id(flow_id)}/lead-sources/{source_id}/{action}",
+                    json=None,
+                )
             )
         )
 
@@ -303,24 +377,35 @@ class FlowsResource:
         """Read a Space source's contacts now instead of waiting for its schedule."""
         return await self._lead_source_action(flow_id, source_id, "fetch-now")
 
-    async def pause_lead_source(self, flow_id: FlowRef, source_id: str) -> dict[str, Any]:
+    async def pause_lead_source(
+        self, flow_id: FlowRef, source_id: str
+    ) -> dict[str, Any]:
         return await self._lead_source_action(flow_id, source_id, "pause")
 
-    async def regenerate_lead_source_token(self, flow_id: FlowRef, source_id: str) -> dict[str, Any]:
+    async def regenerate_lead_source_token(
+        self, flow_id: FlowRef, source_id: str
+    ) -> dict[str, Any]:
         """A new push token for an ``api_push`` source (returned once; the old one stops working)."""
         return await self._lead_source_action(flow_id, source_id, "regenerate-token")
 
     async def delete_lead_source(self, flow_id: FlowRef, source_id: str) -> None:
-        await self._http.delete(f"{JOURNEY_BASE}/flows/{_flow_id(flow_id)}/lead-sources/{source_id}")
+        await self._http.delete(
+            f"{JOURNEY_BASE}/flows/{_flow_id(flow_id)}/lead-sources/{source_id}"
+        )
 
-    async def test_connection(self, space_id: SpaceRef, account_id: str) -> dict[str, Any]:
+    async def test_connection(
+        self, space_id: SpaceRef, account_id: str
+    ) -> dict[str, Any]:
         """Check a connected account (mailbox, number) live: ``{ok, probed, status|reason}``.
 
         A passing check also clears an account the service marked as failing,
         so flows that use it can be turned on again.
         """
         return unwrap_data(
-            await self._http.post(f"{JOURNEY_BASE}/spaces/{await self._spaces.slug(space_id)}/connectors/{account_id}/test", json=None)
+            await self._http.post(
+                f"{JOURNEY_BASE}/spaces/{await self._spaces.slug(space_id)}/connectors/{account_id}/test",
+                json=None,
+            )
         )
 
     async def link(self, flow_id: FlowRef, channel: Channel) -> Flow:
@@ -334,19 +419,25 @@ class FlowsResource:
         on another mailbox (a flow listens on one), changes nothing.
         """
         if not channel.ready:
-            raise ValueError("connect the channel first with client.flows.channels.connect(channel)")
+            raise ValueError(
+                "connect the channel first with client.flows.channels.connect(channel)"
+            )
         flow = await self.get(flow_id)
         if flow.space_id and channel.space and flow.space_id != channel.space:
-            raise ValueError(f"the channel belongs to space {channel.space!r}, the flow to {flow.space_id!r}")
-        add_source = channel.connector_type == "email" and await self._needs_email_source(
-            flow, channel.account_id
+            raise ValueError(
+                f"the channel belongs to space {channel.space!r}, the flow to {flow.space_id!r}"
+            )
+        add_source = (
+            channel.connector_type == "email"
+            and await self._needs_email_source(flow, channel.account_id)
         )
         definition = _author_definition(flow)
         changed = False
         agent_steps = [
             step
             for step in definition["steps"]
-            if (step.get("agentic") or {}).get("enabled") and step.get("action") == channel.connector_type
+            if (step.get("agentic") or {}).get("enabled")
+            and step.get("action") == channel.connector_type
         ]
         for step in agent_steps:
             if step.get("connector_account_ids") != [channel.account_id]:
@@ -369,7 +460,9 @@ class FlowsResource:
         for source in await self.lead_sources(flow):
             if source.get("type") != "email":
                 continue
-            current = (source.get("config") or {}).get("account_id") or source.get("account_id")
+            current = (source.get("config") or {}).get("account_id") or source.get(
+                "account_id"
+            )
             if current == account_id:
                 return False
             raise ValueError(

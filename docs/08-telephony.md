@@ -202,8 +202,8 @@ import asyncio
 from unpod import AsyncClient
 from unpod.telephony import TelephonyAPIError
 
-FROM = "+919000000001"      # your Unpod number
-AGENT = "+919811111111"     # first person
+FROM = "+919000000001"  # your Unpod number
+AGENT = "+919811111111"  # first person
 CUSTOMER = "+919822222222"  # second person
 
 
@@ -214,7 +214,8 @@ async def main() -> None:
         # 1. Dial the first person. Returns at once with state "initiated";
         #    progress arrives as events at status_callback_url.
         call = await calls.create(
-            FROM, AGENT,
+            FROM,
+            AGENT,
             role="agent",
             ring_timeout=30,
             status_callback_url="https://your-app.example.com/call-events",
@@ -224,7 +225,9 @@ async def main() -> None:
 
         try:
             # 2. Dial the second person; Unpod bridges them when they answer.
-            leg = await calls.add_participant(call.call_id, FROM, CUSTOMER, role="customer")
+            leg = await calls.add_participant(
+                call.call_id, FROM, CUSTOMER, role="customer"
+            )
             print("leg", leg.leg_id)
 
             # 3. Say something to both legs.
@@ -303,12 +306,12 @@ override it per number; the number override wins field by field.
 from unpod.telephony import InboundConfig
 
 cfg = InboundConfig(
-    answer_url="https://your-app.example.com/answer",       # your app decides what to do
-    answer_fallback="static_routing",                       # if your answer URL fails
+    answer_url="https://your-app.example.com/answer",  # your app decides what to do
+    answer_fallback="static_routing",  # if your answer URL fails
     status_callback_url="https://your-app.example.com/call-events",
     status_callback_format="json",
 )
-client.telephony.inbound.set_did("+919000000001", cfg)   # one number
+client.telephony.inbound.set_did("+919000000001", cfg)  # one number
 print(client.telephony.inbound.get_did("+919000000001"))  # effective config
 ```
 

@@ -10,9 +10,13 @@ unusable audio is to implement `turn()` well and `stream()` as an afterthought.
 
 ```python
 from unpod.adapters import (
-    DialogAdapter,        # the protocol
-    SuperDialogAdapter, LangChainAdapter, HTTPAdapter,
-    MCPAdapter, OpenAIAdapter, AnthropicAdapter,
+    DialogAdapter,  # the protocol
+    SuperDialogAdapter,
+    LangChainAdapter,
+    HTTPAdapter,
+    MCPAdapter,
+    OpenAIAdapter,
+    AnthropicAdapter,
 )
 ```
 
@@ -77,8 +81,7 @@ async def stream(
     text: str,
     context: dict | None = None,
     language: str | None = None,
-) -> AsyncIterator[str]:
-    ...
+) -> AsyncIterator[str]: ...
 ```
 
 Two shape rules the type annotation does not enforce:
@@ -226,7 +229,7 @@ See [Known gaps](#known-gaps).
 
 ```python
 async def entrypoint(ctx: CallContext) -> None:
-    ctx.session.dialog_machine = my_adapter   # or a superdialog object
+    ctx.session.dialog_machine = my_adapter  # or a superdialog object
     await ctx.session.run()
 ```
 
@@ -285,10 +288,12 @@ flow = create_dialog_flow(
     llm="openai/gpt-4.1-mini",
 )
 
+
 def lookup_customer(id_last_4: str) -> dict:
     return crm.lookup(id_last_4)
 
-ctx.session.dialog_machine = DialogMachine(     # auto-wrapped
+
+ctx.session.dialog_machine = DialogMachine(  # auto-wrapped
     flow=flow,
     llm="anthropic/claude-haiku-4-5",
     tools=[PythonTool(fn=lookup_customer)],
@@ -331,10 +336,12 @@ from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from unpod.adapters import LangChainAdapter
 
-chain = ChatPromptTemplate.from_messages([
-    ("system", "You are a KYC verification assistant."),
-    ("placeholder", "{messages}"),
-]) | ChatOpenAI(model="gpt-4.1-mini")
+chain = ChatPromptTemplate.from_messages(
+    [
+        ("system", "You are a KYC verification assistant."),
+        ("placeholder", "{messages}"),
+    ]
+) | ChatOpenAI(model="gpt-4.1-mini")
 
 ctx.session.dialog_machine = LangChainAdapter(chain)
 ```
@@ -448,7 +455,7 @@ class MyAdapter:
         parts: list[str] = []
         gen = self._engine.astream(text, language=language)
         try:
-            async for token in gen:          # real tokens, not one blob
+            async for token in gen:  # real tokens, not one blob
                 parts.append(token)
                 yield token
         finally:
@@ -468,7 +475,7 @@ class MyAdapter:
         self._engine.truncate_last_reply(heard_text)
 
     def register_llm_callback(self, fn) -> None:
-        self._engine.on_llm_complete = fn    # fn is async; await it
+        self._engine.on_llm_complete = fn  # fn is async; await it
 
     @property
     def is_complete(self) -> bool:

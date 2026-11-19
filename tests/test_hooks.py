@@ -1,6 +1,7 @@
 """Tests for hooks and metrics."""
 
 import pytest
+
 from unpod.connectivity.hooks import VALID_EVENTS, HookRegistry
 
 

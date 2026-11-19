@@ -397,7 +397,10 @@ class AgentVoiceResource:
             # this agent on it after the default moves.
             ("background_sound", background_sound),
             ("background_sound_enabled", background_sound_enabled),
-            ("background_sound_volume", check_background_volume(background_sound_volume)),
+            (
+                "background_sound_volume",
+                check_background_volume(background_sound_volume),
+            ),
             ("noise_cancellation", noise_cancellation),
             ("tools", _tools_body(tools)),
         ):
@@ -527,8 +530,15 @@ class AgentToolsResource:
         # handover ``mode``); the strict request models would refuse it.
         return ToolsConfig(
             **{
-                name: {k: v for k, v in (raw.get(name) or {}).items() if k in model.model_fields}
-                for name, model in (("handover", HandoverTool), ("voicemail", VoicemailTool))
+                name: {
+                    k: v
+                    for k, v in (raw.get(name) or {}).items()
+                    if k in model.model_fields
+                }
+                for name, model in (
+                    ("handover", HandoverTool),
+                    ("voicemail", VoicemailTool),
+                )
                 if raw.get(name) is not None
             }
         )
@@ -550,9 +560,15 @@ class AgentToolsResource:
         # A section given replaces its typed fields and keeps the ones the
         # models do not declare, such as handover ``mode``.
         if handover is not None:
-            merged["handover"] = {**(merged.get("handover") or {}), **handover.model_dump()}
+            merged["handover"] = {
+                **(merged.get("handover") or {}),
+                **handover.model_dump(),
+            }
         if voicemail is not None:
-            merged["voicemail"] = {**(merged.get("voicemail") or {}), **voicemail.model_dump()}
+            merged["voicemail"] = {
+                **(merged.get("voicemail") or {}),
+                **voicemail.model_dump(),
+            }
         put = await self._http.put(f"{_BASE}/{agent_id}", json={"tools": merged})
         return Agent(**unwrap_data(put))
 
@@ -665,7 +681,10 @@ class AgentsNamespace:
             ("domain", domain),
             ("background_sound", background_sound),
             ("background_sound_enabled", background_sound_enabled),
-            ("background_sound_volume", check_background_volume(background_sound_volume)),
+            (
+                "background_sound_volume",
+                check_background_volume(background_sound_volume),
+            ),
             ("noise_cancellation", noise_cancellation),
             ("cache_mode", cache_mode),
             ("first_speaker", first_speaker),

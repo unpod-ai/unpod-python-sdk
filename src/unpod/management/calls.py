@@ -25,7 +25,11 @@ class CallsResource:
             params["call_status"] = status
         if pipe_id:
             params["pipe_id"] = pipe_id
-        resp = unwrap_data(await self._http.get("/api/v2/platform/speech/v1/calls", params=params or None))
+        resp = unwrap_data(
+            await self._http.get(
+                "/api/v2/platform/speech/v1/calls", params=params or None
+            )
+        )
         return [Call(**item) for item in resp]
 
     # NOTE for readers of a list row: ``call.transcript`` is ``None`` because
@@ -44,7 +48,9 @@ class CallsResource:
         simply did not load. ``transcript_turns`` is on both, so a list row can
         say how much there is to fetch.
         """
-        resp = unwrap_data(await self._http.get(f"/api/v2/platform/speech/v1/calls/{call_id}"))
+        resp = unwrap_data(
+            await self._http.get(f"/api/v2/platform/speech/v1/calls/{call_id}")
+        )
         return Call(**resp)
 
     async def create(
@@ -82,7 +88,9 @@ class CallsResource:
             body["instructions"] = instructions
         if data is not None:
             body["data"] = data
-        resp = unwrap_data(await self._http.post("/api/v2/platform/speech/v1/calls", json=body))
+        resp = unwrap_data(
+            await self._http.post("/api/v2/platform/speech/v1/calls", json=body)
+        )
         return Call(**resp)
 
     async def attach(
@@ -124,12 +132,16 @@ class CallsResource:
             "callback_secret": callback_secret,
         }
         body.update({k: v for k, v in optional.items() if v is not None})
-        resp = unwrap_data(await self._http.post("/api/v2/platform/speech/v1/calls/attach", json=body))
+        resp = unwrap_data(
+            await self._http.post("/api/v2/platform/speech/v1/calls/attach", json=body)
+        )
         return Call(**resp)
 
     async def hangup(self, call_id: str) -> Call:
         """Hang up an active call."""
         resp = unwrap_data(
-            await self._http.post(f"/api/v2/platform/speech/v1/calls/{call_id}/hangup", json=None)
+            await self._http.post(
+                f"/api/v2/platform/speech/v1/calls/{call_id}/hangup", json=None
+            )
         )
         return Call(**resp) if resp else Call(id=call_id, status="hangup_requested")

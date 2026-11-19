@@ -30,6 +30,7 @@ from __future__ import annotations
 
 from unpod.pipecat.handshake import parse_unpod_websocket
 from unpod.telephony.stream import (
+    ALAW,
     L16,
     MULAW,
     MediaFormat,
@@ -52,6 +53,7 @@ except ImportError as exc:  # pipecat-ai not installed
 
 
 __all__ = [
+    "ALAW",
     "L16",
     "MULAW",
     "MediaFormat",

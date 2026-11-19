@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+
 from unpod.connectivity.bridge_server import (
     BridgeHandshakeError,
     handle_bridge_connection,
@@ -275,6 +276,7 @@ async def test_handler_handshake_timeout_closes_without_hang() -> None:
 
     assert fired == []
     assert ws.closed is True
+
 
 @pytest.mark.anyio
 async def test_ctx_agent_id_prefers_call_started_agent_id() -> None:

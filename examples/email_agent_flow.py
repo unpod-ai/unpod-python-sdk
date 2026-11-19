@@ -36,7 +36,9 @@ if gmail is None:
     gmail = client.flows.channels.connect(
         candidate,
         wait=True,
-        on_sign_in_url=lambda url: print("Sign in to Gmail to connect the mailbox:\n ", url),
+        on_sign_in_url=lambda url: print(
+            "Sign in to Gmail to connect the mailbox:\n ", url
+        ),
     ).channel
 print("mailbox:", gmail.address)
 

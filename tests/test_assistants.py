@@ -9,10 +9,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+from tests.test_autonomous import _http_error
 from unpod import AssistantValidationError, AsyncClient, Client
 from unpod.management.assistants import TURN_TIMEOUT
 from unpod.management.flows import JOURNEY_BASE
-from tests.test_autonomous import _http_error
 
 A = f"{JOURNEY_BASE}/spaces/s1/assistants"
 REPLY = {"message_id": "msg_1", "reply": "Hi Ravi", "status": "succeeded"}

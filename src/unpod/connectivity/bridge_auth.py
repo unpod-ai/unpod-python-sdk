@@ -122,9 +122,7 @@ def verify_signed_url(
         return False
 
     seen_nonces.add(nonce)
-    logger.debug(
-        "bridge auth: accepted session_id=%s job_id=%s", session_id, job_id
-    )
+    logger.debug("bridge auth: accepted session_id=%s job_id=%s", session_id, job_id)
     return True
 
 

@@ -115,14 +115,26 @@ class CallEvent(BaseModel):
     recording_url: str | None = None
     recording_duration: int | None = None
     record_file: str | None = None
+    stream_id: str | None = None
+    #: Why a stream stopped or failed (``StatusReason``): ``completed``,
+    #: ``api_request``, ``stream_timeout``, ``call_hangup``,
+    #: ``connection_failed``, ``slow_connection_30`` ...
+    stream_reason: str | None = None
+    #: The stream's WebSocket URL, query string stripped (``ServiceURL``).
+    service_url: str | None = None
+    #: The stream's ``extraHeaders`` as sent to the bot (``ExtraHeaders``).
+    extra_headers: str | None = None
+    #: The failure detail on a ``failed`` stream event (``Error``).
+    error: str | None = None
+    #: An ISO-8601 ``Timestamp`` (stream events send ``2024-01-15T10:30:00Z``;
+    #: call events send unix seconds, which go to ``timestamp``).
+    event_time: str | None = None
     request_uuid: str | None = None
     bill_duration: int | None = None
     call_mode: str | None = None
     participant_call_uuid: str | None = None
     participant_role: str | None = None
     mpc_end_reason: str | None = None
-    stream_id: str | None = None
-    stream_reason: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     raw: dict[str, Any] = Field(default_factory=dict)
 
@@ -186,6 +198,22 @@ _FIELD_MAP: dict[str, str] = {
     "RecordingDuration": "recording_duration",
     "recording_duration": "recording_duration",
     "RecordFile": "record_file",
+    # Audio-stream lifecycle (``stream`` action / REST stream): the SBC posts
+    # Event=started|stopped|failed|degraded with these fields
+    # (``encode_stream_fields`` in ``src/proxy/webhook/stream_events.rs``).
+    "StreamID": "stream_id",
+    "StreamId": "stream_id",
+    "stream_id": "stream_id",
+    "StatusReason": "stream_reason",
+    "status_reason": "stream_reason",
+    "Reason": "stream_reason",
+    "reason": "stream_reason",
+    "ServiceURL": "service_url",
+    "service_url": "service_url",
+    "ExtraHeaders": "extra_headers",
+    "extra_headers": "extra_headers",
+    "Error": "error",
+    "error": "error",
     "RequestUUID": "request_uuid",
     "request_uuid": "request_uuid",
     "BillDuration": "bill_duration",
@@ -198,20 +226,18 @@ _FIELD_MAP: dict[str, str] = {
     "participant_role": "participant_role",
     "MPCEndReason": "mpc_end_reason",
     "mpc_end_reason": "mpc_end_reason",
-    # Audio-stream lifecycle (``stream`` answer action): StreamStarted /
-    # StreamStopped / StreamFailed.
-    "StreamID": "stream_id",
-    "StreamId": "stream_id",
-    "stream_id": "stream_id",
-    "Reason": "stream_reason",
-    "reason": "stream_reason",
 }
 
-#: ``CallEvent.event`` values for an audio stream's lifecycle.
-STREAM_STARTED = "StreamStarted"
-STREAM_STOPPED = "StreamStopped"
-STREAM_FAILED = "StreamFailed"
-STREAM_EVENTS = frozenset({STREAM_STARTED, STREAM_STOPPED, STREAM_FAILED})
+#: ``CallEvent.event`` values for an audio stream's lifecycle, as the SBC sends
+#: them. ``degraded`` is a warning (the bot is too slow to read audio); the
+#: stream keeps running. A stream event always carries ``stream_id``.
+STREAM_STARTED = "started"
+STREAM_STOPPED = "stopped"
+STREAM_FAILED = "failed"
+STREAM_DEGRADED = "degraded"
+STREAM_EVENTS = frozenset(
+    {STREAM_STARTED, STREAM_STOPPED, STREAM_FAILED, STREAM_DEGRADED}
+)
 
 _INT_FIELDS = {
     "duration",
@@ -274,10 +300,14 @@ def verify_signature(
         if abs(current - ts) > tolerance:
             return False
     key = secret.encode() if isinstance(secret, str) else secret
-    expected = hmac.new(key, f"{ts}.".encode() + body, hashlib.sha256).hexdigest().encode()
+    expected = (
+        hmac.new(key, f"{ts}.".encode() + body, hashlib.sha256).hexdigest().encode()
+    )
     # Compare bytes: compare_digest raises TypeError on non-ASCII str input,
     # and a forged header must fail verification, not crash the handler.
-    return any(hmac.compare_digest(sig.encode("utf-8").lower(), expected) for sig in sigs)
+    return any(
+        hmac.compare_digest(sig.encode("utf-8").lower(), expected) for sig in sigs
+    )
 
 
 def _decode(body: bytes, content_type: str | None) -> dict[str, Any]:
@@ -304,6 +334,8 @@ def _normalize(raw: dict[str, Any]) -> CallEvent:
             try:
                 value = int(value)
             except (TypeError, ValueError):
+                if name == "timestamp" and isinstance(value, str):
+                    fields.setdefault("event_time", value)
                 continue
         elif name in _STR_TIME_FIELDS and not isinstance(value, str):
             # JSON sends these as numbers (`hangup_time` aliases the numeric
@@ -390,6 +422,7 @@ def parse_digits_request(
 __all__ = [
     "DEFAULT_SIGNATURE_HEADER",
     "DEFAULT_TOLERANCE_SECS",
+    "STREAM_DEGRADED",
     "STREAM_EVENTS",
     "STREAM_FAILED",
     "STREAM_STARTED",
