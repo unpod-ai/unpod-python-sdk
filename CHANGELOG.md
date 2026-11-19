@@ -8,7 +8,7 @@ While the SDK is pre-1.0, breaking changes ship in a **minor** bump.
 
 ## [Unreleased]
 
-## [0.7.0] - 2026-11-13
+## [0.7.0] - 2026-11-19
 
 ### Added
 - `calls.create()` / `calls.add_participant()`: `time_limit`, `sip_headers` (dict or `"k=v,k=v"`), `fallback_url`, `fallback_method`, `status_callback_events`, `end_mpc_on_exit`. Each is sent only when set and validated client-side. Docs for the new `record` and `dial_music` values.
@@ -42,6 +42,10 @@ While the SDK is pre-1.0, breaking changes ship in a **minor** bump.
 ### Requires
 - A SuperSBC that signs stream upgrades with `X-Unpod-Signature` (relay branch, 2026-11-17). `verify_stream_request` no longer accepts the older V3 headers; bots must pass `url=`.
 - The SBC org must have audio streaming switched on (`audio_stream_enabled`, default off); otherwise the stream fails with `start_failed` / "audio streaming is not enabled for this org".
+
+### Known issues (SuperSBC side, not the SDK)
+- `calls.send_dtmf` on a REST-created call plays fewer tones than requested, and the first send can take about 24 s to return.
+- `calls.transfer` (blind and attended) on a REST-created call returns success but the transfer target never rings.
 
 ## [0.6.2] - 2026-11-04
 
