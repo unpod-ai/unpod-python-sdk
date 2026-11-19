@@ -30,6 +30,7 @@ While the SDK is pre-1.0, breaking changes ship in a **minor** bump.
 - Stream protocol: `checkpoint_message()`, `send_dtmf_message()`, `StreamStart.extra_headers`; in Pipecat, `OutputDTMFFrame` → `sendDTMF` and `playedStream` / `clearedAudio` → `InputTransportMessageFrame`.
 
 ### Changed
+- `calls.send_dtmf()` and `calls.transfer()` take `leg="caller"|"callee"`, the side of the call (what the SBC accepts; a participant leg id got `400`). `leg_id=` still works for those two values and emits a `DeprecationWarning`; any other value raises `ValueError`.
 - `<Stream>` now carries the sample rate in `contentType` only (`audio/x-mulaw;rate=8000`), the shape the SBC reads; the separate `sample_rate` action field is gone.
 - Stream WebSocket upgrades are verified with SuperSBC's `X-Unpod-Signature: t=…,n=…,v1=hex(HMAC-SHA256(secret, "ws.<t>.<n>.<url>"))`. `verify_stream_request(headers, secret, *, url, public_base=None, tolerance=300, nonce_cache=None)` checks the age and, with `NonceCache`, replays; the host comes from `url`/`public_base`, never from request headers. `url=` is required. It does not accept `X-Webhook-Signature` on the upgrade (that header signs an empty body there). Callbacks keep `X-Webhook-Signature`. Needs a SuperSBC that sends `X-Unpod-Signature` (relay branch, 2026-11-17).
 - Stream formats are validated as the SBC does: μ-law and A-law 8 kHz only, L16 at 8, 16 or 24 kHz.
@@ -39,6 +40,7 @@ While the SDK is pre-1.0, breaking changes ship in a **minor** bump.
 - Stream status callbacks: `STREAM_STARTED` / `STREAM_STOPPED` / `STREAM_FAILED` match what SuperSBC sends (`started`, `stopped`, `failed`), and `CallEvent.stream_reason` reads `StatusReason`.
 
 ### Requires
+- A SuperSBC that signs stream upgrades with `X-Unpod-Signature` (relay branch, 2026-11-17). `verify_stream_request` no longer accepts the older V3 headers; bots must pass `url=`.
 - The SBC org must have audio streaming switched on (`audio_stream_enabled`, default off); otherwise the stream fails with `start_failed` / "audio streaming is not enabled for this org".
 
 ## [0.6.2] - 2026-11-04

@@ -273,18 +273,30 @@ async def test_transfer_dtmf_record_recording():
     ns = TelephonyNamespace(http)
     # The SBC's TransferRequest/DtmfRequest take `leg`, not `leg_id`
     # (deny_unknown_fields rejects the latter) — UNPO-183.
-    await ns.calls.transfer("c1", "+915", type="attended", leg_id="l1")
-    assert http.calls[0][2] == {"type": "attended", "target": "+915", "leg": "l1"}
+    await ns.calls.transfer("c1", "+915", type="attended", leg="caller")
+    assert http.calls[0][2] == {"type": "attended", "target": "+915", "leg": "caller"}
+    with pytest.raises(ValueError):
+        await ns.calls.transfer("c1", "+915", leg="l1")  # type: ignore[arg-type]
     await ns.calls.transfer_complete("c1", "l9")
     await ns.calls.transfer_cancel("c1", "l9")
     assert [c[1] for c in http.calls[1:3]] == [
         _p("transfer_complete", call_id="c1"),
         _p("transfer_cancel", call_id="c1"),
     ]
-    await ns.calls.send_dtmf("c1", "12#", leg_id="l1")
-    assert http.calls[3][2] == {"digits": "12#", "leg": "l1"}
+    await ns.calls.send_dtmf("c1", "12#", leg="callee")
+    assert http.calls[3][2] == {"digits": "12#", "leg": "callee"}
     with pytest.raises(ValueError):
         await ns.calls.send_dtmf("c1", "12x")
+    # the SBC takes only caller/callee: a participant leg id is refused here
+    with pytest.raises(ValueError):
+        await ns.calls.send_dtmf("c1", "1", leg="l1")  # type: ignore[arg-type]
+    with pytest.raises(ValueError):
+        await ns.calls.send_dtmf("c1", "1", leg="caller", leg_id="caller")
+    n = len(http.calls)
+    with pytest.warns(DeprecationWarning):
+        await ns.calls.send_dtmf("c1", "1", leg_id="caller")
+    assert http.calls[n][2] == {"digits": "1", "leg": "caller"}
+    del http.calls[n:]
     await ns.calls.record("c1", transcribe=True)
     assert http.calls[4][2] == {"transcribe": True}
     recording = await ns.calls.get_recording("c1")

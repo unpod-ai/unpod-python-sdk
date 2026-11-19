@@ -33,6 +33,7 @@ import os
 import re
 import tempfile
 import uuid
+import warnings
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Literal
@@ -85,6 +86,22 @@ CALL_API_PATHS: dict[str, str] = {
     "reveal_webhook_secret": "/sbc/webhook-secret/reveal",
     "rotate_webhook_secret": "/sbc/webhook-secret/rotate",
 }
+
+
+def _caller_or_callee(method: str, leg: str | None, leg_id: str | None) -> str | None:
+    """``leg`` for the SBC body: ``"caller"``/``"callee"``; ``leg_id`` is a deprecated alias."""
+    if leg_id is not None:
+        if leg is not None:
+            raise ValueError("pass leg or leg_id, not both")
+        warnings.warn(
+            f"{method}(leg_id=...) is deprecated; use leg='caller'|'callee'",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        leg = leg_id
+    if leg is not None and leg not in ("caller", "callee"):
+        raise ValueError('leg must be "caller" or "callee"')
+    return leg
 
 
 def _path(op: str, **params: str) -> str:
@@ -782,17 +799,21 @@ class CallsResource:
         target: str,
         *,
         type: Literal["blind", "attended"] = "blind",
+        leg: Literal["caller", "callee"] | None = None,
         leg_id: str | None = None,
     ) -> None:
         """Transfer the call to ``target``.
 
         ``type="blind"`` hands the call over at once. ``type="attended"`` first
         connects you to the target; finish with :meth:`transfer_complete` or
-        :meth:`transfer_cancel`.
+        :meth:`transfer_cancel`. ``leg`` is the side that is transferred,
+        ``"caller"`` or ``"callee"`` (server default: ``"callee"``). ``leg_id``
+        is a deprecated alias for ``leg`` with the same two values.
         """
+        leg = _caller_or_callee("transfer", leg, leg_id)  # type: ignore[assignment]
         body: dict[str, Any] = {"type": type, "target": target}
-        if leg_id is not None:
-            body["leg"] = leg_id
+        if leg is not None:
+            body["leg"] = leg
         await _call(self._http.post(_path("transfer", call_id=call_id), json=body))
 
     async def transfer_complete(self, call_id: str, consult_leg: str) -> None:
@@ -850,14 +871,26 @@ class CallsResource:
         )
 
     async def send_dtmf(
-        self, call_id: str, digits: str, *, leg_id: str | None = None
+        self,
+        call_id: str,
+        digits: str,
+        *,
+        leg: Literal["caller", "callee"] | None = None,
+        leg_id: str | None = None,
     ) -> None:
-        """Send keypad tones: ``0-9``, ``A-D``, ``*``, ``#``."""
+        """Send keypad tones: ``0-9``, ``A-D``, ``*``, ``#``.
+
+        ``leg`` is the side that hears the tones, ``"caller"`` or ``"callee"``;
+        omitted, the server picks it from the call's direction. ``leg_id`` is a
+        deprecated alias for ``leg`` and takes the same two values (the server
+        does not accept a participant leg id here).
+        """
         if not digits or any(d not in "0123456789ABCD*#" for d in digits):
             raise ValueError("digits must match ^[0-9A-D*#]+$")
+        leg = _caller_or_callee("send_dtmf", leg, leg_id)  # type: ignore[assignment]
         body: dict[str, Any] = {"digits": digits}
-        if leg_id is not None:
-            body["leg"] = leg_id
+        if leg is not None:
+            body["leg"] = leg
         await _call(self._http.post(_path("send_dtmf", call_id=call_id), json=body))
 
     async def record(self, call_id: str, *, transcribe: bool | None = None) -> None:
